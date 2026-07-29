@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#05070f" />
+  <link rel="icon" href="data:," />
+  <title>苍穹战机 Sky Raiders</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      width: 100%; height: 100%; overflow: hidden;
+      background: #05070f;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      touch-action: none; user-select: none; -webkit-user-select: none;
+    }
+    #game-root {
+      position: fixed; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+    }
+    #game-root canvas { display: block; }
+    /* 首屏加载态，Phaser 起来后由 JS 移除 */
+    #boot-loader {
+      position: fixed; inset: 0; z-index: 50;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background: radial-gradient(ellipse at 50% 30%, #10203f 0%, #05070f 70%);
+      color: #7cf; gap: 18px;
+    }
+    #boot-loader .title {
+      font-size: 26px; font-weight: 800; letter-spacing: 4px;
+      text-shadow: 0 0 16px rgba(100,200,255,.6);
+    }
+    #boot-loader .bar {
+      width: 180px; height: 4px; border-radius: 4px;
+      background: rgba(120,200,255,.15); overflow: hidden;
+    }
+    #boot-loader .bar span {
+      display: block; height: 100%; width: 35%;
+      background: linear-gradient(90deg, #4af, #7cf);
+      border-radius: 4px; animation: slide 1.1s ease-in-out infinite;
+    }
+    @keyframes slide { 0%{transform:translateX(-120%)} 100%{transform:translateX(420%)} }
+    #boot-loader .sub { font-size: 12px; color: rgba(120,200,255,.5); letter-spacing: 2px; }
+  </style>
+</head>
+<body>
+  <div id="game-root"></div>
+  <div id="boot-loader">
+    <div class="title">苍穹战机</div>
+    <div class="bar"><span></span></div>
+    <div class="sub">SKY RAIDERS · LOADING</div>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

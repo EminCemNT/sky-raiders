@@ -1,0 +1,18 @@
+{
+  "name": "sky-raiders",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "苍穹战机 - Sky Force 风格竖版飞行射击游戏 (Phaser 3 + Vite)",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "phaser": "^3.80.1"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0"
+  }
+}

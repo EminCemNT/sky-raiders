@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+.vite/
+
+# 真测截图产物（Playwright 生成，不入版本库）
+shot_*.png
+shots/
+
+# 内部交接文档（AI 会话 handoff，不对外公开）
+AGENT_HANDOFF.md
