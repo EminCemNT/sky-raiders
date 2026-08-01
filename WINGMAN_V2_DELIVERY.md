@@ -1,8 +1,9 @@
 # 苍穹战机 · 僚机 AI 进阶 第二版 交付文档
 
 - **项目**：D:\WorkBuddy\sky-raiders（Vite 5 + Phaser 3.90，竖版飞行射击）
-- **交付形态**：单 commit，工作树干净（具体 hash 见 `git log -1`；推送时会嫁接为远端的一个新 commit，最终 hash 以推送结果为准，原因见第六节）
-- **状态**：本地完成，真测全绿，独立 QA 复验 PASS，**待 push**（网络未恢复，见第六节）
+- **交付 commit**：`fd16be7307849080104ce705724801e3c185e2cb`
+- **状态**：✅ **已推送** —— 真测 125/125 全绿，独立 QA 复验 PASS，远端历史零丢失（详见第六节）
+- **远端**：https://github.com/EminCemNT/sky-raiders （main = `fd16be7`）
 - **团队**：许清楚（需求）/ 高见远（架构）/ 寇豆码（实现）/ 严过关（QA）/ 齐活林（编排与把关）
 
 ---
@@ -212,6 +213,35 @@ bash push_when_online.sh          # 预演，只看差异不推送
 bash push_when_online.sh --push   # 确认无误后执行
 ```
 
-**当前网络不可达**（`github.com` HTTP 000），故未推送。网络恢复后先跑预演，确认第 4 节「会丢失的文件」列表符合预期，再加 `--push`。
+### 「断网」的真实原因（已解决）
 
-恢复备份 `D:/WorkBuddy/sky-raiders-RECOVERY-BACKUP/` 仍在原处，**推送成功并确认无误后**方可回收。
+一开始 `curl https://github.com` 一直返回 HTTP 000，判断为断网。实际排查下来根本不是网络问题：
+
+```
+HTTP_PROXY  = http://127.0.0.1:10793/
+HTTPS_PROXY = http://127.0.0.1:10793/
+WORKBUDDY_PROXY_SOURCE = system
+→ 但 netstat 显示 10793 端口无任何进程监听（代理软件未启动）
+```
+
+所有出站请求都被导向一个不存在的代理，必然失败。**绕过代理直连 github.com 是 HTTP 200、0.35 秒。**
+
+脚本因此增加了代理自动降级：先试代理，不通则自动改用直连，两者都不通才判定为真断网。顺带修掉脚本自身一个 bug —— `curl -w "%{http_code}"` 在内部重试时会输出 `000000` 这类拼接值，原先的字符串等值判断会漏判成"可达"，已改为模式匹配。
+
+### 推送结果 ✅
+
+```
+=== 3. 共同祖先检查 ===   本地与远端无共同祖先 —— 执行嫁接
+=== 4. 差异预览 ===       ✅ 无文件会丢失
+=== 5. 改动规模 ===       27 files changed, 4279 insertions(+), 110 deletions(-)
+=== 6. 执行嫁接 ===       新 commit fd16be7 (parent = 440b428)，tree 校验通过
+=== 7. 推送 ===           440b428..fd16be7  main -> main   （快进，非 force）
+```
+
+推送后校验：
+
+- 远端 `refs/heads/main` = `fd16be7307849080104ce705724801e3c185e2cb`
+- 本地 `HEAD` == `FETCH_HEAD`，工作树干净
+- 远端历史深度 1 → 2，原有的 `440b428「初始版本入库」`**完整保留**，本次成果作为新 commit 追加
+
+恢复备份 `D:/WorkBuddy/sky-raiders-RECOVERY-BACKUP/` 仍在原处。推送已成功且校验通过，**确认无误后可自行回收**（脚本不会自动删）。
