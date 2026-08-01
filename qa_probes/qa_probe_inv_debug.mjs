@@ -1,0 +1,31 @@
+import { chromium } from 'playwright';
+import { writeFileSync } from 'fs';
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const browser = await chromium.launch({ executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', args: ['--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage'] });
+const page = await browser.newPage({ viewport: { width: 720, height: 1280 } });
+await page.goto('http://localhost:5059/', { waitUntil: 'networkidle' });
+await page.waitForFunction(() => !!window.__SKY__ && !!window.__SAVE, null, { timeout: 15000 });
+await sleep(800);
+await page.evaluate(() => {
+  window.__SAVE.reset();
+  const sv = window.__SAVE.load(); sv.upgrades.wingman = 1; sv.tutorialDone = true; window.__SAVE.save();
+  const g = window.__SKY__; g.scene.stop('GameScene'); g.scene.stop('UIScene'); g.scene.start('GameScene', { mode: 'normal' });
+});
+await sleep(1400);
+const r = await page.evaluate(() => {
+  const s = window.__SKY; const w = s.wingmanSystem.getMembers()[0];
+  s.waves = null; w.invulnUntil = 0; w.die();
+  const t = s.time.now; w.respawn(w.x, w.y, t);
+  const inv = w.invulnUntil;
+  const r1 = w.takeDamage(1, inv - 1);
+  const hp1 = w.hp; w.hp = w.maxHp;
+  const r2 = w.takeDamage(1, inv);
+  const hp2 = w.hp; w.hp = w.maxHp;
+  const r3 = w.takeDamage(1, inv + 1);
+  const hp3 = w.hp; w.hp = w.maxHp;
+  const r4 = w.takeDamage(1, inv + 100);
+  const hp4 = w.hp;
+  return { t, inv, invMinusT: inv - t, r1, hp1, r2, hp2, r3, hp3, r4, hp4, INVULN: 900 };
+});
+writeFileSync('qa_probes/_invdbg.txt', JSON.stringify(r, null, 1));
+await browser.close();

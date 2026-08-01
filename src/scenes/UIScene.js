@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, LEVELS, WEAPONS, SHIPS } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
+import { SaveManager } from '../utils/SaveManager.js';
 import { audio } from '../systems/AudioSystem.js';
 import { NeonBar, NeonButton, makeIconButton, THEME } from '../utils/UIWidgets.js';
 
@@ -166,6 +167,10 @@ export default class UIScene extends Phaser.Scene {
   }
 
   bindEvents() {
+    // 场景重启时复位横幅队列，避免上局残留队列导致横幅卡死/重复
+    this._achShowing = false;
+    this._achQueue = [];
+
     this._onScore = (s) => { if (this.scoreText) this.scoreText.setText(String(s)); };
     EventBus.on('__hud_score', this._onScore);
 
@@ -241,6 +246,14 @@ export default class UIScene extends Phaser.Scene {
       }
     };
     EventBus.on(EVENTS.WEAPON_CHANGED, this._onWeapon);
+
+    // 成就系统：监听成就解锁事件，入队后顺序播放顶部横幅
+    this._onAchUnlock = (def) => {
+      if (!this._achQueue) this._achQueue = [];
+      this._achQueue.push(def);
+      if (!this._achShowing) this._nextAch();
+    };
+    EventBus.on(EVENTS.ACHIEVEMENT_UNLOCKED, this._onAchUnlock);
   }
 
   update() {
@@ -301,6 +314,42 @@ export default class UIScene extends Phaser.Scene {
     });
   }
 
+  // ---- 成就解锁横幅（顶部滑入，2.2s 后滑出）----
+  _nextAch() {
+    if (!this._achQueue || !this._achQueue.length) { this._achShowing = false; return; }
+    this._achShowing = true;
+    const def = this._achQueue.shift();
+    this.showAchievementBanner(def, () => this._nextAch());
+  }
+
+  showAchievementBanner(def, onDone) {
+    const hiddenLocked = def.hidden && !SaveManager.hasAchievement(def.id);
+    const label = hiddenLocked ? '???' : def.name;
+    const desc = hiddenLocked ? '？？？' : def.desc;
+    const icon = def.icon || '🏅';
+    const c = this.add.container(GAME_WIDTH / 2, -60).setDepth(150);
+    const w = 300, h = 64;
+    const bg = this.add.graphics();
+    bg.fillStyle(0x0d2840, 0.96); bg.fillRoundedRect(-w / 2, -h / 2, w, h, 12);
+    bg.lineStyle(2, 0x7cf3ff, 1); bg.strokeRoundedRect(-w / 2, -h / 2, w, h, 12);
+    const ico = this.add.text(-w / 2 + 16, 0, icon, { fontSize: '30px' }).setOrigin(0, 0.5);
+    const tag = this.add.text(-w / 2 + 54, -16, '成就解锁', { fontFamily: 'sans-serif', fontSize: '12px', color: '#ffd86b', fontStyle: '800' }).setOrigin(0, 0.5);
+    const nm = this.add.text(-w / 2 + 54, 2, label, { fontFamily: 'sans-serif', fontSize: '17px', color: '#ffffff', fontStyle: '800' }).setOrigin(0, 0.5);
+    const ds = this.add.text(-w / 2 + 54, 20, desc, { fontFamily: 'sans-serif', fontSize: '11px', color: '#aaccdd' }).setOrigin(0, 0.5);
+    c.add([bg, ico, tag, nm, ds]);
+    this.tweens.add({
+      targets: c, y: 100, duration: 220, ease: 'Cubic.out',
+      onComplete: () => {
+        this.time.delayedCall(2200, () => {
+          this.tweens.add({
+            targets: c, y: -60, duration: 220, ease: 'Cubic.in',
+            onComplete: () => { c.destroy(); onDone(); },
+          });
+        });
+      },
+    });
+  }
+
   unbind() {
     EventBus.off('__hud_score', this._onScore);
     EventBus.off(EVENTS.HP_CHANGED, this._onHp);
@@ -314,5 +363,6 @@ export default class UIScene extends Phaser.Scene {
     EventBus.off(EVENTS.MAGNET_CHANGED, this._onMagnet);
     EventBus.off(EVENTS.COMBO_CHANGED, this._onCombo);
     EventBus.off(EVENTS.WEAPON_CHANGED, this._onWeapon);
+    EventBus.off(EVENTS.ACHIEVEMENT_UNLOCKED, this._onAchUnlock);
   }
 }

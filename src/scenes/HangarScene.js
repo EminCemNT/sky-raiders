@@ -14,7 +14,8 @@ import { THEME } from '../utils/UIWidgets.js';
  * 注意：SCENES 中未登记 HANGAR（GameConfig 只读），本场景用字面量 key
  * 'HangarScene'，并由 MenuScene 在运行时用 this.scene.add 动态注册。
  */
-const ORDER = ['firepower', 'hull', 'shield', 'magnet', 'wingman'];
+// 升级项展示顺序（append-only：新增项加在末尾，不打乱既有布局顺序）
+const ORDER = ['firepower', 'hull', 'shield', 'magnet', 'wingman', 'wingmanFirepower'];
 
 export default class HangarScene extends Phaser.Scene {
   constructor() {
@@ -42,12 +43,12 @@ export default class HangarScene extends Phaser.Scene {
     }).setOrigin(0.5);
 
     // C2 战机武器绑定选择器（在机库里切战机 → 影响开局默认武器/元素）
-    this.buildShipSelector(cx, 244);
+    this.buildShipSelector(cx, 238);
 
-    // 部件行
+    // 部件行（6 项：卡片高 84 / 行距 92，末行底 806，与返回按钮 860 不重叠）
     this.rows = [];
-    const startY = 312;
-    const gap = 104;
+    const startY = 304;
+    const gap = 92;
     ORDER.forEach((key, i) => {
       this.rows.push(this.buildRow(key, cx, startY + i * gap));
     });
@@ -66,10 +67,10 @@ export default class HangarScene extends Phaser.Scene {
     const row = { key, max: def.max };
 
     // 背景卡片
-    this.add.rectangle(cx, y, 480, 92, 0x0d2840, 0.9).setStrokeStyle(2, 0x2f6f96);
+    this.add.rectangle(cx, y, 480, 84, 0x0d2840, 0.9).setStrokeStyle(2, 0x2f6f96);
 
     // 名称（部件中文名）
-    this.add.text(cx - 222, y - 22, def.name, {
+    this.add.text(cx - 222, y - 20, def.name, {
       fontFamily: 'sans-serif', fontSize: '24px', fontStyle: '700', color: '#cfe8ff',
     }).setOrigin(0, 0.5);
 

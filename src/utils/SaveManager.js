@@ -8,12 +8,23 @@ import { SAVE_KEY } from '../config/GameConfig.js';
  */
 const DEFAULT_SAVE = {
   coins: 0,
-  upgrades: { firepower: 0, hull: 0, shield: 0, magnet: 0, wingman: 0 },
+  // wingmanFirepower：僚机火力（独立于 wingman 数量项），决定 WINGMAN.WEAPON_LV 档位
+  upgrades: { firepower: 0, hull: 0, shield: 0, magnet: 0, wingman: 0, wingmanFirepower: 0 },
   selectedShip: 0, // C2 战机武器绑定：所选战机索引（对应 GameConfig.SHIPS）
   levelStars: {}, // { [levelId]: stars(1~3) }
   unlockedLevel: 1,
   totalKills: 0,
   achievements: {}, // { [achievementId]: true }
+  // 累计成就统计（局末写回，避免每杀一怪都触发一次 save）
+  // elementCombos：元素协同 combo 累计触发次数（僚机第二版 combo_element_50 成就依赖）
+  achievementStats: {
+    wingmanKills: 0,
+    elementKills: { fire: 0, ice: 0, thunder: 0 },
+    elementCombos: 0,
+    bossRushClears: 0,
+  },
+  // 累计击败的 Boss 列表（key 集合，用于屠龙者/各 Boss 克星成就）
+  bossesDefeated: {},
   lastCheckin: '', // 本地日期 YYYY-MM-DD
   checkinStreak: 0,
   tutorialDone: false,
@@ -21,14 +32,54 @@ const DEFAULT_SAVE = {
 
 let cache = null;
 
+/**
+ * 生成一份全新的默认存档。
+ * 注意：不能直接 `{ ...DEFAULT_SAVE }` —— 那样 upgrades/achievementStats 等嵌套对象
+ * 与 DEFAULT_SAVE 共享引用，升级一次就会污染默认值（reset() 之后等级还在）。
+ */
+function freshSave() {
+  return {
+    ...DEFAULT_SAVE,
+    upgrades: { ...DEFAULT_SAVE.upgrades },
+    levelStars: {},
+    achievements: {},
+    achievementStats: {
+      ...DEFAULT_SAVE.achievementStats,
+      elementKills: { ...DEFAULT_SAVE.achievementStats.elementKills },
+    },
+    bossesDefeated: {},
+  };
+}
+
 export const SaveManager = {
   load() {
     if (cache) return cache;
     try {
       const raw = localStorage.getItem(SAVE_KEY);
-      cache = raw ? { ...DEFAULT_SAVE, ...JSON.parse(raw) } : { ...DEFAULT_SAVE };
+      if (!raw) { cache = freshSave(); return cache; }
+      const parsed = JSON.parse(raw);
+      cache = {
+        ...DEFAULT_SAVE,
+        ...parsed,
+        // 深合并：老存档没有的升级项（如 wingmanFirepower）兜底为默认 0，避免 undefined
+        upgrades: { ...DEFAULT_SAVE.upgrades, ...(parsed.upgrades || {}) },
+        // levelStars/achievements 必须深拷贝：缺这两个键的老存档若走 ...DEFAULT_SAVE 兜底，
+        // cache 会直接引用 DEFAULT_SAVE 上的同一个对象并被就地写脏（recordLevelStars /
+        // unlockAchievement 都是原地赋值），污染后续 freshSave()/reset() 的默认值。
+        levelStars: { ...(parsed.levelStars || {}) },
+        achievements: { ...(parsed.achievements || {}) },
+        achievementStats: {
+          ...DEFAULT_SAVE.achievementStats,
+          ...(parsed.achievementStats || {}),
+          elementKills: {
+            ...DEFAULT_SAVE.achievementStats.elementKills,
+            ...((parsed.achievementStats && parsed.achievementStats.elementKills) || {}),
+          },
+        },
+        bossesDefeated: parsed.bossesDefeated || {},
+      };
     } catch (e) {
-      cache = { ...DEFAULT_SAVE };
+      cache = freshSave();
     }
     return cache;
   },
@@ -91,6 +142,20 @@ export const SaveManager = {
     return { ...this.load().achievements };
   },
 
+  /** 深合并累计成就统计并保存（局末调一次） */
+  saveAchievementStats(partial) {
+    const s = this.load();
+    s.achievementStats = {
+      ...s.achievementStats,
+      ...(partial || {}),
+      elementKills: {
+        ...s.achievementStats.elementKills,
+        ...((partial && partial.elementKills) || {}),
+      },
+    };
+    this.save();
+  },
+
   // ---- 每日签到 ----
   _todayStr() {
     const d = new Date();
@@ -117,7 +182,7 @@ export const SaveManager = {
   },
 
   reset() {
-    cache = { ...DEFAULT_SAVE };
+    cache = freshSave();
     this.save();
   },
 };

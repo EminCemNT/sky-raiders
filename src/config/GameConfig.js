@@ -51,6 +51,10 @@ export const EVENTS = {
   ACHIEVEMENT_UNLOCKED: 'achievement-unlocked',
   // 武器切换（B/C 武器系统）：payload = (weaponKey, durationMs)
   WEAPON_CHANGED: 'weapon-changed',
+  // 僚机 AI 进阶（第一版仅定义，独立生存/战术分工在第二版接入）
+  WINGMAN_DESTROYED: 'wingman-destroyed',   // payload = { slot, x, y }
+  WINGMAN_RESPAWNED: 'wingman-respawned',   // payload = { slot, x, y }
+  WINGMAN_COMBO: 'wingman-combo',           // payload = { element, count }
 };
 
 // 玩家基础属性
@@ -179,6 +183,8 @@ export const UPGRADE_TREE = {
   shield:    { name: '护盾', max: 5, baseCost: 400, costMul: 1.7 },
   magnet:    { name: '磁力', max: 4, baseCost: 250, costMul: 1.5 },
   wingman:   { name: '僚机', max: 2, baseCost: 800, costMul: 2.0 },
+  // 僚机火力：与"僚机数量"并存的独立升级项，决定 WINGMAN.WEAPON_LV 档位（0~3）
+  wingmanFirepower: { name: '僚机火力', max: 3, baseCost: 600, costMul: 1.8 },
 };
 
 // 中国股市/涨跌无关，这里是玩家阵营配色（青蓝科技风）
@@ -223,3 +229,87 @@ export const SHIPS = [
   { id: 1, name: '赤焰', weapon: 'missile', element: 'fire',  tint: 0xff7a3a, desc: '导弹机·火灼烧' },
   { id: 2, name: '寒霜', weapon: 'laser',   element: 'ice',   tint: 0x9ff0ff, desc: '激光机·冰减速' },
 ];
+
+// ───────────────────────────────────────────────────────────────
+// 僚机 AI 进阶（第一版：编队跟随 + 智能走位 + 武器/火力进化）
+// 消费方：entities/Wingman.js（单体行为）+ systems/WingmanSystem.js（集合管理）
+// 这里是僚机所有数值的唯一来源，严禁在实体/系统里硬编码偏移与射速。
+// ───────────────────────────────────────────────────────────────
+export const WINGMAN = {
+  MAX: 4,               // 僚机硬上限（含道具临时僚机）
+  DEPTH: 18,
+  SCALE: 0.9,
+  FOLLOW_LERP: 0.15,    // 编队跟随插值系数（与旧实现一致，保证手感不变）
+  BASE_HP: 3,           // 独立生存：僚机血量（第二版接 enemyBullets overlap 后生效）
+  RESPAWN_MS: 4000,     // 击落后重生冷却（第二版由 WingmanSystem._tickRespawn 轮询）
+  HIT_DMG: 1,           // 单发敌弹对僚机的伤害（3 发击落）
+  INVULN_MS: 900,       // 重生后无敌时长，防刚归队就被弹幕秒清
+  ROLE: 'suppress',     // 默认角色（无 ROLE_BY_COUNT 兜底时用）
+  MUZZLE_DY: -12,       // 炮口相对僚机中心的纵向偏移
+
+  // 战术分工（第二版）：角色 -> 射速倍率 / 瞄准偏好 / 编队偏移缩放
+  //   suppress 火力压制：标准射速，打最近目标，站标准槽位
+  //   support  掩护支援：射速 +15%，优先锁同元素目标（吃元素协同 combo），贴近玩家后方
+  //   flank    侧翼牵制：射速 -10%，打最近目标，拉宽横向站位吸引/拦截侧面来敌
+  // 注意：role 只改"节奏 / 选敌 / 站位"，绝不改弹种与伤害基数（弹种仍由 WEAPON_LV 决定）
+  ROLES: {
+    suppress: { fireMul: 1.00, aim: 'nearest', offMul: { x: 1.0, y: 1.0 } },
+    support:  { fireMul: 1.15, aim: 'element', offMul: { x: 0.8, y: 1.2 } },
+    flank:    { fireMul: 0.90, aim: 'nearest', offMul: { x: 1.6, y: 0.4 } },
+  },
+
+  // 按当前僚机数量分配角色（索引 = 编队槽位序号，与 FORMATIONS 同序）
+  ROLE_BY_COUNT: {
+    1: ['suppress'],
+    2: ['suppress', 'support'],
+    3: ['suppress', 'support', 'flank'],
+    4: ['suppress', 'support', 'flank', 'support'],
+  },
+
+  // 元素协同 combo（第二版）：玩家与僚机在窗口内交替以同元素命中，达阈值触发全体增伤
+  //   WINDOW_MS 相邻两次命中的最大间隔；TRIGGER 需要的交替命中次数
+  //   BUFF_MS   增益持续时长；DMG_MUL 增益期间僚机弹伤害倍率
+  COMBO: {
+    WINDOW_MS: 1200,
+    TRIGGER: 5,
+    BUFF_MS: 3000,
+    DMG_MUL: 1.35,
+    MAX_COUNT: 9,
+  },
+
+  // 编队槽位表：key = 当前僚机数量，slots[i] = 第 i 架相对玩家的偏移
+  //   1 架 → 扇形单点（正后方），2 架 → 菱形对称双翼，3/4 架 → 菱形补后排
+  FORMATIONS: {
+    1: { name: 'fan',     slots: [{ x: 0, y: 44 }] },
+    2: { name: 'diamond', slots: [{ x: -52, y: 16 }, { x: 52, y: 16 }] },
+    3: { name: 'diamond', slots: [{ x: -52, y: 16 }, { x: 52, y: 16 }, { x: 0, y: 56 }] },
+    4: { name: 'diamond', slots: [{ x: -52, y: 16 }, { x: 52, y: 16 }, { x: -30, y: 60 }, { x: 30, y: 60 }] },
+  },
+
+  // 智能走位（排斥力场躲弹）
+  DODGE: {
+    CHECK_EVERY: 3,      // 每 N 帧筛一次威胁弹（降低每帧开销）
+    SCAN_RADIUS: 220,    // 系统级粗筛：只收集玩家周围这个半径内的敌弹
+    SCAN_CAP: 16,        // 粗筛结果上限，防弹幕爆炸时数组过长
+    RADIUS: 120,         // 单机威胁判定半径（平方比较，不开方）
+    MAX_THREATS: 4,      // 每机最多参与合成的威胁弹数
+    MAX_OFFSET: 40,      // 躲避偏移钳制（±px）
+    GAIN: 0.55,          // 排斥力 -> 像素偏移的增益
+    WEIGHT: 0.6,         // 躲避权重
+    FORM_WEIGHT: 1.0,    // 编队权重
+    SMOOTH: 0.4,         // 躲避向量自身平滑，避免抖动
+  },
+
+  // 僚机不脱离玩家 X 轴的最大横向距离（屏宽 1/3）
+  X_LEASH: GAME_WIDTH / 3,
+
+  // 武器进化档位（索引 = 存档 upgrades.wingmanFirepower）
+  //   dmgMul 相对 BULLET.PLAYER_DMG；整体 DPS 控制在主武器同级 60% 以内
+  //   lv0 单发脉冲 / lv1 散射 3 路 / lv2 穿透（穿 1 个敌）/ lv3 元素弹（继承玩家元素·高伤）
+  WEAPON_LV: [
+    { name: '单发脉冲', key: 'bullet_pulse',   shots: 1, spreadDeg: 0,  interval: 260, dmgMul: 1.00, pierce: 0, tinted: false },
+    { name: '散射',     key: 'bullet_scatter', shots: 3, spreadDeg: 8,  interval: 250, dmgMul: 0.60, pierce: 0, tinted: false },
+    { name: '穿透',     key: 'bullet_pulse',   shots: 2, spreadDeg: 6,  interval: 240, dmgMul: 0.80, pierce: 1, tinted: false },
+    { name: '元素弹',   key: 'bullet_scatter', shots: 3, spreadDeg: 11, interval: 240, dmgMul: 0.95, pierce: 0, tinted: true },
+  ],
+};

@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import {
-  SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, COLORS, PLAYER, BULLET, LEVELS, BOSS_RUSH, SHIPS, ELEMENTS,
+  SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, COLORS, PLAYER, BULLET, LEVELS, BOSS_RUSH, SHIPS, ELEMENTS, WINGMAN,
 } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
@@ -10,6 +10,7 @@ import Enemy from '../entities/Enemy.js';
 import Boss from '../entities/Boss.js';
 import Item from '../entities/Item.js';
 import WaveSystem from '../systems/WaveSystem.js';
+import WingmanSystem from '../systems/WingmanSystem.js';
 import { FloatingTextManager } from '../systems/FloatingText.js';
 import { AchievementManager } from '../systems/AchievementManager.js';
 import { audio } from '../systems/AudioSystem.js';
@@ -48,6 +49,8 @@ export default class GameScene extends Phaser.Scene {
     // 成就统计
     this.maxCombo = 0;
     this.usedSuperCount = 0;
+    // 成就系统：本局开始，重置会话态并预载累计数据
+    AchievementManager.startRun(this.mode, this.levelId);
   }
 
   create() {
@@ -101,6 +104,7 @@ export default class GameScene extends Phaser.Scene {
       // Boss Rush 仍从脉冲起步，靠武器箱切换；普通关直接使用绑定武器
       const bound = this.mode === 'bossrush' ? 'pulse' : (ship.weapon || 'pulse');
       this.player.setWeapon(bound);
+      AchievementManager.reportWeaponUsed(bound);
       if (ship.tint) this.player.setTint(ship.tint);
       // 0 = 常驻（绑定武器无倒计时）；delayedCall 确保 UIScene 已绑定监听
       if (bound !== 'pulse') this.time.delayedCall(0, () => EventBus.emit(EVENTS.WEAPON_CHANGED, bound, 0));
@@ -111,7 +115,7 @@ export default class GameScene extends Phaser.Scene {
     // 道具/技能系统状态（#151）— 必须在首个 ENERGY_CHANGED 事件前初始化
     this.energy = 0;
     this.buffs = { shieldUntil: 0, magnetUntil: 0 };
-    this.wingmen = [];
+    this.wingmanSystem = null; // 僚机集合（在玩家元素绑定后创建，见下方）
 
     // 输入
     this.cursors = this.input.keyboard.createCursorKeys();
@@ -153,10 +157,12 @@ export default class GameScene extends Phaser.Scene {
 
     this.bombs = PLAYER.START_BOMBS;
 
-    // 永久僚机：依据机库"僚机"升级等级生成（与道具临时僚机共用 wingmen 系统）
-    for (let i = 0; i < (this.player.wingmanLevel || 0); i++) {
-      this.addWingman();
-    }
+    // 僚机 AI 进阶：数量/编队/武器等级全部交给 WingmanSystem（读存档 upgrades）
+    // 子弹复用 playerBullets 池，系统内不新建子弹组、不新建 Timer
+    this.wingmanSystem = new WingmanSystem(this, this.playerBullets);
+    // 僚机受击 overlap 必须在系统实例化之后注册（setupColliders 早于此处执行，
+    // 那时 wingmanSystem 还是 null，拿不到 getGroup()）
+    this.setupWingmanCollider();
 
     // 首玩教程：首次进入游戏显示操作引导（Boss Rush 跳过，避免阻塞）
     if (this.mode !== 'bossrush' && !SaveManager.get('tutorialDone')) this.showTutorial();
@@ -175,6 +181,14 @@ export default class GameScene extends Phaser.Scene {
     // 玩家子弹 vs 敌人
     this.physics.add.overlap(this.playerBullets, this.enemies, (bullet, enemy) => {
       if (!bullet.active || !enemy.active) return;
+      // ★ 命中来源快照，必须在任何 killBullet 之前取值 ★
+      // killBullet 会把 byWingman 无条件复位为 false（池复用红线，见 killBullet 注释）。
+      // 本回调里"先回收子弹、后读 bullet.byWingman"的写法会永远读到 false ——
+      // 结果就是真实战斗中僚机击杀永远进不了 wingman_first/wingman_50，
+      // 元素协同 combo 也永远收不到"僚机侧"命中而无法交替计数。
+      const byWm = !!bullet.byWingman;
+      const el = bullet.element;
+      const dmg = bullet.damage || 10;
       // B5 元素炸弹：命中即 AOE 爆炸
       if (bullet.isBomb) {
         this._explodeBomb(bullet.x, bullet.y, bullet.explodeRadius, bullet.damage, bullet.element);
@@ -182,10 +196,22 @@ export default class GameScene extends Phaser.Scene {
         VFX.hitSpark(this, bullet.x, bullet.y);
         return;
       }
-      this.killBullet(bullet);
+      // 穿透弹（僚机 weaponLv2）：命中后保留子弹，最多穿 pierce 个目标。
+      // _lastHit 去重必须在 pierce 判断之前 —— 否则子弹穿进敌机体内的下一帧
+      // 会以"pierce 已耗尽"被就地销毁，等于对同一个目标结算两次、根本穿不过去。
+      // 普通子弹 _lastHit 恒为 null，命中即销毁，行为与改动前完全一致。
+      if (bullet._lastHit === enemy) return;
+      if ((bullet.pierce || 0) > 0) {
+        bullet._lastHit = enemy;
+        bullet.pierce -= 1;
+      } else {
+        this.killBullet(bullet);
+      }
       VFX.hitSpark(this, bullet.x, bullet.y);
-      if (enemy.hit(bullet.damage || 10, bullet.element)) {
-        this.registerKill(enemy.x, enemy.y);
+      // 元素协同 combo：命中即上报来源+元素（僚机 0 架时系统内部首行返回，零开销）
+      if (this.wingmanSystem) this.wingmanSystem.reportHit(byWm, el, this.time.now);
+      if (enemy.hit(dmg, el)) {
+        this.registerKill(enemy.x, enemy.y, { enemyType: enemy.typeKey, byWingman: byWm, element: el });
         this.addEnergy(2);
       }
     });
@@ -221,6 +247,37 @@ export default class GameScene extends Phaser.Scene {
       if (!item.active) return;
       this.collectItem(item);
     });
+
+    // 注：敌弹 vs 僚机的 overlap 在 setupWingmanCollider() 里注册 ——
+    // WingmanSystem 在本方法之后才实例化，这里还拿不到僚机组。
+  }
+
+  /**
+   * 敌弹 vs 僚机（僚机 AI 进阶 第二版·独立生存）。
+   * 只吃敌弹，不吃敌机撞击 —— 僚机不承担撞机拦截职责，否则会变成"免费护盾"破坏难度。
+   */
+  setupWingmanCollider() {
+    if (!this.wingmanSystem) return;
+    this.physics.add.overlap(this.enemyBullets, this.wingmanSystem.getGroup(), (bullet, w) => {
+      if (bullet.active && w.active && w.alive) this.wingmanHit(w, bullet);
+    });
+  }
+
+  /**
+   * 僚机受击结算。
+   * 红线：绝不调用 playerHit —— 那会计入 stats.damageTaken（破 flawless/不动如山成就）、
+   * 断玩家连击、并扣玩家 HP。僚机被击落对玩家的唯一代价是"火力真空 RESPAWN_MS"。
+   */
+  wingmanHit(w, bullet) {
+    // P1-3 玩家阵亡后僚机不再被敌弹击落（与"独立生存"语义一致：玩家已亡，敌弹打僚机无意义）
+    if (!this.player || !this.player.active) return;
+    // P2-1 无敌期让敌弹穿过（不消弹、不扣血），符合"僚机不拦截"设计红线
+    if (this.time.now < w.invulnUntil) return;
+    this.killBullet(bullet);
+    const downed = w.takeDamage(WINGMAN.HIT_DMG, this.time.now);
+    if (downed) {
+      VFX.explosion(this, w.x, w.y, w.element === 'fire' ? 0xff6633 : 0x33ccff, 1.2);
+    }
   }
 
   bindEvents() {
@@ -235,6 +292,8 @@ export default class GameScene extends Phaser.Scene {
         this.spawnBossDrops(this.boss.x, this.boss.y);
         EventBus.emit(EVENTS.FLOAT_SCORE, { x: this.boss.x, y: this.boss.y, special: true, label: 'BOSS 击破' });
       }
+      // 成就系统：Boss 击败实时上报（bossKey 对应各克星/屠龙者成就）
+      if (this.boss) AchievementManager.reportBossDefeated(this.boss.bossKey);
       this.boss = null;
       if (this.mode === 'bossrush') {
         this.bossRushIndex++;
@@ -254,6 +313,10 @@ export default class GameScene extends Phaser.Scene {
 
     this._onUseSuper = () => this.useSuper();
     EventBus.on(EVENTS.USE_SUPER, this._onUseSuper);
+
+    // 元素协同 combo 触发 -> 成就统计（combo_element_5 / combo_element_50）
+    this._onWingmanCombo = (e) => AchievementManager.reportElementCombo(e && e.element);
+    EventBus.on(EVENTS.WINGMAN_COMBO, this._onWingmanCombo);
   }
 
   update(time, dt) {
@@ -282,7 +345,13 @@ export default class GameScene extends Phaser.Scene {
 
     // 道具/僚机/磁力/增益计时
     this.items.children.each((it) => { if (it.active) it.update(time, dt); });
-    this.updateWingmen(time, dt);
+    if (this.wingmanSystem) {
+      // 重生轮询前置于 update：update 在"僚机全灭"时会照常跑（成员还在，只是 alive=false），
+      // 但玩家阵亡分支会 return —— 重生计时必须由独立入口驱动，且内部自带
+      // _deadCount>0 与 player.active 双守卫，玩家阵亡时冻结、无僚机阵亡时零开销。
+      this.wingmanSystem._tickRespawn(this.time.now);
+      this.wingmanSystem.update(time, dt);
+    }
     this.updateMagnet();
     this.checkBuffs();
     if (this.combo > 0 && this.time.now > this._comboExpire) this.breakCombo();
@@ -334,7 +403,7 @@ export default class GameScene extends Phaser.Scene {
         if (!e.active) return;
         if (Phaser.Geom.Intersects.RectangleToRectangle(beam.getBounds(), e.getBounds())) {
           if (e.hit((beam.dps || 0) * dt, beam.element)) {
-            this.registerKill(e.x, e.y);
+            this.registerKill(e.x, e.y, { element: beam.element });
             this.addEnergy(2);
           }
         }
@@ -360,7 +429,14 @@ export default class GameScene extends Phaser.Scene {
           VFX.hitSpark(this, b.x, b.y);
           return;
         }
-        this.killBullet(b);
+        // 穿透弹同样只对 Boss 结算一次（Boss 体积大，不去重会每帧连击）
+        if (b._lastHit === this.boss) return;
+        if ((b.pierce || 0) > 0) {
+          b._lastHit = this.boss;
+          b.pierce -= 1;
+        } else {
+          this.killBullet(b);
+        }
         VFX.hitSpark(this, b.x, b.y);
         this.boss.hit(b.damage || 10, b.element);
       }
@@ -377,7 +453,7 @@ export default class GameScene extends Phaser.Scene {
       if (dx * dx + dy * dy <= r2) {
         const dist = Math.sqrt(dx * dx + dy * dy);
         const falloff = 1 - 0.5 * (dist / radius);   // 中心高、边缘低
-        if (e.hit(dmg * falloff, element)) this.registerKill(e.x, e.y);
+        if (e.hit(dmg * falloff, element)) this.registerKill(e.x, e.y, { element });
       }
     });
     if (this.boss && this.boss.active) {
@@ -488,6 +564,7 @@ export default class GameScene extends Phaser.Scene {
     coin.setActive(false).setVisible(false);
     coin.body.enable = false;
     this.stats.coins++;
+    AchievementManager.reportCoins(this.stats.coins);
     SaveManager.addCoins(1);
     EventBus.emit(EVENTS.COIN_COLLECTED, this.stats.coins);
     EventBus.emit(EVENTS.SCORE_CHANGED, 20);
@@ -552,10 +629,11 @@ export default class GameScene extends Phaser.Scene {
           else if (key === 'bomb') this.addBomb();
           break;
         case 'permanent':
-          if (key === 'wingman') this.addWingman();
+          if (key === 'wingman' && this.wingmanSystem) this.wingmanSystem.addWingman();
           break;
         case 'weapon':
           if (this.player.setWeapon) this.player.setWeapon(def.weapon);
+          AchievementManager.reportWeaponUsed(def.weapon);
           this._weaponUntil = this.time.now + (def.duration || 15000);
           EventBus.emit(EVENTS.WEAPON_CHANGED, def.weapon, def.duration || 15000);
           break;
@@ -608,7 +686,7 @@ export default class GameScene extends Phaser.Scene {
 
   // ---- 连击系统（P0 体验优化）----
   /** 击杀累计连击，按倍率加分并广播给 HUD */
-  registerKill(x, y) {
+  registerKill(x, y, meta = {}) {
     this.combo++;
     if (this.combo > this.maxCombo) this.maxCombo = this.combo;
     const mult = this.comboMultiplier();
@@ -618,6 +696,9 @@ export default class GameScene extends Phaser.Scene {
     EventBus.emit(EVENTS.COMBO_CHANGED, this.combo, mult);
     EventBus.emit(EVENTS.FLOAT_SCORE, { x, y, amount, mult, special: false });
     this._comboExpire = this.time.now + 2500; // 2.5s 内无击杀则断连
+    // 成就系统：实时上报击杀（含来源/元素），并同步连击峰值
+    AchievementManager.reportKill(meta);
+    AchievementManager.reportComboPeak(this.maxCombo);
   }
 
   comboMultiplier() {
@@ -630,44 +711,61 @@ export default class GameScene extends Phaser.Scene {
     this.combo = 0;
   }
 
-  // ---- 僚机（跟随开火，独立于 Player 升级）----
-  addWingman() {
-    if (!this.wingmen) this.wingmen = [];
-    const wm = this.add.image(this.player.x, this.player.y + 10, 'item_wingman')
-      .setDepth(18).setScale(0.9);
-    wm._last = 0;
-    this.wingmen.push(wm);
-  }
+  // ---- 僚机子弹工厂（僚机 AI 进阶）----
+  /**
+   * 发射一发僚机子弹。复用 playerBullets 现有池，不新建组。
+   * @param {number} x 发射点
+   * @param {number} y 发射点
+   * @param {number} ang 弧度
+   * @param {{element:?string, weaponLv:number, byWingman:boolean}} opts
+   * @returns {Phaser.Physics.Arcade.Sprite|null} 池满时返回 null
+   *
+   * 红线：每发子弹必须写入 byWingman=true 与 element=玩家元素，
+   *       否则 registerKill -> AchievementManager.reportKill 的
+   *       wingman_first / wingman_50 / element_* 统计会断链。
+   */
+  spawnWingmanBullet(x, y, ang, opts = {}) {
+    const maxLv = WINGMAN.WEAPON_LV.length - 1;
+    const lv = Phaser.Math.Clamp(opts.weaponLv || 0, 0, maxLv);
+    const cfg = WINGMAN.WEAPON_LV[lv];
+    const b = this.playerBullets.get(x, y, cfg.key);
+    if (!b) return null;
 
-  updateWingmen(time, dt) {
-    if (!this.wingmen || !this.wingmen.length) return;
-    this.wingmen = this.wingmen.filter((w) => w.active);
-    this.wingmen.forEach((w, i) => {
-      if (!this.player.active) return;
-      const side = i % 2 === 0 ? -1 : 1;
-      const tx = this.player.x + side * 48;
-      const ty = this.player.y + 14;
-      w.x = Phaser.Math.Linear(w.x, tx, 0.15);
-      w.y = Phaser.Math.Linear(w.y, ty, 0.15);
-      if (time - w._last > 220) {
-        // 独立瞄准：锁定最近敌机 / Boss，而非纯镜像直上
-        const target = this.findNearestTarget(w.x, w.y);
-        const ang = target
-          ? Phaser.Math.Angle.Between(w.x, w.y, target.x, target.y)
-          : -Math.PI / 2;
-        const b = this.playerBullets.get(w.x, w.y - 12, 'bullet_pulse');
-        if (b) {
-          b.setActive(true).setVisible(true);
-          b.body.enable = true;
-          b.homing = false;
-          b.damage = BULLET.PLAYER_DMG;
-          const bw = b.width, bh = b.height;
-          b.body.setSize(bw * 0.6, bh * 0.7);
-          this.physics.velocityFromRotation(ang, BULLET.PLAYER_SPEED, b.body.velocity);
-        }
-        w._last = time;
-      }
-    });
+    // 池复用时 Group.get 不会改贴图（拿到的可能是上一发导弹/散射），必须显式重设，
+    // 否则僚机弹会顶着导弹外观飞出去；setTexture 会改 width/height，故放在 setSize 之前。
+    if (b.texture.key !== cfg.key) b.setTexture(cfg.key);
+    b.setActive(true).setVisible(true);
+    b.body.enable = true;
+    b.homing = false;
+    b.isBomb = false;
+    b.pierce = cfg.pierce || 0;      // >0 时命中后不销毁（穿透档）
+    b._lastHit = null;
+    b.damage = BULLET.PLAYER_DMG * cfg.dmgMul;
+    // ↓↓↓ 成就链路红线：僚机来源 + 玩家元素 ↓↓↓
+    b.byWingman = true;
+    b.element = opts.element || null;
+
+    // 元素协同 combo 增益：激活期内僚机弹伤害 x DMG_MUL（只作用于僚机弹，不碰主炮）
+    const comboMul = this.wingmanSystem ? this.wingmanSystem.getComboMul(this.time.now) : 1;
+    if (comboMul > 1) b.damage *= comboMul;
+
+    const bw = b.width, bh = b.height;
+    b.body.setSize(bw * 0.6, bh * 0.7);
+    b.setRotation(ang + Math.PI / 2);
+
+    // 染色优先级：协同增益色 > lv3 元素弹色。两者都记 _wmTinted，回收时统一清除。
+    const comboTint = comboMul > 1 && this.wingmanSystem ? this.wingmanSystem.getComboTint(this.time.now) : 0;
+    if (comboTint) {
+      b.setTint(comboTint);
+      b._wmTinted = true;
+    } else if (cfg.tinted && b.element && ELEMENTS[b.element]) {
+      // 元素弹（lv3）按元素染色；回收时在 killBullet 里清除，避免污染主炮子弹
+      b.setTint(ELEMENTS[b.element].color);
+      b._wmTinted = true;
+    }
+
+    this.physics.velocityFromRotation(ang, BULLET.PLAYER_SPEED, b.body.velocity);
+    return b;
   }
 
   // ---- 磁力：扩大金币吸取范围 ----
@@ -734,6 +832,7 @@ export default class GameScene extends Phaser.Scene {
 
     this.energy = 0;
     this.usedSuperCount++;
+    AchievementManager.reportSuperUsed();
     EventBus.emit(EVENTS.ENERGY_CHANGED, 0, ENERGY_MAX);
 
     const skill = SKILLS[DEFAULT_SKILL] || SKILLS.starstorm;
@@ -787,11 +886,26 @@ export default class GameScene extends Phaser.Scene {
   killBullet(b) {
     b.setActive(false).setVisible(false);
     if (b.body) { b.body.enable = false; b.setVelocity(0, 0); }
+    // 僚机进阶新增字段：回收即复位，避免池复用把穿透/元素染色带到玩家主炮子弹上
+    if (b.pierce) b.pierce = 0;
+    if (b._lastHit) b._lastHit = null;
+    if (b._wmTinted) { b._wmTinted = false; }
+    // clearTint 无条件执行：combo 染色路径与 lv3 元素弹共用 _wmTinted，但历史上存在
+    // 只 setTint 未置标记的分支；无条件清一次成本可忽略，能彻底杜绝主炮弹被染色残留。
+    b.clearTint();
+    // byWingman 必须无条件复位：Player.fire() 只写 element/damage，从不写 byWingman=false，
+    // 僚机弹回收后被 Group.get() 复用给主炮时会残留 true，导致主炮击杀被 registerKill
+    // 误计入 wingman_50/wingman_first（且已持久化不可逆）。僚机每次发射都会重设 true，不影响僚机统计。
+    b.byWingman = false;
+    b.setRotation(0);   // P1-1 旋转不变量：僚机任意角度弹回收后主炮复用不再残留旋转
   }
 
   recycleBullets() {
+    // 四边界剔除：旧逻辑只判 y < -30，前提是"主炮弹恒向上"。僚机进阶后子弹按任意角度
+    // 发射（含朝下/近水平），这类弹永远飞不到 y<-30 → 永久 active → playerBullets 池
+    // (maxSize 200) 耗尽 → get() 返回 null → 主炮哑火。与下方 enemyBullets 判定对齐。
     this.playerBullets.children.each((b) => {
-      if (b.active && b.y < -30) {
+      if (b.active && (b.y < -30 || b.y > GAME_HEIGHT + 30 || b.x < -30 || b.x > GAME_WIDTH + 30)) {
         if (b.isBomb) this._explodeBomb(b.x, b.y, b.explodeRadius, b.damage, b.element);
         this.killBullet(b);
       }
@@ -833,18 +947,14 @@ export default class GameScene extends Phaser.Scene {
       levelId: this.levelId, composite,
     };
 
-    // 成就评估（#成就）：用本局数据评估并解锁新成就，挂到结算结果上
-    const ctx = {
-      kills: this.stats.kills,
-      coins: this.stats.coins,
-      damageTaken: this.stats.damageTaken,
-      levelId: this.levelId,
+    // 成就评估（#成就）：事件已实时上报，这里做局末兜底评估（无伤/通关/BossRush 等）
+    result.newAchievements = AchievementManager.reportRun({
       victory,
-      maxCombo: this.maxCombo,
-      usedSuper: this.usedSuperCount,
-      maxLevel: LEVELS.length,
-    };
-    result.newAchievements = AchievementManager.evaluate(ctx);
+      mode: this.mode,
+      stars,
+      levelId: this.levelId,
+      damageTaken: this.stats.damageTaken,
+    });
 
     this.time.delayedCall(600, () => {
       this.scene.stop(SCENES.UI);
@@ -908,7 +1018,9 @@ export default class GameScene extends Phaser.Scene {
     EventBus.off(EVENTS.BOSS_DEFEATED, this._onBossDefeated);
     EventBus.off(EVENTS.USE_BOMB, this._onUseBomb);
     EventBus.off(EVENTS.USE_SUPER, this._onUseSuper);
+    EventBus.off(EVENTS.WINGMAN_COMBO, this._onWingmanCombo);
     audio.unbindGameEvents();
+    if (this.wingmanSystem) { this.wingmanSystem.destroy(); this.wingmanSystem = null; }
     if (this.starfield) this.starfield.destroy();
   }
 }

@@ -137,6 +137,9 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
       const key = p.bulletKey || 'bullet_pulse';
       const b = this.bullets.get(this.x + p.dx, this.y - 20, key);
       if (!b) continue;
+      // P1-2 池贴图不变量：复用的子弹可能残留旧贴图键，先统一成本次请求的贴图，
+      // 再读 bw/bh 计算 body（下方在 setTexture 之后读取），避免不同武器共用同一池时贴图错乱。
+      if (b.texture && b.texture.key !== key) b.setTexture(key);
       b.setActive(true).setVisible(true);
       b.body.enable = true;
       b.homing = false;
