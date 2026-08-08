@@ -225,7 +225,7 @@ export const WEAPONS = {
 // 战机（C2 武器绑定）：每架绑定默认武器 + 元素属性
 // 机库选择 selectedShip（索引）后，开局即装备该战机的武器与元素。
 export const SHIPS = [
-  { id: 0, name: '苍鹰', weapon: 'pulse',  element: null,     tint: 0x66ccff, desc: '均衡机枪机' },
+  { id: 0, name: '苍鹰', weapon: 'pulse',  element: 'thunder', tint: 0x66ccff, desc: '均衡机枪机·雷麻痹' },
   { id: 1, name: '赤焰', weapon: 'missile', element: 'fire',  tint: 0xff7a3a, desc: '导弹机·火灼烧' },
   { id: 2, name: '寒霜', weapon: 'laser',   element: 'ice',   tint: 0x9ff0ff, desc: '激光机·冰减速' },
 ];

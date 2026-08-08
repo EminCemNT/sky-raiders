@@ -227,22 +227,28 @@ try {
     deg0.members === 0 && deg0.run === 0 && deg0.tot === 0 && !deg0.u5 && !deg0.u50 && deg0.count === 0 && deg0.mul === 1 && deg0.err === null,
     `僚机${deg0.members}架 combo.count=${deg0.count} 倍率=${deg0.mul} run=${deg0.run} total=${deg0.tot} u5=${deg0.u5} u50=${deg0.u50} err=${deg0.err}`);
 
-  // ② 苍鹰 SHIPS[0].element === null（真实战斗 5s，不手搓 reportHit）
+  // ② 苍鹰 SHIPS[0].element === 'thunder'（默认机体纳入元素协同，消纳 thunder 死代码）
   await enterGame({ wingman: 2, wingmanFirepower: 3 }, 0);
   const deg1 = await page.evaluate(async () => {
     const s = window.__SKY, sys = s.wingmanSystem, A = window.__ACH__;
     A.reset(); A.startRun('normal', 1);
     for (let i = 0; i < 6; i++) { const e = s.spawnEnemy(110 + i * 65, 300 + (i % 3) * 50, 'small', 'straight', 1); e.hp = 999999; e.setVelocity(0, 0); }
     await new Promise((r) => setTimeout(r, 5000));
-    const res = { shipEl: sys.element, members: sys.getCount(), count: sys.combo.count, mul: sys.getComboMul(),
+    const wired = sys.element === 'thunder';
+    // 受控驱动：交替 thunder 命中，验证协同机制对苍鹰(雷)生效、阈值=3 触发
+    A.reset(); A.startRun('normal', 1);
+    sys.combo.activeUntil = 0; sys.combo.count = 0; sys.combo.element = null; sys.combo.lastSide = null; sys.combo.lastAt = 0;
+    const t0 = s.time.now;
+    for (let i = 0; i < 15; i++) sys.reportHit(i % 2 === 1, 'thunder', t0 + i * 200);
+    const res = { wired, members: sys.getCount(), count: sys.combo.count, mul: sys.getComboMul(),
       run: A.getProgress('combo_element_5').cur, tot: A.getProgress('combo_element_50').cur,
       u5: A.isUnlocked('combo_element_5'), u50: A.isUnlocked('combo_element_50') };
     s.enemies.children.each((e) => { if (e.active) e.hit(999999); });
     return res;
   });
-  chk('AC-5b', '② 苍鹰（element=null）：5s 真实交战，协同恒 0、两成就不解锁',
-    (deg1.shipEl === null || deg1.shipEl === undefined) && deg1.members === 2 && deg1.run === 0 && deg1.tot === 0 && !deg1.u5 && !deg1.u50 && deg1.mul === 1,
-    `僚机元素=${JSON.stringify(deg1.shipEl)} 僚机${deg1.members}架 combo.count=${deg1.count} 倍率=${deg1.mul} run=${deg1.run} total=${deg1.tot}`);
+  chk('AC-5b', '② 苍鹰（element=thunder）：默认机体纳入协同，交替雷命中 15 次解锁 combo_element_5',
+    deg1.wired === true && deg1.members === 2 && deg1.run === 3 && deg1.u5 === true,
+    `僚机元素=${JSON.stringify(deg1.wired ? 'thunder' : null)} 僚机${deg1.members}架 combo.count=${deg1.count} 倍率=${deg1.mul} run=${deg1.run} total=${deg1.tot} u5=${deg1.u5}`);
 
   // ③ 携带元素但命中的是无元素子弹
   await enterGame({ wingman: 2, wingmanFirepower: 0 }, 1);
