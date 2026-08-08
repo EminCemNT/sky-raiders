@@ -52,7 +52,8 @@ try {
     const o = A.reportElementCombo; A.reportElementCombo = function (el) { triggers++; return o.call(A, el); };
     let act = 0, tot = 0, firstFive = -1;
     const t0 = performance.now();
-    const iv = setInterval(() => { tot++; if (sys.getComboMul() > 1) act++; if (firstFive < 0 && triggers >= 5) firstFive = performance.now() - t0; }, 50);
+    // firstFive = 达成 combo_element_5 阈值（现为 3 次协同）的耗时
+    const iv = setInterval(() => { tot++; if (sys.getComboMul() > 1) act++; if (firstFive < 0 && triggers >= 3) firstFive = performance.now() - t0; }, 50);
     await new Promise((r) => setTimeout(r, 12000));
     clearInterval(iv);
     A.reportElementCombo = o;
@@ -65,7 +66,7 @@ try {
     };
   });
   log(`E 真实波次 12s：触发 ${e.triggers} 次，增益占空比 ${(e.uptime * 100).toFixed(0)}%，`
-    + `combo_element_5 ${e.ach5 ? '已解锁' : '未解锁'}（用时 ${e.firstFiveMs > 0 ? Math.round(e.firstFiveMs) + 'ms' : 'N/A'}），累计 ${e.total}/50`);
+    + `combo_element_5 ${e.ach5 ? '已解锁' : '未解锁'}（单局 ${e.run}/3，用时 ${e.firstFiveMs > 0 ? Math.round(e.firstFiveMs) + 'ms' : 'N/A'}），累计 ${e.total}/30`);
 
   // ---- A 视觉取证：真实战斗中主炮子弹的旋转分布 ----
   await enterGame({ wingman: 2, wingmanFirepower: 2 }, 1);

@@ -87,13 +87,17 @@ export const ACHIEVEMENTS = [
     condition: (s) => s.wingmanKillsTotal >= 50,
     progress: (s) => ({ cur: Math.min(s.wingmanKillsTotal, 50), target: 50 }) },
 
-  { id: 'combo_element_5', name: '元素共鸣', desc: '单局触发 5 次元素协同', icon: '🎼', type: 'wingman', category: 'combat', hidden: false, live: true,
-    condition: (s) => s.elementCombosRun >= 5,
-    progress: (s) => ({ cur: Math.min(s.elementCombosRun, 5), target: 5 }) },
+  // 注：id 里的 5 / 50 是历史代号（存档解锁主键，改 id 会让老玩家已解锁记录失效并重复弹提示），
+  // 不代表阈值。实际阈值以 desc / condition / progress 为准（3 次 / 30 次）。
+  // 阈值取值依据：WINGMAN.COMBO.TRIGGER 由 3 上调到 5 后，触发 N 次协同 = 5N 次交替命中，
+  // 这里 3 / 30 是按"改动前 15 / 150 次交替命中"精确还原的等价值。
+  { id: 'combo_element_5', name: '元素共鸣', desc: '单局触发 3 次元素协同', icon: '🎼', type: 'wingman', category: 'combat', hidden: false, live: true,
+    condition: (s) => s.elementCombosRun >= 3,
+    progress: (s) => ({ cur: Math.min(s.elementCombosRun, 3), target: 3 }) },
 
-  { id: 'combo_element_50', name: '协同大师', desc: '累计触发 50 次元素协同', icon: '🎇', type: 'wingman', category: 'mastery', hidden: false, live: true,
-    condition: (s) => s.elementCombosTotal >= 50,
-    progress: (s) => ({ cur: Math.min(s.elementCombosTotal, 50), target: 50 }) },
+  { id: 'combo_element_50', name: '协同大师', desc: '累计触发 30 次元素协同', icon: '🎇', type: 'wingman', category: 'mastery', hidden: false, live: true,
+    condition: (s) => s.elementCombosTotal >= 30,
+    progress: (s) => ({ cur: Math.min(s.elementCombosTotal, 30), target: 30 }) },
 
   { id: 'element_fire', name: '烈焰焚敌', desc: '火元素累计击杀 50', icon: '🔥', type: 'element', category: 'mastery', hidden: false, live: true,
     condition: (s) => s.elementKillsTotal.fire >= 50,

@@ -391,26 +391,27 @@ try {
     expired.length === 2 && expired.every((b) => Math.abs(b.dmg - 10) < 1e-6 && !b.tinted));
 
   // 3-7 成就 combo_element_5 / combo_element_50 计数
+  // 阈值说明：id 里的 5 / 50 是历史代号（存档主键，不可改），实际 target = 3 / 30。
   const comboAch = await page.evaluate(() => {
     const A = window.__ACH__;
     A.reset();
     const p0 = A.getProgress('combo_element_5');
-    for (let i = 0; i < 5; i++) A.reportElementCombo('fire');
+    for (let i = 0; i < 3; i++) A.reportElementCombo('fire');
     const p5 = A.getProgress('combo_element_5');
     const p50a = A.getProgress('combo_element_50');
-    for (let i = 0; i < 45; i++) A.reportElementCombo('ice');
+    for (let i = 0; i < 27; i++) A.reportElementCombo('ice');
     const p50b = A.getProgress('combo_element_50');
     return {
       start: p0.cur, unlocked5: p5.unlocked, cur5: p5.cur, target5: p5.target,
       cur50a: p50a.cur, unlocked50: p50b.unlocked, cur50: p50b.cur, target50: p50b.target,
     };
   });
-  assert('combo_element_5 起始进度 0/5', comboAch.start === 0 && comboAch.target5 === 5);
-  assert('触发 5 次后 combo_element_5 解锁（5/5）',
-    comboAch.unlocked5 === true && comboAch.cur5 === 5);
-  assert('combo_element_50 同步累计（5 -> 50）',
-    comboAch.cur50a === 5 && comboAch.cur50 === 50 && comboAch.target50 === 50);
-  assert('累计 50 次后 combo_element_50 解锁', comboAch.unlocked50 === true);
+  assert('combo_element_5 起始进度 0/3', comboAch.start === 0 && comboAch.target5 === 3);
+  assert('触发 3 次后 combo_element_5 解锁（3/3）',
+    comboAch.unlocked5 === true && comboAch.cur5 === 3);
+  assert('combo_element_50 同步累计（3 -> 30）',
+    comboAch.cur50a === 3 && comboAch.cur50 === 30 && comboAch.target50 === 30);
+  assert('累计 30 次后 combo_element_50 解锁', comboAch.unlocked50 === true);
 
   // 3-8 累计次数持久化到存档 achievementStats.elementCombos
   const persisted = await page.evaluate(() => {
@@ -419,7 +420,114 @@ try {
     const raw = JSON.parse(localStorage.getItem('sky_raiders_save_v1'));
     return raw.achievementStats.elementCombos;
   });
-  assert('elementCombos 累计写回存档（=50）', persisted === 50);
+  assert('elementCombos 累计写回存档（=30）', persisted === 30);
+
+  // 3-7b 边界值精确性：condition / progress 必须与 desc 同步降到 3 / 30，
+  // 且解锁后 target 不得残留旧值 5 / 50（防"只改 desc 不改 condition"的半吊子改动）。
+  const edgeAch = await page.evaluate(() => {
+    const A = window.__ACH__;
+    A.reset();
+    A.reportElementCombo('fire');
+    A.reportElementCombo('fire');                      // run = total = 2
+    const at2 = { u5: A.isUnlocked('combo_element_5'), p5: A.getProgress('combo_element_5') };
+    A.reportElementCombo('fire');                      // run = total = 3
+    const at3 = { u5: A.isUnlocked('combo_element_5'), p5: A.getProgress('combo_element_5') };
+    for (let i = 3; i < 29; i++) A.reportElementCombo('fire');   // total = 29
+    const at29 = { u50: A.isUnlocked('combo_element_50'), p50: A.getProgress('combo_element_50') };
+    A.reportElementCombo('fire');                      // total = 30
+    const at30 = { u50: A.isUnlocked('combo_element_50'), p50: A.getProgress('combo_element_50') };
+    return { at2, at3, at29, at30 };
+  });
+  assert('边界：第 2 次协同时 combo_element_5 仍未解锁（进度 2/3）',
+    edgeAch.at2.u5 === false && edgeAch.at2.p5.cur === 2 && edgeAch.at2.p5.target === 3);
+  assert('边界：第 3 次协同时 combo_element_5 恰好解锁（进度 3/3）',
+    edgeAch.at3.u5 === true && edgeAch.at3.p5.cur === 3 && edgeAch.at3.p5.target === 3);
+  assert('边界：累计 29 次时 combo_element_50 仍未解锁（进度 29/30）',
+    edgeAch.at29.u50 === false && edgeAch.at29.p50.cur === 29 && edgeAch.at29.p50.target === 30);
+  assert('边界：累计 30 次时 combo_element_50 恰好解锁（进度 30/30）',
+    edgeAch.at30.u50 === true && edgeAch.at30.p50.cur === 30 && edgeAch.at30.p50.target === 30);
+  assert('解锁后 target 无旧阈值残留（3 / 30，绝不是 5 / 50）',
+    edgeAch.at3.p5.target === 3 && edgeAch.at30.p50.target === 30
+    && edgeAch.at3.p5.target !== 5 && edgeAch.at30.p50.target !== 50);
+
+  // 3-7d【Y-01】desc 文案数字必须与 target 同源。
+  //   盲区：condition/progress 降到 3/30 而 desc 仍写"5 次 / 50 次"时，
+  //   逻辑全绿但玩家在成就面板看到的是错误达成条件（面板只渲染 desc）。
+  //   判据：desc 里有且仅有 1 个数字，且它 === target。
+  const descSync = await page.evaluate(() => {
+    const A = window.__ACH__;
+    const grab = (id) => {
+      const d = A.getDefinition(id);
+      const nums = (d.desc.match(/\d+/g) || []).map(Number);
+      return { desc: d.desc, nums, target: A.getProgress(id).target };
+    };
+    return { d5: grab('combo_element_5'), d50: grab('combo_element_50') };
+  });
+  assert('desc 文案数字 == target（3 / 30，防"只改逻辑不改文案"）'
+    + `：「${descSync.d5.desc}」/「${descSync.d50.desc}」`,
+    descSync.d5.nums.length === 1 && descSync.d5.nums[0] === descSync.d5.target && descSync.d5.target === 3
+    && descSync.d50.nums.length === 1 && descSync.d50.nums[0] === descSync.d50.target && descSync.d50.target === 30);
+
+  // 3-7e【Y-02】超额采样锁死 Math.min 钳位上界。
+  //   盲区：此前所有采样都止步于 cur<=target，而 min(x,3) === min(x,5) 对任意 x<=3 恒成立，
+  //   所以 progress 里残留旧钳位 5 / 50 在数学上完全不可见。必须打到 target 之上才能证伪。
+  const clampCap = await page.evaluate(() => {
+    const A = window.__ACH__;
+    A.reset();
+    for (let i = 0; i < 9; i++) A.reportElementCombo('fire');   // run = total = 9 > target 3
+    const over5 = A.getProgress('combo_element_5');
+    for (let i = 0; i < 31; i++) A.reportElementCombo('fire');  // total = 40 > target 30
+    const over50 = A.getProgress('combo_element_50');
+    return { over5, over50 };
+  });
+  assert(`超额采样钳位上界 = target（9 次协同 -> cur=${clampCap.over5.cur}/3，40 次 -> cur=${clampCap.over50.cur}/30，绝不是 5 / 50）`,
+    clampCap.over5.cur === 3 && clampCap.over5.target === 3
+    && clampCap.over50.cur === 30 && clampCap.over50.target === 30);
+
+  // 3-7c 交替命中成本还原（核心断言）：走真实链路
+  //   reportHit -> EVENTS.WINGMAN_COMBO -> GameScene._onWingmanCombo -> reportElementCombo
+  // 计数机制（WingmanSystem.reportHit）：起链首次命中 count=1，来源交替 +1，
+  // count >= TRIGGER(5) 时触发并把 count 清 0（不是 1），element/lastSide/lastAt 保留。
+  // 所以 5 / 10 / 15 次交替命中分别对应第 1 / 2 / 3 次协同触发，
+  // target=3 意味着解锁成本恰好 15 次 —— 与 TRIGGER 上调前（3×5=15）等价。
+  const altCost = await page.evaluate(() => {
+    const s = window.__SKY;
+    const sys = s.wingmanSystem;
+    const A = window.__ACH__;
+    A.reset();
+    sys.combo.activeUntil = 0; sys.combo.count = 0;
+    sys.combo.element = null; sys.combo.lastSide = null; sys.combo.lastAt = 0;
+    const t0 = s.time.now;
+    const trail = [];       // 每次命中后的解锁快照（同步循环，不会被真实命中插队）
+    for (let i = 0; i < 16; i++) {
+      // 严格交替：byWingman 在 false/true 间轮换；元素固定 fire；间隔 200ms < WINDOW_MS(1200)
+      sys.reportHit(i % 2 === 1, 'fire', t0 + i * 200);
+      trail.push({
+        hits: i + 1,
+        unlocked: A.isUnlocked('combo_element_5'),
+        run: A.getProgress('combo_element_5').cur,
+      });
+    }
+    const firstUnlock = trail.find((x) => x.unlocked);
+    // 收尾复位：本用例会留下一段 BUFF_MS 增益窗口，不清掉会让后面 3-9 的
+    // "真实交替命中 5 次后增益激活" 变成空断言（buff 本来就还亮着）。
+    sys.combo.activeUntil = 0; sys.combo.count = 0;
+    sys.combo.element = null; sys.combo.lastSide = null; sys.combo.lastAt = 0;
+    return {
+      members: sys.getCount(),
+      at14: trail[13],
+      at15: trail[14],
+      firstUnlockAt: firstUnlock ? firstUnlock.hits : -1,
+      target: A.getProgress('combo_element_5').target,
+    };
+  });
+  assert('交替命中前置：本局至少 1 架僚机（reportHit 不会静默降级）', altCost.members >= 1);
+  assert('第 14 次交替命中时 combo_element_5 仍未解锁（协同 2 次）',
+    altCost.at14.unlocked === false && altCost.at14.run === 2);
+  assert('第 15 次交替命中时 combo_element_5 恰好解锁（协同 3 次）',
+    altCost.at15.unlocked === true && altCost.at15.run === 3);
+  assert('交替命中成本精确 = 15 次（等价 TRIGGER 上调前的 3×5）',
+    altCost.firstUnlockAt === 15 && altCost.target === 3);
 
   // 3-9 真实链路：僚机弹命中敌人自动上报（不手搓 reportHit）
   const realHit = await page.evaluate(() => {

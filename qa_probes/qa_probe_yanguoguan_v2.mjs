@@ -17,7 +17,8 @@ const pageErrors = []; const consoleErrors = [];
 page.on('pageerror', (e) => pageErrors.push(String(e)));
 page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
 
-async function enterGame(up, ship = 1) {
+// keepWaves=true 时保留真实波次（不停波、不清场），用于需要真实接敌节奏的测量（见 E1）。
+async function enterGame(up, ship = 1, keepWaves = false) {
   await page.evaluate(({ u, sh }) => {
     const s = window.__SAVE.load();
     Object.assign(s.upgrades, u); s.selectedShip = sh; s.tutorialDone = true;
@@ -27,6 +28,7 @@ async function enterGame(up, ship = 1) {
     g.scene.start('GameScene', { mode: 'normal' });
   }, { u: up, sh: ship });
   await sleep(1300);
+  if (keepWaves) return;
   await page.evaluate(() => {
     const s = window.__SKY;
     s.waves = null;
@@ -133,33 +135,68 @@ try {
     `重生坐标 (${edge.x.toFixed(1)}, ${edge.y.toFixed(1)}) offset.x=${edge.offx}`);
 
   // ---------- E. 真实战斗中 combo 增益占空比（数值失控风险） ----------
-  await enterGame({ wingman: 2, wingmanFirepower: 0 }, 1);
-  const uptime = await page.evaluate(async () => {
+  // 口径修正（Y-04）：旧版在"6 架 hp=999999 冻结敌机、100% 接敌"的合成场景下测占空比，
+  //   该场景 buff 近乎常亮（实测 85%~98%，且与 TRIGGER 取值几乎无关），断言线 <70% 永远红，
+  //   量到的是探针自身的场景上限而非平衡性。现改为在**真实波次**下测量（不停波、不冻敌），
+  //   这才是玩家实际经历的接敌节奏；实测 TRIGGER=5 约 17%、TRIGGER=3 约 32%，故守门线取 <50%。
+  //   单次采样波动较大（0~34%），这里取 2 次采样均值降方差。
+  const samples = [];
+  for (let k = 0; k < 2; k++) {
+    await enterGame({ wingman: 2, wingmanFirepower: 0 }, 1, true);   // keepWaves：真实波次
+    const r = await page.evaluate(async () => {
+      const s = window.__SKY; const sys = s.wingmanSystem; const A = window.__ACH__;
+      A.reset(); A.startRun('normal', 1);
+      let triggers = 0;
+      const o = A.reportElementCombo; A.reportElementCombo = function (el) { triggers++; return o.call(A, el); };
+      let activeFrames = 0; let totalFrames = 0;
+      const iv = setInterval(() => {
+        totalFrames++;
+        if (sys.getComboMul() > 1) activeFrames++;
+      }, 50);
+      await new Promise((r2) => setTimeout(r2, 8000));
+      clearInterval(iv);
+      A.reportElementCombo = o;
+      return {
+        triggers,
+        uptime: totalFrames ? activeFrames / totalFrames : 0,
+        totalFrames,
+        alive: !!(s.player && s.player.active),
+      };
+    });
+    samples.push(r);
+  }
+  const avgUptime = samples.reduce((a, b) => a + b.uptime, 0) / samples.length;
+  chk('E1 真实波次下 combo 增益占空比 < 50%（不是常驻 buff）', avgUptime < 0.5,
+    `真实波次 8s × ${samples.length} 次采样，占空比均值 ${(avgUptime * 100).toFixed(0)}%（`
+    + samples.map((r, i) => `#${i + 1} ${(r.uptime * 100).toFixed(0)}%/触发${r.triggers}次/存活${r.alive}`).join(' ')
+    + '）');
+  await enterGame({ wingman: 2, wingmanFirepower: 0 }, 1);   // 复位回隔离环境，供 E2 使用
+  // E2 守门口径换成"交替命中次数"：
+  //   旧口径「6s 内触发次数 < 5」硬编码了成就阈值，且依赖帧率 + 探针 100% 接敌的理想环境，
+  //   阈值降到 3 之后按理想速率 6s 内很可能达成，会误报红灯。
+  //   新口径直接量「解锁 combo_element_5 需要多少次交替命中」——不受帧率/接敌率影响，
+  //   且正好锁住本次的设计意图：成本 = TRIGGER(5) × target(3) = 15 次，与 TRIGGER 上调前等价。
+  const cost = await page.evaluate(() => {
     const s = window.__SKY; const sys = s.wingmanSystem;
-    // 恢复波次，放一批耐打的敌机，模拟正常交战 6 秒
-    for (let i = 0; i < 6; i++) {
-      const e = s.spawnEnemy(120 + i * 60, 300 + (i % 3) * 60, 'small', 'straight', 1);
-      e.hp = 999999; e.setVelocity(0, 0);
-    }
-    let triggers = 0;
-    const origEmit = sys.reportHit.bind(sys);
-    let activeFrames = 0; let totalFrames = 0;
-    const iv = setInterval(() => {
-      totalFrames++;
-      if (sys.getComboMul() > 1) activeFrames++;
-    }, 50);
     const A = window.__ACH__;
-    const o = A.reportElementCombo; A.reportElementCombo = function (el) { triggers++; return o.call(A, el); };
-    await new Promise((r) => setTimeout(r, 6000));
-    clearInterval(iv);
-    A.reportElementCombo = o;
-    s.enemies.children.each((e) => { if (e.active) e.hit(999999); });
-    return { triggers, uptime: totalFrames ? activeFrames / totalFrames : 0, totalFrames };
+    A.reset();
+    sys.combo.activeUntil = 0; sys.combo.count = 0;
+    sys.combo.element = null; sys.combo.lastSide = null; sys.combo.lastAt = 0;
+    const t0 = s.time.now;
+    let hitsToUnlock = -1;
+    // 严格交替、同元素、间隔 200ms（< WINDOW_MS 1200）；同步循环，不会被真实命中插队
+    for (let i = 0; i < 30 && hitsToUnlock < 0; i++) {
+      sys.reportHit(i % 2 === 1, 'fire', t0 + i * 200);
+      if (A.isUnlocked('combo_element_5')) hitsToUnlock = i + 1;
+    }
+    const target = A.getProgress('combo_element_5').target;
+    sys.combo.activeUntil = 0; sys.combo.count = 0;
+    sys.combo.element = null; sys.combo.lastSide = null; sys.combo.lastAt = 0;
+    return { hitsToUnlock, target, members: sys.getCount() };
   });
-  chk('E1 combo 增益占空比 < 70%（不是常驻 buff）', uptime.uptime < 0.7,
-    `6s 交战触发 ${uptime.triggers} 次，增益占空比 ${(uptime.uptime * 100).toFixed(0)}%`);
-  chk('E2 单局 5 次触发（combo_element_5）不应 6s 内达成', uptime.triggers < 5,
-    `6s 内触发 ${uptime.triggers} 次`);
+  chk('E2 combo_element_5 解锁成本 = 15 次交替命中（不可被廉价刷出）', cost.hitsToUnlock === 15,
+    `实测 ${cost.hitsToUnlock} 次交替命中解锁，target=${cost.target}，僚机 ${cost.members} 架`
+    + `（期望 TRIGGER(5) × target(3) = 15）`);
 
   // ---------- F. 玩家阵亡后僚机仍被敌弹击落（状态一致性） ----------
   await enterGame({ wingman: 1, wingmanFirepower: 0 }, 1);
@@ -226,9 +263,12 @@ try {
     return { dcOld, dcNew0, dcNew1, dcOldAfter, oldDestroyed: oldSys.scene === null };
   });
   chk('H1 新局 _deadCount 从 0 起算', cross.dcNew0 === 0, `新局初始 _deadCount=${cross.dcNew0}`);
+  // 判据修正（Y-03）：原判据 dcOldAfter === dcOld 方向是反的 ——
+  //   destroy() 会在 L305 把 _deadCount 显式清零，所以解绑正确时 dcOldAfter 恒为 0、必然 !== dcOld(=1)，
+  //   反而是"旧 handler 仍绑着继续吃事件"时 dcOldAfter 被顶回 1 === dcOld 才亮绿。判据必须改成 old 恒 0。
   chk('H2 旧 System 已 destroy 且不再吃事件（无串台）',
-    cross.oldDestroyed === true && cross.dcOldAfter === cross.dcOld,
-    `旧 _deadCount ${cross.dcOld} -> ${cross.dcOldAfter}，新局 die 后 _deadCount=${cross.dcNew1}`);
+    cross.oldDestroyed === true && cross.dcOldAfter === 0 && cross.dcNew1 === 1,
+    `destroy 后 old=0（L305 显式清零）；新局 die 后 new=${cross.dcNew1} old=${cross.dcOldAfter}`);
 
   log('');
   log(`pageerror=${pageErrors.length} consoleError=${consoleErrors.length}`);

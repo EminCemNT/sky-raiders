@@ -10,3 +10,9 @@ shots/
 
 # 内部交接文档（AI 会话 handoff，不对外公开）
 AGENT_HANDOFF.md
+
+# 损坏 .git 的备份现场（auto-gc 中断打坏对象库时保留，几千个文件，绝不入库）
+.git_broken_*/
+
+# QA 临时工作目录（基线对照 .bak、故意改错阈值的变体文件）
+qa_yan/
