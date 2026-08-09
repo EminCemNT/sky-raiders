@@ -119,6 +119,10 @@ export const ACHIEVEMENTS = [
     condition: (s) => s.elementKillsTotal.ice >= 50,
     progress: (s) => ({ cur: _safeMin(s.elementKillsTotal.ice, 50), target: 50 }) },
 
+  { id: 'element_thunder', name: '雷霆万钧', desc: '雷元素累计击杀 50', icon: '⚡', type: 'element', category: 'mastery', hidden: false, live: true,
+    condition: (s) => s.elementKillsTotal.thunder >= 50,
+    progress: (s) => ({ cur: _safeMin(s.elementKillsTotal.thunder, 50), target: 50 }) },
+
   { id: 'egg_arsenal', name: '军火库', desc: '单局用齐 3 种武器', icon: '🧰', type: 'special', category: 'mastery', hidden: true, live: true,
     condition: (s) => Object.keys(s.weaponsUsed).length >= 3,
     progress: (s) => ({ cur: _safeMin(Object.keys(s.weaponsUsed).length, 3), target: 3 }) },
