@@ -185,7 +185,7 @@ export const UPGRADE_TREE = {
   magnet:    { name: '磁力', max: 4, baseCost: 250, costMul: 1.5 },
   wingman:   { name: '僚机', max: 2, baseCost: 800, costMul: 2.0 },
   // 僚机火力：与"僚机数量"并存的独立升级项，决定 WINGMAN.WEAPON_LV 档位（0~3）
-  wingmanFirepower: { name: '僚机火力', max: 3, baseCost: 600, costMul: 1.8 },
+  wingmanFirepower: { name: '僚机火力', max: 5, baseCost: 600, costMul: 1.8 },
 };
 
 // 中国股市/涨跌无关，这里是玩家阵营配色（青蓝科技风）
@@ -318,5 +318,8 @@ export const WINGMAN = {
     { name: '散射',     key: 'bullet_scatter', shots: 3, spreadDeg: 8,  interval: 250, dmgMul: 0.60, pierce: 0, tinted: false },
     { name: '穿透',     key: 'bullet_pulse',   shots: 2, spreadDeg: 6,  interval: 240, dmgMul: 0.80, pierce: 1, tinted: false },
     { name: '元素弹',   key: 'bullet_scatter', shots: 3, spreadDeg: 11, interval: 240, dmgMul: 0.95, pierce: 0, tinted: true },
+    // 第三版④：追踪导弹 / 穿透激光（纯新增档位，沿用玩家 missiles 转向与穿透机制，零新物理）
+    { name: '追踪导弹', key: 'bullet_pulse',   shots: 1, spreadDeg: 0,  interval: 300, dmgMul: 1.30, pierce: 0, tinted: false, homing: true },
+    { name: '穿透激光', key: 'bullet_pulse',   shots: 1, spreadDeg: 0,  interval: 150, dmgMul: 1.10, pierce: 8, tinted: false, laser: true },
   ],
 };

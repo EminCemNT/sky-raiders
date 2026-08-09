@@ -168,6 +168,8 @@ export default class UIScene extends Phaser.Scene {
       }).setOrigin(0.5).setDepth(102).setVisible(false);
       this.wmDots.push({ g, cd, x, y });
     }
+    // 集火准星（第三版③）：锁定时在焦点目标位置画圆环 + 十字（默认隐藏）
+    this.wmFocus = this.add.graphics().setDepth(103).setVisible(false);
     // 状态回调（只读快照，零直接对象操作）
     this._onWmStatus = (s) => {
       if (!this.wmDots || !s) return;
@@ -187,7 +189,25 @@ export default class UIScene extends Phaser.Scene {
           d.cd.setVisible(false);
         }
       }
-      this.wmCountText.setText(`Lv${s.weaponLv} · ${s.count}架 · 协同×${s.comboMul ? s.comboMul.toFixed(2) : '1.00'}`);
+      // 第三版③集火指令：锁定目标时画准星 + 计数文本追加"· 集火"
+      if (s.focus && s.focus.active) {
+        const fx = s.focus.x, fy = s.focus.y;
+        this.wmFocus.setVisible(true).clear();
+        this.wmFocus.lineStyle(2, 0xffd54a, 0.95);
+        this.wmFocus.strokeCircle(fx, fy, 26);
+        this.wmFocus.lineStyle(2, 0xffd54a, 0.7);
+        this.wmFocus.beginPath();
+        this.wmFocus.moveTo(fx - 34, fy); this.wmFocus.lineTo(fx - 30, fy);
+        this.wmFocus.moveTo(fx + 30, fy); this.wmFocus.lineTo(fx + 34, fy);
+        this.wmFocus.moveTo(fx, fy - 34); this.wmFocus.lineTo(fx, fy - 30);
+        this.wmFocus.moveTo(fx, fy + 30); this.wmFocus.lineTo(fx, fy + 34);
+        this.wmFocus.strokePath();
+      } else {
+        this.wmFocus.setVisible(false);
+      }
+      let txt = `Lv${s.weaponLv} · ${s.count}架 · 协同×${s.comboMul ? s.comboMul.toFixed(2) : '1.00'}`;
+      if (s.focus && s.focus.active) txt += ' · 集火';
+      this.wmCountText.setText(txt);
     };
   }
 

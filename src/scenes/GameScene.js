@@ -120,6 +120,7 @@ export default class GameScene extends Phaser.Scene {
     // 输入
     this.cursors = this.input.keyboard.createCursorKeys();
     this.bombKey = this.input.keyboard.addKey('SPACE');
+    this.focusKey = this.input.keyboard.addKey('F'); // 第三版③集火指令：切换僚机集火
 
     // 波次系统（Boss Rush 模式不生成普通波次，改为纯 Boss 序列）
     this.bossRushIndex = 0;
@@ -394,6 +395,8 @@ export default class GameScene extends Phaser.Scene {
 
     // 键盘炸弹
     if (Phaser.Input.Keyboard.JustDown(this.bombKey)) this.useBomb();
+    // 第三版③集火指令：F 键切换僚机集火（无僚机/无目标时安全降级为空操作）
+    if (Phaser.Input.Keyboard.JustDown(this.focusKey) && this.wingmanSystem) this.wingmanSystem.toggleFocus();
   }
 
   /** 激光束持续 DPS（B4）：每帧对列内敌机/Boss 结算，手动包围盒判定 */
@@ -739,8 +742,10 @@ export default class GameScene extends Phaser.Scene {
     if (b.texture.key !== cfg.key) b.setTexture(cfg.key);
     b.setActive(true).setVisible(true);
     b.body.enable = true;
-    b.homing = false;
+    b.homing = !!cfg.homing;         // 第三版④：追踪导弹复用 steerHomingBullets 转向；非导弹档恒 false
     b.isBomb = false;
+    b.setScale(1, 1);                // 第三版④：复位缩放，避免激光拉伸污染池复用
+    if (cfg.laser) b.setScale(1, 2.6); // 穿透激光：纵向拉伸成光束观感（命中盒用纹理尺寸，不随之放大）
     b.pierce = cfg.pierce || 0;      // >0 时命中后不销毁（穿透档）
     b._lastHit = null;
     b.damage = BULLET.PLAYER_DMG * cfg.dmgMul;
@@ -760,6 +765,10 @@ export default class GameScene extends Phaser.Scene {
     const comboTint = comboMul > 1 && this.wingmanSystem ? this.wingmanSystem.getComboTint(this.time.now) : 0;
     if (comboTint) {
       b.setTint(comboTint);
+      b._wmTinted = true;
+    } else if (cfg.laser) {
+      // 第三版④穿透激光：激光青染色；回收时在 killBullet 里 clearTint 清除
+      b.setTint(0x66ffff);
       b._wmTinted = true;
     } else if (cfg.tinted && b.element && ELEMENTS[b.element]) {
       // 元素弹（lv3）按元素染色；回收时在 killBullet 里清除，避免污染主炮子弹
@@ -901,6 +910,7 @@ export default class GameScene extends Phaser.Scene {
     // 误计入 wingman_50/wingman_first（且已持久化不可逆）。僚机每次发射都会重设 true，不影响僚机统计。
     b.byWingman = false;
     b.setRotation(0);   // P1-1 旋转不变量：僚机任意角度弹回收后主炮复用不再残留旋转
+    b.setScale(1, 1);   // 第三版④：复位缩放，杜绝激光拉伸污染主炮/其他僚机弹
   }
 
   recycleBullets() {

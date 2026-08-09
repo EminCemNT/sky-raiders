@@ -51,6 +51,7 @@ export default class WingmanSystem {
     // 战术分工：编队内是否存在 aim='element' 的角色（决定要不要扫同元素目标）
     this._hasElementAim = false;
     this._elementTarget = null;
+    this._focusTarget = null;       // 第三版③集火指令：锁定的优先火力目标（null=无）
 
     // 元素协同 combo 状态机（System 单例，一局一份）
     //   element  当前链路的元素；count 交替命中计数；lastSide 上次命中来源(true=僚机)
@@ -137,6 +138,8 @@ export default class WingmanSystem {
     }
     // 缓存目标可能在两次扫描之间死亡，用前先验活
     if (this._elementTarget && !this._elementTarget.active) this._elementTarget = null;
+    // 焦点目标同理：阵亡即自动解除集火（不残留死目标导致哑火）
+    if (this._focusTarget && !this._focusTarget.active) this._focusTarget = null;
 
     // 共享快照：最近目标只算一次（原实现是每机一次全组扫描）
     const ctx = {
@@ -145,6 +148,7 @@ export default class WingmanSystem {
       playerActive: true,
       target: this.scene.findNearestTarget ? this.scene.findNearestTarget(p.x, p.y) : null,
       elementTarget: this._elementTarget,
+      focusTarget: (this._focusTarget && this._focusTarget.active) ? this._focusTarget : null,
       threats: this._threats,
       recomputeDodge: recompute,
       time,
@@ -175,6 +179,11 @@ export default class WingmanSystem {
       weaponLv: this.weaponLv,
       element: this.element,
       comboMul: this.getComboMul(time),
+      focus: {
+        active: !!(this._focusTarget && this._focusTarget.active),
+        x: (this._focusTarget && this._focusTarget.active) ? this._focusTarget.x : 0,
+        y: (this._focusTarget && this._focusTarget.active) ? this._focusTarget.y : 0,
+      },
       members,
     });
   }
@@ -292,6 +301,30 @@ export default class WingmanSystem {
   getComboTint(now) {
     if (this.getComboMul(now) <= 1) return 0;
     return COMBO_TINT[this.combo.element] || 0;
+  }
+
+  // ---- 第三版③集火指令：僚机集中火力锁定指定目标 ----
+
+  /** 设置焦点目标（外部/输入调用）。传 null 等同于 clearFocus。 */
+  setFocusTarget(t) {
+    this._focusTarget = (t && t.active) ? t : null;
+    return this._focusTarget;
+  }
+
+  /** 解除集火 */
+  clearFocus() {
+    this._focusTarget = null;
+  }
+
+  /**
+   * 切换集火：当前有活的焦点目标则解除；否则把"当前最近目标"设为焦点。
+   * 由 GameScene 的 F 键（JustDown）调用。无玩家/无目标时安全降级为空操作。
+   */
+  toggleFocus() {
+    if (this._focusTarget && this._focusTarget.active) { this._focusTarget = null; return; }
+    const p = this.scene && this.scene.player;
+    const t = (p && this.scene.findNearestTarget) ? this.scene.findNearestTarget(p.x, p.y) : null;
+    this._focusTarget = (t && t.active) ? t : null;
   }
 
   /** 玩家元素变化时同步给所有僚机（保证僚机弹 element 与玩家一致） */

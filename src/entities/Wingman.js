@@ -128,6 +128,8 @@ export default class Wingman extends Phaser.Physics.Arcade.Sprite {
    *               没有则退回最近目标 —— 绝不因为选不到目标就哑火。
    */
   _pickTarget(ctx) {
+    // 第三版③集火指令：锁定的焦点目标绝对优先（压过角色瞄准偏好），集火期内所有僚机打同一个
+    if (ctx && ctx.focusTarget && ctx.focusTarget.active) return ctx.focusTarget;
     const aim = (this._roleCfg && this._roleCfg.aim) || 'nearest';
     if (aim === 'element' && ctx.elementTarget && ctx.elementTarget.active) return ctx.elementTarget;
     return ctx.target;
