@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, LEVELS, WEAPONS, SHIPS } from '../config/GameConfig.js';
+import { SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, LEVELS, WEAPONS, SHIPS, WINGMAN } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
 import { audio } from '../systems/AudioSystem.js';
@@ -91,6 +91,9 @@ export default class UIScene extends Phaser.Scene {
       fontFamily: 'sans-serif', fontSize: '12px', color: '#9ff0ff',
     }).setDepth(101);
 
+    // 僚机状态指示（第三版起步）：数量 / 元素 / 武器等级 / 重生倒计时
+    this._buildWingmanHud();
+
     this.skillKey = this.input.keyboard.addKey('F');
 
     // 暂停按钮（右上角：放大发光 + 轻微 alpha 脉冲，A5）
@@ -143,6 +146,49 @@ export default class UIScene extends Phaser.Scene {
 
   makePauseButton(x, y, label, cb) {
     return new NeonButton(this, x, y, label, { onDown: cb }).container;
+  }
+
+  // ---- 僚机状态指示（第三版起步）----
+  // 预建 WINGMAN.MAX 个小圆 + 倒计时文本（初始隐藏），收到 WINGMAN_STATUS 后按快照更新。
+  _buildWingmanHud() {
+    const WM_COLORS = { fire: 0xff6633, ice: 0x33ccff, thunder: 0xffe14a };
+    this._wmColors = WM_COLORS;
+    this.wmTitle = this.add.text(16, 146, '僚机', {
+      fontFamily: 'sans-serif', fontSize: '12px', color: '#9ff0ff',
+    }).setDepth(101).setVisible(false);
+    this.wmCountText = this.add.text(16, 164, '', {
+      fontFamily: 'sans-serif', fontSize: '11px', color: '#aaccdd',
+    }).setDepth(101).setVisible(false);
+    this.wmDots = [];
+    for (let i = 0; i < WINGMAN.MAX; i++) {
+      const x = 58 + i * 22, y = 152;
+      const g = this.add.graphics().setDepth(101).setVisible(false);
+      const cd = this.add.text(x, y, '', {
+        fontFamily: 'sans-serif', fontSize: '10px', color: '#ff8888',
+      }).setOrigin(0.5).setDepth(102).setVisible(false);
+      this.wmDots.push({ g, cd, x, y });
+    }
+    // 状态回调（只读快照，零直接对象操作）
+    this._onWmStatus = (s) => {
+      if (!this.wmDots || !s) return;
+      this.wmTitle.setVisible(true);
+      this.wmCountText.setVisible(true);
+      for (let i = 0; i < this.wmDots.length; i++) {
+        const d = this.wmDots[i];
+        const m = (s.members && s.members[i]) || null;
+        if (!m || i >= s.count) { d.g.setVisible(false); d.cd.setVisible(false); continue; }
+        d.g.setVisible(true).clear();
+        const col = m.alive ? (this._wmColors[m.element] || 0x88aacc) : 0x445566;
+        d.g.fillStyle(col, m.alive ? 1 : 0.5);
+        d.g.fillCircle(d.x, d.y, 7);
+        if (!m.alive && m.respawnRemainMs > 0) {
+          d.cd.setVisible(true).setText(Math.ceil(m.respawnRemainMs / 1000).toString());
+        } else {
+          d.cd.setVisible(false);
+        }
+      }
+      this.wmCountText.setText(`Lv${s.weaponLv} · ${s.count}架 · 协同×${s.comboMul ? s.comboMul.toFixed(2) : '1.00'}`);
+    };
   }
 
   togglePause() {
@@ -254,6 +300,9 @@ export default class UIScene extends Phaser.Scene {
       if (!this._achShowing) this._nextAch();
     };
     EventBus.on(EVENTS.ACHIEVEMENT_UNLOCKED, this._onAchUnlock);
+
+    // 僚机状态指示（第三版起步）
+    EventBus.on(EVENTS.WINGMAN_STATUS, this._onWmStatus);
   }
 
   update() {
@@ -364,5 +413,6 @@ export default class UIScene extends Phaser.Scene {
     EventBus.off(EVENTS.COMBO_CHANGED, this._onCombo);
     EventBus.off(EVENTS.WEAPON_CHANGED, this._onWeapon);
     EventBus.off(EVENTS.ACHIEVEMENT_UNLOCKED, this._onAchUnlock);
+    EventBus.off(EVENTS.WINGMAN_STATUS, this._onWmStatus);
   }
 }

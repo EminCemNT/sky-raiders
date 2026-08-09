@@ -55,6 +55,7 @@ export const EVENTS = {
   WINGMAN_DESTROYED: 'wingman-destroyed',   // payload = { slot, x, y }
   WINGMAN_RESPAWNED: 'wingman-respawned',   // payload = { slot, x, y }
   WINGMAN_COMBO: 'wingman-combo',           // payload = { element, count }
+  WINGMAN_STATUS: 'wingman-status',         // payload = { count, weaponLv, element, comboMul, members:[{alive,respawnRemainMs,element}] }（HUD 僚机指示，第三版起步）
 };
 
 // 玩家基础属性

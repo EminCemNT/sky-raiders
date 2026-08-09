@@ -154,6 +154,29 @@ export default class WingmanSystem {
       const w = this.members[i];
       if (w.active && w.alive) w.update(dt, ctx);
     }
+
+    // 状态快照广播（HUD 僚机指示，第三版起步）：只读快照，不动战斗逻辑
+    this._emitStatus(time);
+  }
+
+  /**
+   * 状态快照广播（第三版 HUD 僚机指示）：每帧在 update 末尾调用，
+   * 仅读取 members / weaponLv / element / comboMul，构造轻量快照经 EventBus 发出。
+   * 注意：0 架 / 玩家阵亡时 update 已在上方早返回，本方法不会被调用，天然零开销。
+   */
+  _emitStatus(time) {
+    const members = this.members.map((w) => ({
+      alive: !!w.alive,
+      respawnRemainMs: (w.respawnAt && w.respawnAt > time) ? (w.respawnAt - time) : 0,
+      element: w.element,
+    }));
+    EventBus.emit(EVENTS.WINGMAN_STATUS, {
+      count: this.members.length,
+      weaponLv: this.weaponLv,
+      element: this.element,
+      comboMul: this.getComboMul(time),
+      members,
+    });
   }
 
   /**
