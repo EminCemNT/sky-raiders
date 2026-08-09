@@ -39,8 +39,17 @@ export default class MenuScene extends Phaser.Scene {
       fontFamily: 'sans-serif', fontSize: '20px', color: '#4a90c0',
     }).setOrigin(0.5).setAlpha(0.8);
 
+    // 教程按钮（重看新手引导，进入第 1 关并强制显示教程）
+    new NeonButton(this, cx, 400, '新手教程', {
+      stroke: COLORS.accent, fontSize: 22, onDown: () => {
+        if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen) return;
+        audio.resume(); audio.startBgm(); audio.sfx('ui');
+        this.scene.start(SCENES.GAME, { levelId: 1, mode: 'normal', forceTutorial: true });
+      },
+    });
+
     // 开始按钮
-        new NeonButton(this, cx, 480, '开始游戏', {
+    new NeonButton(this, cx, 480, '开始游戏', {
       fontSize: 26,
       onDown: () => {
         if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen) return;

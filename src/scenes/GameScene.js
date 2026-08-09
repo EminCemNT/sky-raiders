@@ -40,6 +40,7 @@ export default class GameScene extends Phaser.Scene {
   init(data) {
     this.mode = (data && data.mode) || 'normal'; // 'normal' | 'bossrush'
     this.levelId = data.levelId || 1;
+    this.forceTutorial = !!(data && data.forceTutorial); // 菜单"教程"按钮强制重看
     this.stats = { kills: 0, coins: 0, damageTaken: 0, spawned: 0 };
     this.score = 0;
     this.gameEnded = false;
@@ -165,8 +166,8 @@ export default class GameScene extends Phaser.Scene {
     // 那时 wingmanSystem 还是 null，拿不到 getGroup()）
     this.setupWingmanCollider();
 
-    // 首玩教程：首次进入游戏显示操作引导（Boss Rush 跳过，避免阻塞）
-    if (this.mode !== 'bossrush' && !SaveManager.get('tutorialDone')) this.showTutorial();
+    // 首玩教程：首次进入游戏显示操作引导（Boss Rush 跳过，避免阻塞）；forceTutorial 供菜单"教程"按钮重看
+    if (this.mode !== 'bossrush' && (!SaveManager.get('tutorialDone') || this.forceTutorial)) this.showTutorial();
 
     // Boss Rush：直接进入 Boss 序列
     if (this.mode === 'bossrush') this.startBossRush();
@@ -982,25 +983,28 @@ export default class GameScene extends Phaser.Scene {
     const ov = this.add.container(0, 0).setDepth(600);
     const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.72)
       .setOrigin(0);
-    const panel = this.add.rectangle(cx, cy, 440, 220, 0x0d2236, 0.98)
+    const panel = this.add.rectangle(cx, cy, 470, 300, 0x0d2236, 0.98)
       .setStrokeStyle(2, COLORS.accent);
     const steps = [
       '移动战机：拖动屏幕，或用方向键 / WASD',
       '自动开火：无需操作，子弹持续射出',
-      '技能：能量满按【空格】放星风暴，炸弹清屏',
+      '技能：能量满按【空格】释放星风暴；清屏炸弹可救场',
+      '顶部 HUD：血量条 / 能量条 / 得分；拥有僚机时还会显示元素圆点（火/冰/雷）与「Lv·架数·协同倍率」',
+      '集火：解锁僚机后按【F】，全体僚机集中攻击当前目标（屏幕出现准星）',
+      '进阶：机库升级可解锁更多僚机、追踪导弹、穿透激光；你与僚机用同元素交替命中会触发增伤 combo',
     ];
     let i = 0;
-    const txt = this.add.text(cx, cy - 36, steps[0], {
-      fontFamily: 'sans-serif', fontSize: '20px', color: '#cfe8ff', align: 'center',
-      wordWrap: { width: 380 },
+    const txt = this.add.text(cx, cy - 66, steps[0], {
+      fontFamily: 'sans-serif', fontSize: '19px', color: '#cfe8ff', align: 'center',
+      wordWrap: { width: 420 },
     }).setOrigin(0.5);
-    const dots = this.add.text(cx, cy + 18, '● ○ ○', {
+    const dots = this.add.text(cx, cy + 44, '● ○ ○ ○ ○ ○', {
       fontFamily: 'sans-serif', fontSize: '16px', color: COLORS.accent,
     }).setOrigin(0.5);
-    const nextBtn = this.add.text(cx + 110, cy + 70, '下一步', {
+    const nextBtn = this.add.text(cx + 120, cy + 105, '下一步', {
       fontFamily: 'sans-serif', fontSize: '20px', fontStyle: '700', color: '#7cf3ff',
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-    const skipBtn = this.add.text(cx - 110, cy + 70, '跳过', {
+    const skipBtn = this.add.text(cx - 120, cy + 105, '跳过', {
       fontFamily: 'sans-serif', fontSize: '20px', fontStyle: '700', color: '#88bbdd',
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
@@ -1015,12 +1019,16 @@ export default class GameScene extends Phaser.Scene {
       SaveManager.set('tutorialDone', true);
       this.physics.resume();
       ov.destroy();
+      this._tutorialCtl = null;
     };
-    nextBtn.on('pointerdown', () => {
+    const advance = () => {
       if (i < steps.length - 1) { i++; render(); } else finish();
-    });
+    };
+    nextBtn.on('pointerdown', advance);
     skipBtn.on('pointerdown', finish);
     this.input.keyboard.once('keydown-ESC', finish); // 兜底：ESC 也能关闭教程，避免卡死
+    // 自动化真测钩子（不影响玩法，与 window.__SKY 同性质）
+    this._tutorialCtl = { advance, finish, getStep: () => i, total: steps.length };
     ov.add([dim, panel, txt, dots, nextBtn, skipBtn]);
     render();
   }
