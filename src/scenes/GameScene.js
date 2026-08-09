@@ -320,7 +320,7 @@ export default class GameScene extends Phaser.Scene {
     EventBus.on(EVENTS.USE_SUPER, this._onUseSuper);
 
     // 元素协同 combo 触发 -> 成就统计（combo_element_5 / combo_element_50）
-    this._onWingmanCombo = (e) => AchievementManager.reportElementCombo(e && e.element);
+    this._onWingmanCombo = (e) => { AchievementManager.reportElementCombo(e && e.element); SaveManager.addDailyProgress('combos', 1); }; // #每日任务：元素协同进度
     EventBus.on(EVENTS.WINGMAN_COMBO, this._onWingmanCombo);
   }
 
@@ -573,6 +573,7 @@ export default class GameScene extends Phaser.Scene {
     this.stats.coins++;
     AchievementManager.reportCoins(this.stats.coins);
     SaveManager.addCoins(1);
+    SaveManager.addDailyProgress('coins', 1); // #每日任务：金币收集进度
     EventBus.emit(EVENTS.COIN_COLLECTED, this.stats.coins);
     EventBus.emit(EVENTS.SCORE_CHANGED, 20);
     EventBus.emit(EVENTS.FLOAT_SCORE, { x: coin.x, y: coin.y, amount: 20, special: true });
@@ -698,6 +699,7 @@ export default class GameScene extends Phaser.Scene {
     if (this.combo > this.maxCombo) this.maxCombo = this.combo;
     const mult = this.comboMultiplier();
     this.stats.kills++;
+    SaveManager.addDailyProgress('kills', 1); // #每日任务：击杀进度
     const amount = Math.round(10 * mult);
     EventBus.emit(EVENTS.SCORE_CHANGED, amount);
     EventBus.emit(EVENTS.COMBO_CHANGED, this.combo, mult);
@@ -819,6 +821,7 @@ export default class GameScene extends Phaser.Scene {
   useBomb() {
     if (this.bombs <= 0 || this.gameEnded) return;
     this.bombs--;
+    SaveManager.addDailyProgress('bombs', 1); // #每日任务：清屏炸弹进度
     EventBus.emit('__hud_bombs', this.bombs);
 
     // 清屏冲击波
@@ -846,6 +849,7 @@ export default class GameScene extends Phaser.Scene {
     this.energy = 0;
     this.usedSuperCount++;
     AchievementManager.reportSuperUsed();
+    SaveManager.addDailyProgress('super', 1); // #每日任务：星风暴进度
     EventBus.emit(EVENTS.ENERGY_CHANGED, 0, ENERGY_MAX);
 
     const skill = SKILLS[DEFAULT_SKILL] || SKILLS.starstorm;
@@ -954,6 +958,7 @@ export default class GameScene extends Phaser.Scene {
     if (!victory) stars = Math.min(stars, 1);
 
     if (victory && this.mode !== 'bossrush') SaveManager.recordLevelStars(this.levelId, stars);
+    SaveManager.save(); // flush 每日任务进度（addDailyProgress 不立即存盘）
 
     const result = {
       victory, stars, score: this.score,

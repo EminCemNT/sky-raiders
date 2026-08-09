@@ -323,3 +323,13 @@ export const WINGMAN = {
     { name: '穿透激光', key: 'bullet_pulse',   shots: 1, spreadDeg: 0,  interval: 150, dmgMul: 1.10, pierce: 8, tinted: false, laser: true },
   ],
 };
+
+// 每日任务模板池（留存系统 #每日任务）：每日按日期种子抽 3 个，跨局累计进度，完成领金币。
+// metric 必须与 GameScene/SaveManager 的进度钩子一致：kills / coins / bombs / combos / super。
+export const DAILY_QUEST_POOL = [
+  { metric: 'kills',  target: 30, desc: '击落 30 架敌机',    reward: 40 },
+  { metric: 'coins',  target: 60, desc: '收集 60 枚金币',    reward: 40 },
+  { metric: 'bombs',  target: 3,  desc: '使用 3 次清屏炸弹', reward: 30 },
+  { metric: 'combos', target: 5,  desc: '触发 5 次元素协同', reward: 50 },
+  { metric: 'super',  target: 2,  desc: '释放 2 次星风暴',   reward: 30 },
+];

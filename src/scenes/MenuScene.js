@@ -19,7 +19,7 @@ export default class MenuScene extends Phaser.Scene {
   create() {
     const cx = GAME_WIDTH / 2;
     // modal 标志位初始化（防御：避免上一次残留导致按钮被错误拦截）
-    this.settingsOpen = this.levelSelectOpen = this.achievementsOpen = this.checkinOpen = false;
+    this.settingsOpen = this.levelSelectOpen = this.achievementsOpen = this.checkinOpen = this.dailyQuestOpen = false;
 
     // 背景滚动星空
     this.starfield = createStarfield(this);
@@ -93,6 +93,12 @@ export default class MenuScene extends Phaser.Scene {
     new NeonButton(this, cx, 864, '每日签到', { stroke: COLORS.coin, onDown: () => {
       if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen) return;
       audio.sfx('ui'); this.openCheckIn();
+    } });
+
+    // 每日任务按钮（留存系统：击杀/金币/炸弹等每日目标，完成领金币）
+    new NeonButton(this, cx, 928, '每日任务', { stroke: COLORS.accent, onDown: () => {
+      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.dailyQuestOpen) return;
+      audio.sfx('ui'); this.openDailyQuest();
     } });
 
     // 存档信息
@@ -323,6 +329,74 @@ export default class MenuScene extends Phaser.Scene {
   closeCheckIn() {
     if (this.checkinOverlay) { this.checkinOverlay.destroy(); this.checkinOverlay = null; }
     this.checkinOpen = false;
+  }
+
+  // ---- 每日任务面板（留存系统 #每日任务）----
+  openDailyQuest() {
+    this.dailyQuestOpen = true;
+    const cx = GAME_WIDTH / 2;
+    const ov = this.add.container(0, 0).setDepth(300);
+    this.dailyQuestOverlay = ov;
+    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.78)
+      .setOrigin(0).setInteractive();
+    ov.add(dim);
+    this.addPanel(ov, cx);
+    const title = this.add.text(cx, 250, '每日任务', {
+      fontFamily: 'sans-serif', fontSize: '34px', fontStyle: '800', color: '#7cf3ff',
+    }).setOrigin(0.5);
+    ov.add(title);
+
+    const quests = SaveManager.getDailyQuests();
+    const claimed = SaveManager.dailyQuestsClaimed();
+    let cursor = 320;
+    quests.forEach((q) => {
+      const y = cursor; cursor += 96;
+      const label = this.add.text(cx - 200, y, q.desc, {
+        fontFamily: 'sans-serif', fontSize: '19px', color: '#cfe8ff',
+      }).setOrigin(0, 0.5);
+      const prog = this.add.text(cx + 200, y, `${q.progress}/${q.target}  +${q.reward}`, {
+        fontFamily: 'sans-serif', fontSize: '17px',
+        color: q.done ? '#7cffa0' : '#88bbdd',
+      }).setOrigin(1, 0.5);
+      // 进度条
+      const barW = 380, barX = cx - barW / 2, barY = y + 22;
+      const track = this.add.rectangle(barX, barY, barW, 8, 0x223344)
+        .setOrigin(0, 0.5).setStrokeStyle(1, 0x557799);
+      const ratio = q.target ? Math.min(1, q.progress / q.target) : 0;
+      const fill = this.add.rectangle(barX, barY, barW * ratio, 8, q.done ? 0x7cffa0 : 0x66ccff)
+        .setOrigin(0, 0.5);
+      ov.add([label, prog, track, fill]);
+    });
+
+    const statusText = this.add.text(cx, cursor + 6, claimed ? '今日任务已领取 ✅'
+      : (SaveManager.dailyQuestsReady() ? '全部完成，可领取奖励！' : '完成上方目标即可领取金币'), {
+      fontFamily: 'sans-serif', fontSize: '18px', color: claimed ? '#7cffa0' : '#cfe8ff',
+      align: 'center', wordWrap: { width: 400 },
+    }).setOrigin(0.5);
+    ov.add(statusText);
+
+    const claimBtn = this.makeMenuBtn(cx, cursor + 70, claimed ? '已领取' : '领取奖励', () => {
+      const res = SaveManager.claimDailyQuests();
+      if (res.claimed) {
+        statusText.setText(`已领取！\n+${res.reward} 金币 · ${res.count} 项任务`);
+        claimBtn.destroy();
+        if (this.saveInfoText) {
+          const sv = SaveManager.load();
+          this.saveInfoText.setText(`金币 ${sv.coins}   ·   已解锁第 ${sv.unlockedLevel} 关`);
+        }
+        ov.add(this.makeMenuBtn(cx, cursor + 70, '好的', () => this.closeDailyQuest()));
+      } else if (res.notReady) {
+        statusText.setText('还有任务没完成哦～');
+      }
+    });
+    if (claimed || !SaveManager.dailyQuestsReady()) claimBtn.setAlpha(0.45);
+    ov.add(claimBtn);
+    ov.add(this.makeMenuBtn(cx, cursor + 134, '稍后再说', () => this.closeDailyQuest()));
+  }
+
+  closeDailyQuest() {
+    if (this.dailyQuestOverlay) { this.dailyQuestOverlay.destroy(); this.dailyQuestOverlay = null; }
+    this.dailyQuestOpen = false;
   }
 
   makeSlider(ov, cx, y, label, type) {

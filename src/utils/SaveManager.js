@@ -1,4 +1,4 @@
-import { SAVE_KEY } from '../config/GameConfig.js';
+import { SAVE_KEY, DAILY_QUEST_POOL } from '../config/GameConfig.js';
 
 /**
  * 存档管理（localStorage）
@@ -28,6 +28,8 @@ const DEFAULT_SAVE = {
   lastCheckin: '', // 本地日期 YYYY-MM-DD
   checkinStreak: 0,
   tutorialDone: false,
+  // 每日任务（留存系统 #每日任务）：date=当天日期 / claimed=是否已领 / progress=各指标进度 / picked=当天抽中的指标
+  dailyQuest: { date: '', claimed: false, progress: {}, picked: [] },
 };
 
 let cache = null;
@@ -48,6 +50,7 @@ function freshSave() {
       elementKills: { ...DEFAULT_SAVE.achievementStats.elementKills },
     },
     bossesDefeated: {},
+    dailyQuest: { date: '', claimed: false, progress: {}, picked: [] },
   };
 }
 
@@ -77,6 +80,11 @@ export const SaveManager = {
           },
         },
         bossesDefeated: parsed.bossesDefeated || {},
+        dailyQuest: {
+          date: '', claimed: false, progress: {}, picked: [],
+          ...(parsed.dailyQuest || {}),
+          progress: { ...((parsed.dailyQuest && parsed.dailyQuest.progress) || {}) },
+        },
       };
     } catch (e) {
       cache = freshSave();
@@ -179,6 +187,74 @@ export const SaveManager = {
     s.coins += reward;
     this.save();
     return { claimed: true, streak: s.checkinStreak, reward };
+  },
+
+  // ---- 每日任务（留存系统 #每日任务）----
+  /** 确定性日期种子：同一天全平台抽到同一组任务 */
+  _dailySeed(str) {
+    let h = 2166136261;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+  },
+
+  /** 取当日任务（数组）。跨天自动刷新：重置进度与领取状态，按日期种子抽 3 个 */
+  getDailyQuests() {
+    const s = this.load();
+    const today = this._todayStr();
+    if (s.dailyQuest.date !== today) {
+      const pool = DAILY_QUEST_POOL;
+      const start = this._dailySeed(today) % pool.length;
+      const picked = [];
+      for (let k = 0; k < 3; k++) picked.push(pool[(start + k) % pool.length].metric);
+      s.dailyQuest = { date: today, claimed: false, progress: {}, picked };
+      this.save();
+    }
+    const dq = s.dailyQuest;
+    return dq.picked.map((m) => {
+      const tpl = DAILY_QUEST_POOL.find((q) => q.metric === m) || { metric: m, target: 1, desc: m, reward: 0 };
+      const cur = Math.min(dq.progress[m] || 0, tpl.target);
+      return { ...tpl, progress: cur, done: cur >= tpl.target };
+    });
+  },
+
+  /** 累计当日任务进度（不立即存盘，由 endGame / claim 统一 flush，避免每杀一怪写 localStorage） */
+  addDailyProgress(metric, n) {
+    if (!n) return;
+    const s = this.load();
+    const today = this._todayStr();
+    if (s.dailyQuest.date !== today) this.getDailyQuests();
+    const dq = s.dailyQuest;
+    if (!dq.picked.includes(metric)) return;
+    dq.progress[metric] = (dq.progress[metric] || 0) + n;
+  },
+
+  /** 当日任务是否全部完成且尚未领取 */
+  dailyQuestsReady() {
+    const q = this.getDailyQuests();
+    return q.length > 0 && q.every((x) => x.done);
+  },
+
+  dailyQuestsClaimed() {
+    return this.load().dailyQuest.claimed === true;
+  },
+
+  /** 领取当日全部任务奖励；未全完成返回 { notReady:true }，已领返回 { claimed:false } */
+  claimDailyQuests() {
+    const s = this.load();
+    const today = this._todayStr();
+    if (s.dailyQuest.date !== today) this.getDailyQuests();
+    const dq = s.dailyQuest;
+    if (dq.claimed) return { claimed: false, reward: 0 };
+    const q = this.getDailyQuests();
+    if (!q.every((x) => x.done)) return { claimed: false, reward: 0, notReady: true };
+    const reward = q.reduce((sum, x) => sum + x.reward, 0);
+    s.coins += reward;
+    dq.claimed = true;
+    this.save();
+    return { claimed: true, reward, count: q.length };
   },
 
   reset() {
