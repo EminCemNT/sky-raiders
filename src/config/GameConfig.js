@@ -299,6 +299,12 @@ export const WINGMAN = {
     WEIGHT: 0.6,         // 躲避权重
     FORM_WEIGHT: 1.0,    // 编队权重
     SMOOTH: 0.4,         // 躲避向量自身平滑，避免抖动
+
+    // 第三版②：预测式侧步（主动避让），与上方反应式排斥叠加，统一封顶 MAX_OFFSET
+    PREDICT: true,          // 开关：开启弹道预判
+    PREDICT_LOOKAHEAD: 0.6, // 仅预判 0.6s 内会逼近的弹（秒，与 velocity 量纲一致）
+    PREDICT_RADIUS: 70,     // 最近接近距离危险半径（px）
+    PREDICT_GAIN: 34,       // 预测侧步像素增益（与 GAIN 同量级，封顶由 MAX_OFFSET 钳制）
   },
 
   // 僚机不脱离玩家 X 轴的最大横向距离（屏宽 1/3）

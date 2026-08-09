@@ -134,12 +134,20 @@ export default class Wingman extends Phaser.Physics.Arcade.Sprite {
   }
 
   /**
-   * 排斥力场：把 y 在僚机上方（正压过来）且平方距 < RADIUS² 的敌弹合成一个逃逸向量。
-   * 全程平方距比较 + Math.min 剪枝，不开方；最多取 MAX_THREATS 颗。
+   * 躲避向量（僚机 AI 进阶 第三版②：反应式排斥 + 预测式侧步）：
+   *   1) 反应式（保留原逻辑）：只躲"当前在上方正压过来"的敌弹，合成逃逸向量。
+   *   2) 预测式（新增）：对带速度的敌弹做弹道预判，算最近接近时刻(TCA)与最近接
+   *      近距离；若会在 PREDICT_LOOKAHEAD 内逼近到 PREDICT_RADIUS 内，则沿"垂直于
+   *      弹道、且朝僚机当前所在一侧"的方向侧步避让 —— 主动让开弹道，而非等弹贴脸
+   *      才反应。静止弹/已远离/不会擦到的弹直接跳过，交给反应式处理。
+   * 两部分加权求和后统一封顶到 MAX_OFFSET，自身再做 SMOOTH 平滑防抖。
+   * 全程平方距 / 向量运算不开方（仅预测式侧步归一化用一次 sqrt，量级极小）。
    */
   _computeDodge(threats) {
     const D = WINGMAN.DODGE;
-    let ax = 0; let ay = 0; let n = 0;
+    let ax = 0, ay = 0, n = 0;
+
+    // 1) 反应式排斥（原实现，保持不变）
     if (threats && threats.length) {
       const r2 = D.RADIUS * D.RADIUS;
       for (let i = 0; i < threats.length; i++) {
@@ -155,8 +163,36 @@ export default class Wingman extends Phaser.Physics.Arcade.Sprite {
         if (++n >= D.MAX_THREATS) break;
       }
     }
-    const gx = n ? Phaser.Math.Clamp(ax * D.GAIN, -D.MAX_OFFSET, D.MAX_OFFSET) : 0;
-    const gy = n ? Phaser.Math.Clamp(ay * D.GAIN, -D.MAX_OFFSET, D.MAX_OFFSET) : 0;
+
+    // 2) 预测式侧步（第三版②，新增）
+    let px = 0, py = 0;
+    if (D.PREDICT && threats && threats.length) {
+      const danger2 = D.PREDICT_RADIUS * D.PREDICT_RADIUS;
+      for (let i = 0; i < threats.length; i++) {
+        const t = threats[i];
+        if (!t.active || !t.body) continue;
+        const bvx = t.body.velocity.x, bvy = t.body.velocity.y;
+        const speed2 = bvx * bvx + bvy * bvy;
+        if (speed2 < 1) continue;                       // 静止弹：交给反应式
+        const rx = t.x - this.x, ry = t.y - this.y;     // 弹 -> 机 向量
+        const tca = -(rx * bvx + ry * bvy) / speed2;    // 最近接近时刻（秒）
+        if (tca <= 0 || tca > D.PREDICT_LOOKAHEAD) continue; // 远离 / 过远
+        const cx = rx + bvx * tca, cy = ry + bvy * tca; // 最近接近点（相对机）
+        const cd2 = cx * cx + cy * cy;
+        if (cd2 >= danger2) continue;                   // 不会擦到
+        const prox = 1 - Math.min(cd2, danger2) / danger2;   // 越近越急（0~1）
+        const inv = 1 / Math.sqrt(speed2);
+        const perpx = -bvy * inv, perpy = bvx * inv;    // 垂直弹道方向（单位向量）
+        const side = (rx * perpx + ry * perpy) >= 0 ? 1 : -1; // 机在弹道哪一侧
+        px += perpx * side * prox;
+        py += perpy * side * prox;
+      }
+    }
+
+    const gxRaw = n ? ax * D.GAIN : 0;
+    const gyRaw = n ? ay * D.GAIN : 0;
+    const gx = Phaser.Math.Clamp(gxRaw + px * D.PREDICT_GAIN, -D.MAX_OFFSET, D.MAX_OFFSET);
+    const gy = Phaser.Math.Clamp(gyRaw + py * D.PREDICT_GAIN, -D.MAX_OFFSET, D.MAX_OFFSET);
     // 自身再平滑一次，威胁进出视野时不会瞬移
     this.dodgeVec.x = Phaser.Math.Linear(this.dodgeVec.x, gx, D.SMOOTH);
     this.dodgeVec.y = Phaser.Math.Linear(this.dodgeVec.y, gy, D.SMOOTH);
