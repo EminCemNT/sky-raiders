@@ -4,6 +4,18 @@ import { EVENTS, LEVELS } from '../config/GameConfig.js';
 
 const MAX_LEVEL = LEVELS.length;
 
+// 进度钳位（Y-06 加固）：原先 progress 全用裸 Math.min(value, target)，
+// 只有上限、无下界钳位、且不防 NaN。一旦存档被写脏（如 totalKills=-5 或 "abc"），
+// progress 会吐出负数 / NaN 的 cur，getProgress 的 ratio 跟着变 NaN/负数。
+// 这里统一收口：下限 0（防负数）、非有限值归零（防 NaN/字符串）、上限 b。
+function _safeMin(a, b) {
+  const max = Number.isFinite(b) ? b : 0;
+  let v = Number.isFinite(a) ? a : 0;
+  if (v < 0) v = 0;
+  if (v > max) v = max;
+  return v;
+}
+
 // 23 个成就定义。字段：id/name/desc/icon/type/category/hidden/live/condition(s)/progress(s)
 // live:true = 局内事件点实时判定解锁；live:false = 仅局末 reportRun 兜底判定
 export const ACHIEVEMENTS = [
@@ -13,7 +25,7 @@ export const ACHIEVEMENTS = [
 
   { id: 'first_blood', name: '初露锋芒', desc: '单局击杀 10 个敌人', icon: '🗡️', type: 'kill', category: 'combat', hidden: false, live: true,
     condition: (s) => s.kills >= 10,
-    progress: (s) => ({ cur: Math.min(s.kills, 10), target: 10 }) },
+    progress: (s) => ({ cur: _safeMin(s.kills, 10), target: 10 }) },
 
   { id: 'first_clear', name: '初定苍穹', desc: '通关任意一关', icon: '🏆', type: 'clear', category: 'progression', hidden: false, live: false,
     condition: (s) => s.victory && s.mode !== 'bossrush',
@@ -21,23 +33,23 @@ export const ACHIEVEMENTS = [
 
   { id: 'super_nova', name: '星河爆发', desc: '单局释放 1 次星风暴', icon: '🌟', type: 'special', category: 'combat', hidden: false, live: true,
     condition: (s) => s.superUsed >= 1,
-    progress: (s) => ({ cur: Math.min(s.superUsed, 1), target: 1 }) },
+    progress: (s) => ({ cur: _safeMin(s.superUsed, 1), target: 1 }) },
 
   { id: 'kill_100', name: '小试身手', desc: '历史累计击杀 100', icon: '💀', type: 'kill', category: 'combat', hidden: false, live: true,
     condition: (s) => s.totalKills >= 100,
-    progress: (s) => ({ cur: Math.min(s.totalKills, 100), target: 100 }) },
+    progress: (s) => ({ cur: _safeMin(s.totalKills, 100), target: 100 }) },
 
   { id: 'kill_500', name: '百人斩', desc: '历史累计击杀 500', icon: '☠️', type: 'kill', category: 'combat', hidden: false, live: true,
     condition: (s) => s.totalKills >= 500,
-    progress: (s) => ({ cur: Math.min(s.totalKills, 500), target: 500 }) },
+    progress: (s) => ({ cur: _safeMin(s.totalKills, 500), target: 500 }) },
 
   { id: 'combo_15', name: '连击大师', desc: '单局连击峰值 15', icon: '⚡', type: 'combo', category: 'combat', hidden: false, live: true,
     condition: (s) => s.comboPeak >= 15,
-    progress: (s) => ({ cur: Math.min(s.comboPeak, 15), target: 15 }) },
+    progress: (s) => ({ cur: _safeMin(s.comboPeak, 15), target: 15 }) },
 
   { id: 'combo_30', name: '连击狂人', desc: '单局连击峰值 30', icon: '🌩️', type: 'combo', category: 'combat', hidden: false, live: true,
     condition: (s) => s.comboPeak >= 30,
-    progress: (s) => ({ cur: Math.min(s.comboPeak, 30), target: 30 }) },
+    progress: (s) => ({ cur: _safeMin(s.comboPeak, 30), target: 30 }) },
 
   { id: 'flawless', name: '毫发无伤', desc: '无伤通关任意一关', icon: '🛡️', type: 'clear', category: 'mastery', hidden: false, live: false,
     condition: (s) => s.victory && s.damageTaken === 0 && s.mode !== 'bossrush',
@@ -45,11 +57,11 @@ export const ACHIEVEMENTS = [
 
   { id: 'coin_30', name: '金银满仓', desc: '单局收集 30 枚金币', icon: '💰', type: 'coin', category: 'combat', hidden: false, live: true,
     condition: (s) => s.coins >= 30,
-    progress: (s) => ({ cur: Math.min(s.coins, 30), target: 30 }) },
+    progress: (s) => ({ cur: _safeMin(s.coins, 30), target: 30 }) },
 
   { id: 'all_clear', name: '苍穹制霸', desc: '累计通关全部 3 关', icon: '👑', type: 'clear', category: 'progression', hidden: false, live: false,
     condition: (s) => Object.keys(SaveManager.get('levelStars') || {}).length >= MAX_LEVEL,
-    progress: (s) => ({ cur: Math.min(Object.keys(SaveManager.get('levelStars') || {}).length, MAX_LEVEL), target: MAX_LEVEL }) },
+    progress: (s) => ({ cur: _safeMin(Object.keys(SaveManager.get('levelStars') || {}).length, MAX_LEVEL), target: MAX_LEVEL }) },
 
   { id: 'three_star', name: '完美主义', desc: '单局达成 3 星通关', icon: '⭐', type: 'clear', category: 'mastery', hidden: false, live: false,
     condition: (s) => s.victory && s.stars === 3 && s.mode !== 'bossrush',
@@ -69,11 +81,11 @@ export const ACHIEVEMENTS = [
 
   { id: 'boss_all', name: '屠龙者', desc: '三种 Boss 各击败 1 次', icon: '🐉', type: 'boss', category: 'progression', hidden: false, live: true,
     condition: (s) => Object.keys(s.bossesDefeated).length >= 3,
-    progress: (s) => ({ cur: Math.min(Object.keys(s.bossesDefeated).length, 3), target: 3 }) },
+    progress: (s) => ({ cur: _safeMin(Object.keys(s.bossesDefeated).length, 3), target: 3 }) },
 
   { id: 'bossrush_clear', name: '极限连战', desc: '通关 Boss Rush', icon: '🔥', type: 'bossrush', category: 'progression', hidden: false, live: false,
     condition: (s) => s.bossRushClears >= 1,
-    progress: (s) => ({ cur: Math.min(s.bossRushClears, 1), target: 1 }) },
+    progress: (s) => ({ cur: _safeMin(s.bossRushClears, 1), target: 1 }) },
 
   { id: 'bossrush_flawless', name: '不动如山', desc: 'Boss Rush 全程无伤通关', icon: '🏔️', type: 'bossrush', category: 'mastery', hidden: false, live: false,
     condition: (s) => s.bossRushClears >= 1 && s.mode === 'bossrush' && s.victory && s.damageTaken === 0,
@@ -81,11 +93,11 @@ export const ACHIEVEMENTS = [
 
   { id: 'wingman_first', name: '僚机出击', desc: '单局僚机击杀 1 个', icon: '🛩️', type: 'wingman', category: 'combat', hidden: false, live: true,
     condition: (s) => s.wingmanKillsRun >= 1,
-    progress: (s) => ({ cur: Math.min(s.wingmanKillsRun, 1), target: 1 }) },
+    progress: (s) => ({ cur: _safeMin(s.wingmanKillsRun, 1), target: 1 }) },
 
   { id: 'wingman_50', name: '僚机王牌', desc: '累计僚机击杀 50', icon: '🎖️', type: 'wingman', category: 'combat', hidden: false, live: true,
     condition: (s) => s.wingmanKillsTotal >= 50,
-    progress: (s) => ({ cur: Math.min(s.wingmanKillsTotal, 50), target: 50 }) },
+    progress: (s) => ({ cur: _safeMin(s.wingmanKillsTotal, 50), target: 50 }) },
 
   // 注：id 里的 5 / 50 是历史代号（存档解锁主键，改 id 会让老玩家已解锁记录失效并重复弹提示），
   // 不代表阈值。实际阈值以 desc / condition / progress 为准（3 次 / 30 次）。
@@ -93,23 +105,23 @@ export const ACHIEVEMENTS = [
   // 这里 3 / 30 是按"改动前 15 / 150 次交替命中"精确还原的等价值。
   { id: 'combo_element_5', name: '元素共鸣', desc: '单局触发 3 次元素协同', icon: '🎼', type: 'wingman', category: 'combat', hidden: false, live: true,
     condition: (s) => s.elementCombosRun >= 3,
-    progress: (s) => ({ cur: Math.min(s.elementCombosRun, 3), target: 3 }) },
+    progress: (s) => ({ cur: _safeMin(s.elementCombosRun, 3), target: 3 }) },
 
   { id: 'combo_element_50', name: '协同大师', desc: '累计触发 30 次元素协同', icon: '🎇', type: 'wingman', category: 'mastery', hidden: false, live: true,
     condition: (s) => s.elementCombosTotal >= 30,
-    progress: (s) => ({ cur: Math.min(s.elementCombosTotal, 30), target: 30 }) },
+    progress: (s) => ({ cur: _safeMin(s.elementCombosTotal, 30), target: 30 }) },
 
   { id: 'element_fire', name: '烈焰焚敌', desc: '火元素累计击杀 50', icon: '🔥', type: 'element', category: 'mastery', hidden: false, live: true,
     condition: (s) => s.elementKillsTotal.fire >= 50,
-    progress: (s) => ({ cur: Math.min(s.elementKillsTotal.fire, 50), target: 50 }) },
+    progress: (s) => ({ cur: _safeMin(s.elementKillsTotal.fire, 50), target: 50 }) },
 
   { id: 'element_ice', name: '冰封千里', desc: '冰元素累计击杀 50', icon: '❄️', type: 'element', category: 'mastery', hidden: false, live: true,
     condition: (s) => s.elementKillsTotal.ice >= 50,
-    progress: (s) => ({ cur: Math.min(s.elementKillsTotal.ice, 50), target: 50 }) },
+    progress: (s) => ({ cur: _safeMin(s.elementKillsTotal.ice, 50), target: 50 }) },
 
   { id: 'egg_arsenal', name: '军火库', desc: '单局用齐 3 种武器', icon: '🧰', type: 'special', category: 'mastery', hidden: true, live: true,
     condition: (s) => Object.keys(s.weaponsUsed).length >= 3,
-    progress: (s) => ({ cur: Math.min(Object.keys(s.weaponsUsed).length, 3), target: 3 }) },
+    progress: (s) => ({ cur: _safeMin(Object.keys(s.weaponsUsed).length, 3), target: 3 }) },
 ];
 
 // 会话态：单局字段 + 累计字段（startRun 预载存档，report* 累加，reportRun 写回）
@@ -261,7 +273,7 @@ export const AchievementManager = {
     if (!def) return null;
     const p = def.progress ? def.progress(session) : { cur: 0, target: 1 };
     const unlocked = this.isUnlocked(id);
-    return { ...p, unlocked, ratio: p.target ? Math.min(1, p.cur / p.target) : (unlocked ? 1 : 0) };
+    return { ...p, unlocked, ratio: p.target ? _safeMin(1, p.cur / p.target) : (unlocked ? 1 : 0) };
   },
   getAll() {
     return ACHIEVEMENTS.map((a) => ({ ...a, unlocked: SaveManager.hasAchievement(a.id) }));

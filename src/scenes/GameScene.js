@@ -276,7 +276,10 @@ export default class GameScene extends Phaser.Scene {
     this.killBullet(bullet);
     const downed = w.takeDamage(WINGMAN.HIT_DMG, this.time.now);
     if (downed) {
-      VFX.explosion(this, w.x, w.y, w.element === 'fire' ? 0xff6633 : 0x33ccff, 1.2);
+      // 僚机阵亡爆炸色：按自身元素取色（fire 橙 / thunder 黄 / 其余冰蓝）。
+      // 修复：苍鹰(雷)僚机此前因缺 thunder 分支被喷成冰蓝色。
+      const elColor = w.element === 'fire' ? 0xff6633 : w.element === 'thunder' ? 0xffe14a : 0x33ccff;
+      VFX.explosion(this, w.x, w.y, elColor, 1.2);
     }
   }
 
