@@ -16,3 +16,13 @@ AGENT_HANDOFF.md
 
 # QA 临时工作目录（基线对照 .bak、故意改错阈值的变体文件）
 qa_yan/
+# QA 运行产物（探针输出的临时报告 .txt，不进版本库）
+qa_probes/_*.txt
+# WorkBuddy 运行数据目录（会话/任务元数据，非项目源码）
+.workbuddy/
+
+# 项目运行数据目录（WorkBuddy 会话/自动化状态，不进版本库，勿删）
+.workbuddy/
+
+# QA 临时报告文本
+qa_probes/_final.txt
