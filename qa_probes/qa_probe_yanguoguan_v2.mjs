@@ -175,7 +175,7 @@ try {
   //   旧口径「6s 内触发次数 < 5」硬编码了成就阈值，且依赖帧率 + 探针 100% 接敌的理想环境，
   //   阈值降到 3 之后按理想速率 6s 内很可能达成，会误报红灯。
   //   新口径直接量「解锁 combo_element_5 需要多少次交替命中」——不受帧率/接敌率影响，
-  //   且正好锁住本次的设计意图：成本 = TRIGGER(5) × target(3) = 15 次，与 TRIGGER 上调前等价。
+  //   且正好锁住本次的设计意图：成本 = TRIGGER(5) × target(2) = 10 次（#59 复评选 B：单局 2 次，短局友好）。
   const cost = await page.evaluate(() => {
     const s = window.__SKY; const sys = s.wingmanSystem;
     const A = window.__ACH__;
@@ -194,9 +194,9 @@ try {
     sys.combo.element = null; sys.combo.lastSide = null; sys.combo.lastAt = 0;
     return { hitsToUnlock, target, members: sys.getCount() };
   });
-  chk('E2 combo_element_5 解锁成本 = 15 次交替命中（不可被廉价刷出）', cost.hitsToUnlock === 15,
+  chk('E2 combo_element_5 解锁成本 = 10 次交替命中（不可被廉价刷出）', cost.hitsToUnlock === 10,
     `实测 ${cost.hitsToUnlock} 次交替命中解锁，target=${cost.target}，僚机 ${cost.members} 架`
-    + `（期望 TRIGGER(5) × target(3) = 15）`);
+    + `（期望 TRIGGER(5) × target(2) = 10）`);
 
   // ---------- F. 玩家阵亡后僚机仍被敌弹击落（状态一致性） ----------
   await enterGame({ wingman: 1, wingmanFirepower: 0 }, 1);

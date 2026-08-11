@@ -86,16 +86,16 @@ try {
     sys.combo.activeUntil = 0; sys.combo.count = 0; sys.combo.element = null; sys.combo.lastSide = null; sys.combo.lastAt = 0;
     return { snap, first: (snap.find((x) => x.u) || { n: -1 }).n, members: sys.getCount() };
   });
-  chk('AC-4', '第 15 次交替命中恰好解锁、第 14 次仍未解锁（成本=15，等价改动前）',
-    cost.first === 15 && cost.snap[13].u === false && cost.snap[14].u === true && cost.members >= 1,
-    `首解锁于第 ${cost.first} 次；第14次 unlocked=${cost.snap[13].u}(run=${cost.snap[13].run})，`
-    + `第15次 unlocked=${cost.snap[14].u}(run=${cost.snap[14].run})；僚机 ${cost.members} 架`);
+  chk('AC-4', '第 10 次交替命中恰好解锁、第 9 次仍未解锁（成本=10，#59 选B 单局2次）',
+    cost.first === 10 && cost.snap[8].u === false && cost.snap[9].u === true && cost.members >= 1,
+    `首解锁于第 ${cost.first} 次；第9次 unlocked=${cost.snap[8].u}(run=${cost.snap[8].run})，`
+    + `第10次 unlocked=${cost.snap[9].u}(run=${cost.snap[9].run})；僚机 ${cost.members} 架`);
   chk('AC-4b', '协同触发点严格落在 5/10/15/20 次（触发后计数清零而非清1）',
     cost.snap[4].trig === 1 && cost.snap[9].trig === 2 && cost.snap[14].trig === 3 && cost.snap[19].trig === 4
     && cost.snap[3].trig === 0 && cost.snap[8].trig === 1,
     `第4/5/9/10/15/20 次交替命中后真实触发数 = ${cost.snap[3].trig}/${cost.snap[4].trig}/${cost.snap[8].trig}/${cost.snap[9].trig}/${cost.snap[14].trig}/${cost.snap[19].trig}`);
-  chk('X8', '【自设】getProgress().cur 被 Math.min 钳位，不可当计数器：第20次真实触发4次但 cur 显示 3',
-    cost.snap[19].trig === 4 && cost.snap[19].run === 3,
+  chk('X8', '【自设】getProgress().cur 被 Math.min 钳位，不可当计数器：第20次真实触发4次但 cur 显示 2',
+    cost.snap[19].trig === 4 && cost.snap[19].run === 2,
     `第20次交替命中：真实触发=${cost.snap[19].trig}，getProgress().cur=${cost.snap[19].run}（钳位正确）`);
 
   // ══════════ AC-3 边界值 + X1 溢出钳位 ══════════
@@ -108,16 +108,16 @@ try {
     A.reset();
     return { R, T };
   });
-  const r2 = edge.R[1], r3 = edge.R[2], r9 = edge.R[8];
+  const r1 = edge.R[0], r2 = edge.R[1], r9 = edge.R[8];
   const t29 = edge.T.find((x) => x.i === 29), t30 = edge.T.find((x) => x.i === 30), t35 = edge.T.find((x) => x.i === 35);
-  chk('AC-3a', 'combo_element_5：2 次未解锁 / 3 次解锁，target 恒为 3',
-    r2.u === false && r2.cur === 2 && r2.t === 3 && r3.u === true && r3.cur === 3 && r3.t === 3,
-    `第2次 ${r2.cur}/${r2.t} unlocked=${r2.u}；第3次 ${r3.cur}/${r3.t} unlocked=${r3.u}`);
+  chk('AC-3a', 'combo_element_5：1 次未解锁 / 2 次解锁，target 恒为 2',
+    r1.u === false && r1.cur === 1 && r1.t === 2 && r2.u === true && r2.cur === 2 && r2.t === 2,
+    `第1次 ${r1.cur}/${r1.t} unlocked=${r1.u}；第2次 ${r2.cur}/${r2.t} unlocked=${r2.u}`);
   chk('AC-3b', 'combo_element_50：29 次未解锁 / 30 次解锁，target 恒为 30',
     t29.u === false && t29.cur === 29 && t29.t === 30 && t30.u === true && t30.cur === 30 && t30.t === 30,
     `第29次 ${t29.cur}/${t29.t} unlocked=${t29.u}；第30次 ${t30.cur}/${t30.t} unlocked=${t30.u}`);
-  chk('X1', '【自设】超额溢出：解锁后继续累计，进度分子必须钳在 target，不出现 9/3 或 35/30',
-    r9.cur === 3 && r9.t === 3 && r9.r === 1 && t35.cur === 30 && t35.t === 30 && t35.r === 1,
+  chk('X1', '【自设】超额溢出：解锁后继续累计，进度分子必须钳在 target，不出现 9/2 或 35/30',
+    r9.cur === 2 && r9.t === 2 && r9.r === 1 && t35.cur === 30 && t35.t === 30 && t35.r === 1,
     `单局第9次协同 -> 显示 ${r9.cur}/${r9.t} ratio=${r9.r}；累计第35次 -> 显示 ${t35.cur}/${t35.t} ratio=${t35.r}`);
 
   // ══════════ X6 desc 文案与真实阈值一致性（M1 假绿盲区的补位断言） ══════════
@@ -132,7 +132,7 @@ try {
     return { d5: grab('combo_element_5'), d50: grab('combo_element_50'), n5, n50, t5: A.getProgress('combo_element_5').target, t50: A.getProgress('combo_element_50').target };
   });
   chk('X6', '【自设】desc 文案数字 == target == 实测解锁阈值（三者一致，防"只改逻辑不改文案"）',
-    descChk.d5.num === 3 && descChk.t5 === 3 && descChk.n5 === 3
+    descChk.d5.num === 2 && descChk.t5 === 2 && descChk.n5 === 2
     && descChk.d50.num === 30 && descChk.t50 === 30 && descChk.n50 === 30,
     `「${descChk.d5.desc}」desc数字=${descChk.d5.num} target=${descChk.t5} 实测解锁于第${descChk.n5}次 | `
     + `「${descChk.d50.desc}」desc数字=${descChk.d50.num} target=${descChk.t50} 实测解锁于第${descChk.n50}次`);
@@ -200,9 +200,9 @@ try {
     A.reset();
     return { before, afterR, revive };
   });
-  chk('X2', '【自设】reset() 后两成就归零、target 仍是 3/30、且不被 _checkLive 复活',
+  chk('X2', '【自设】reset() 后两成就归零、target 仍是 2/30、且不被 _checkLive 复活',
     rst.before.u5 && rst.before.u50 && !rst.afterR.u5 && !rst.afterR.u50
-    && rst.afterR.t5 === 3 && rst.afterR.t50 === 30 && rst.afterR.c5 === 0 && rst.afterR.c50 === 0
+    && rst.afterR.t5 === 2 && rst.afterR.t50 === 30 && rst.afterR.c5 === 0 && rst.afterR.c50 === 0
     && !rst.revive.u5 && !rst.revive.u50,
     `reset前 u5=${rst.before.u5} u50=${rst.before.u50}；reset后 ${rst.afterR.c5}/${rst.afterR.t5} 与 ${rst.afterR.c50}/${rst.afterR.t50}，`
     + `u5=${rst.afterR.u5} u50=${rst.afterR.u50}；两次_checkLive后 u5=${rst.revive.u5} u50=${rst.revive.u50}`);
@@ -246,8 +246,8 @@ try {
     s.enemies.children.each((e) => { if (e.active) e.hit(999999); });
     return res;
   });
-  chk('AC-5b', '② 苍鹰（element=thunder）：默认机体纳入协同，交替雷命中 15 次解锁 combo_element_5',
-    deg1.wired === true && deg1.members === 2 && deg1.run === 3 && deg1.u5 === true,
+  chk('AC-5b', '② 苍鹰（element=thunder）：默认机体纳入协同，交替雷命中约 10 次（2 次协同）即解锁 combo_element_5',
+    deg1.wired === true && deg1.members === 2 && deg1.run >= 2 && deg1.u5 === true,
     `僚机元素=${JSON.stringify(deg1.wired ? 'thunder' : null)} 僚机${deg1.members}架 combo.count=${deg1.count} 倍率=${deg1.mul} run=${deg1.run} total=${deg1.tot} u5=${deg1.u5}`);
 
   // ③ 携带元素但命中的是无元素子弹

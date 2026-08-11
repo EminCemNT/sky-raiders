@@ -100,12 +100,13 @@ export const ACHIEVEMENTS = [
     progress: (s) => ({ cur: _safeMin(s.wingmanKillsTotal, 50), target: 50 }) },
 
   // 注：id 里的 5 / 50 是历史代号（存档解锁主键，改 id 会让老玩家已解锁记录失效并重复弹提示），
-  // 不代表阈值。实际阈值以 desc / condition / progress 为准（3 次 / 30 次）。
-  // 阈值取值依据：WINGMAN.COMBO.TRIGGER 由 3 上调到 5 后，触发 N 次协同 = 5N 次交替命中，
-  // 这里 3 / 30 是按"改动前 15 / 150 次交替命中"精确还原的等价值。
-  { id: 'combo_element_5', name: '元素共鸣', desc: '单局触发 3 次元素协同', icon: '🎼', type: 'wingman', category: 'combat', hidden: false, live: true,
-    condition: (s) => s.elementCombosRun >= 3,
-    progress: (s) => ({ cur: _safeMin(s.elementCombosRun, 3), target: 3 }) },
+  // 不代表阈值。实际阈值以 desc / condition / progress 为准（2 次 / 30 次）。
+  // 阈值取值依据：WINGMAN.COMBO.TRIGGER 由 3 上调到 5 后，触发 N 次协同 = 5N 次交替命中；
+  // 累计 30 次是按"改动前 150 次交替命中"精确还原的等价值（不变）；
+  // 单局阈值原 3 次（=15 命中）经 #59 复评选 B 降为 2 次（≈10 命中），短局更友好，红线 TRIGGER 未动。
+  { id: 'combo_element_5', name: '元素共鸣', desc: '单局触发 2 次元素协同', icon: '🎼', type: 'wingman', category: 'combat', hidden: false, live: true,
+    condition: (s) => s.elementCombosRun >= 2,
+    progress: (s) => ({ cur: _safeMin(s.elementCombosRun, 2), target: 2 }) },
 
   { id: 'combo_element_50', name: '协同大师', desc: '累计触发 30 次元素协同', icon: '🎇', type: 'wingman', category: 'mastery', hidden: false, live: true,
     condition: (s) => s.elementCombosTotal >= 30,
