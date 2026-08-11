@@ -28,6 +28,7 @@ const DEFAULT_SAVE = {
   lastCheckin: '', // 本地日期 YYYY-MM-DD
   checkinStreak: 0,
   tutorialDone: false,
+  startWeapon: null, // 开局主武器覆盖（机库选择；null=用战机绑定武器）
   // 每日任务（留存系统 #每日任务）：date=当天日期 / claimed=是否已领 / progress=各指标进度 / picked=当天抽中的指标
   dailyQuest: { date: '', claimed: false, progress: {}, picked: [] },
 };

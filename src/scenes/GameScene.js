@@ -103,7 +103,9 @@ export default class GameScene extends Phaser.Scene {
       this.player.defaultWeapon = ship.weapon || 'pulse';
       this.player.shipElement = ship.element || null;
       // Boss Rush 仍从脉冲起步，靠武器箱切换；普通关直接使用绑定武器
-      const bound = this.mode === 'bossrush' ? 'pulse' : (ship.weapon || 'pulse');
+      // 开局武器：机库持久选择（startWeapon）覆盖战机绑定武器；bossrush 仍强制脉冲维持平衡
+    const startWeapon = (save.startWeapon) || null;
+    const bound = this.mode === 'bossrush' ? 'pulse' : (startWeapon || ship.weapon || 'pulse');
       this.player.setWeapon(bound);
       AchievementManager.reportWeaponUsed(bound);
       if (ship.tint) this.player.setTint(ship.tint);

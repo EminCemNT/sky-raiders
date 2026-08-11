@@ -45,9 +45,12 @@ export default class HangarScene extends Phaser.Scene {
     // C2 战机武器绑定选择器（在机库里切战机 → 影响开局默认武器/元素）
     this.buildShipSelector(cx, 238);
 
-    // 部件行（6 项：卡片高 84 / 行距 92，末行底 806，与返回按钮 860 不重叠）
+    // 开局主武器选择（覆盖战机绑定武器；null=用战机默认）
+    this.buildStartWeaponSelector(cx, 292);
+
+    // 部件行（6 项：卡片高 84 / 行距 92，开局武器行占 292，起始 348 留出空间）
     this.rows = [];
-    const startY = 304;
+    const startY = 348;
     const gap = 92;
     ORDER.forEach((key, i) => {
       this.rows.push(this.buildRow(key, cx, startY + i * gap));
@@ -144,6 +147,49 @@ export default class HangarScene extends Phaser.Scene {
     const elTxt = s.element ? (ELEMENTS[s.element] ? ELEMENTS[s.element].name : s.element) : '无';
     const wTxt = WEAPONS[s.weapon] ? WEAPONS[s.weapon].name : s.weapon;
     this.shipLabel.setText(`${s.name} · ${wTxt} · 元素:${elTxt}`);
+  }
+
+  /** 开局主武器选择（覆盖战机绑定武器；null=用战机默认） */
+  buildStartWeaponSelector(cx, y) {
+    const chipW = 460, chipH = 44;
+    this.add.rectangle(cx, y, chipW, chipH, 0x102a44, 0.9).setStrokeStyle(2, 0x3a7fb0);
+    this.add.text(cx - chipW / 2 + 14, y, '开局武器', {
+      fontFamily: 'sans-serif', fontSize: '16px', color: '#7fb8e0',
+    }).setOrigin(0, 0.5);
+    this.weaponLabel = this.add.text(cx, y, '', {
+      fontFamily: 'sans-serif', fontSize: '17px', fontStyle: '700', color: '#ffffff',
+    }).setOrigin(0.5);
+
+    const mkArrow = (sx, dir) => {
+      const a = this.add.container(sx, y);
+      const bg = this.add.rectangle(0, 0, 40, 40, 0x1b4a6b, 1).setStrokeStyle(2, 0x3a7fb0);
+      const t = this.add.text(0, 0, dir < 0 ? '◀' : '▶', {
+        fontFamily: 'sans-serif', fontSize: '22px', color: '#cfe8ff',
+      }).setOrigin(0.5);
+      a.add([bg, t]);
+      a.setSize(40, 40).setInteractive(new Phaser.Geom.Rectangle(-20, -20, 40, 40), Phaser.Geom.Rectangle.Contains);
+      a.on('pointerdown', () => {
+        const save = SaveManager.load();
+        const keysAll = ['pulse', 'missile', 'laser', 'bomb'];
+        // 状态环：[pulse, missile, laser, bomb, 默认]，dir>0 前进 / dir<0 后退，循环
+        const cur = save.startWeapon || null;
+        const idx = cur ? keysAll.indexOf(cur) : keysAll.length; // 默认视为末尾之后
+        const ni = (idx + dir + keysAll.length + 1) % (keysAll.length + 1);
+        save.startWeapon = (ni === keysAll.length) ? null : keysAll[ni];
+        SaveManager.save();
+        this.refreshWeapon();
+      });
+    };
+    mkArrow(cx - chipW / 2 - 26, -1);
+    mkArrow(cx + chipW / 2 + 26, 1);
+    this.refreshWeapon();
+  }
+
+  /** 刷新开局武器标签 */
+  refreshWeapon() {
+    const save = SaveManager.load();
+    const w = save.startWeapon;
+    this.weaponLabel.setText(w && WEAPONS[w] ? WEAPONS[w].name : '默认(战机)');
   }
 
   /** 升级花费：baseCost * costMul^当前等级（取整） */
