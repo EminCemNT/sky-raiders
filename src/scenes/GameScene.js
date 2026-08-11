@@ -130,6 +130,10 @@ export default class GameScene extends Phaser.Scene {
     }
     this.boss = null;
 
+    // 命中定格（hitStop）：大事件短暂冻结物理强化打击感（指针拖动玩家不受影响）
+    this._hitStopMs = 0;
+    this._hitStopGapUntil = 0;
+
     // 碰撞
     this.setupColliders();
 
@@ -293,6 +297,7 @@ export default class GameScene extends Phaser.Scene {
     EventBus.on(EVENTS.PLAYER_DIED, this._onPlayerDied);
 
     this._onBossDefeated = () => {
+      this.requestHitStop(350);     // Boss 击破：强命中定格，打击感爆发
       if (this.boss && this.boss.active) {
         this.spawnBossDrops(this.boss.x, this.boss.y);
         EventBus.emit(EVENTS.FLOAT_SCORE, { x: this.boss.x, y: this.boss.y, special: true, label: 'BOSS 击破' });
@@ -325,6 +330,14 @@ export default class GameScene extends Phaser.Scene {
   }
 
   update(time, dt) {
+    // 命中定格：真物理暂停期间用真实 dt 递减，归零即恢复（camera 演出不受影响）
+    if (this._hitStopMs > 0) {
+      this._hitStopMs -= dt;
+      if (this._hitStopMs <= 0) {
+        this._hitStopMs = 0;
+        if (this.physics.world.isPaused) this.physics.world.resume();
+      }
+    }
     if (this.gameEnded) return;
     if (this.starfield) this.starfield.update(dt);
 
@@ -692,10 +705,26 @@ export default class GameScene extends Phaser.Scene {
     EventBus.emit(EVENTS.ENERGY_CHANGED, this.energy, ENERGY_MAX);
   }
 
+  /** 命中定格（hitStop）：冻结物理世界（子弹/敌机/敌弹）强化打击感；指针拖动玩家不受影响。
+   *  @param {number} ms 定格时长（真实毫秒）
+   *  内置 70ms 冷却防连杀卡顿；reduced-motion 下跳过。camera 演出（shake/flash）不受影响。 */
+  requestHitStop(ms) {
+    if (typeof window !== 'undefined' && window.matchMedia
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+    if (now < this._hitStopGapUntil) return;          // 冷却中：忽略，避免叠加卡顿
+    this._hitStopGapUntil = now + 70;
+    this._hitStopMs = Math.max(this._hitStopMs || 0, ms);
+    if (this.physics && this.physics.world && !this.physics.world.isPaused) {
+      this.physics.world.pause();
+    }
+  }
+
   // ---- 连击系统（P0 体验优化）----
   /** 击杀累计连击，按倍率加分并广播给 HUD */
   registerKill(x, y, meta = {}) {
     this.combo++;
+    this.requestHitStop(45);        // 命中定格：每次击杀轻微定格强化打击感（内置限频防卡顿）
     if (this.combo > this.maxCombo) this.maxCombo = this.combo;
     const mult = this.comboMultiplier();
     this.stats.kills++;
@@ -828,6 +857,7 @@ export default class GameScene extends Phaser.Scene {
     this.cameras.main.flash(300, 120, 200, 255);
     this.cameras.main.shake(300, 0.015);
     VFX.bombShockwave(this, this.player.x, this.player.y);
+    this.requestHitStop(250);       // 炸弹：强命中定格
 
     // 清所有敌弹
     this.enemyBullets.children.each((b) => {

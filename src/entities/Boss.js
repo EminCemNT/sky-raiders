@@ -152,6 +152,7 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
     if (newPhase !== this.phase) {
       this.phase = newPhase;
       this.scene.cameras.main.flash(200, 80, 20, 40);
+      if (this.scene.requestHitStop) this.scene.requestHitStop(180); // 阶段切换：中强定格
     }
 
     if (this.hp <= 0) {
