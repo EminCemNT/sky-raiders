@@ -271,6 +271,12 @@ export default class UIScene extends Phaser.Scene {
     this._onBossDead = () => { this.bossBar.setVisible(false); };
     EventBus.on(EVENTS.BOSS_DEFEATED, this._onBossDead);
 
+    this._onBossPhase = (phase) => {
+      const label = phase >= 3 ? '狂暴形态！' : `第 ${phase} 阶段`;
+      this.flashCenter(label, phase >= 3 ? '#ff5566' : '#ffd54a');
+    };
+    EventBus.on(EVENTS.BOSS_PHASE, this._onBossPhase);
+
     this._onEnergy = (val, max) => this.updateEnergy(val, max);
     EventBus.on(EVENTS.ENERGY_CHANGED, this._onEnergy);
 
@@ -427,6 +433,7 @@ export default class UIScene extends Phaser.Scene {
     EventBus.off(EVENTS.BOSS_SPAWNED, this._onBossSpawn);
     EventBus.off(EVENTS.BOSS_HP_CHANGED, this._onBossHp);
     EventBus.off(EVENTS.BOSS_DEFEATED, this._onBossDead);
+    EventBus.off(EVENTS.BOSS_PHASE, this._onBossPhase);
     EventBus.off(EVENTS.ENERGY_CHANGED, this._onEnergy);
     EventBus.off(EVENTS.SHIELD_CHANGED, this._onShield);
     EventBus.off(EVENTS.MAGNET_CHANGED, this._onMagnet);

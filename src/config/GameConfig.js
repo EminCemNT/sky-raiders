@@ -32,6 +32,7 @@ export const EVENTS = {
   BOSS_SPAWNED: 'boss-spawned',
   BOSS_HP_CHANGED: 'boss-hp-changed',
   BOSS_DEFEATED: 'boss-defeated',
+  BOSS_PHASE: 'boss-phase',
   LEVEL_CLEARED: 'level-cleared',
   // 拾取/升级
   POWERUP_COLLECTED: 'powerup-collected',

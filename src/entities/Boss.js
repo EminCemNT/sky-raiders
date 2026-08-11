@@ -153,6 +153,9 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
       this.phase = newPhase;
       this.scene.cameras.main.flash(200, 80, 20, 40);
       if (this.scene.requestHitStop) this.scene.requestHitStop(180); // 阶段切换：中强定格
+      EventBus.emit(EVENTS.BOSS_PHASE, newPhase);                    // 阶段演出：UIScene 提示文字
+      // 变身脉冲：短暂放大+白闪，强化「进场变身」感
+      this.scene.tweens.add({ targets: this, scaleX: 1.18, scaleY: 1.18, duration: 220, yoyo: true, ease: 'Quad.easeOut' });
     }
 
     if (this.hp <= 0) {
