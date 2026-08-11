@@ -28,7 +28,7 @@ export const THEME = {
   // 战斗 HUD 配色（A5：血条 / 能量 / 暂停键 分离）
   hp: { good: 0x33dd88, warn: 0xffcc44, bad: 0xff4455 },
   energy: { low: 0x7c6bff, full: 0x6fd0ff },
-  pauseBtn: { size: 48, glow: 0x7cf3ff },
+  pauseBtn: { size: 56, glow: 0x7cf3ff },
 };
 
 /**
