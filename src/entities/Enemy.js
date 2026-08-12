@@ -169,7 +169,9 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
   /** 受伤，返回是否死亡 */
   hit(dmg, element) {
     if (element) this.applyElement(element);   // B6 命中附加元素状态
+    const willDie = this.hp - dmg <= 0;        // 致命一击交给 die() 的爆炸音，避免双重音
     this.hp -= dmg;
+    if (!willDie) audio.sfx('enemyHit');       // 非致死命中：轻脆命中反馈（音高随机在 AudioSystem 内处理）
     // 受击闪白
     this.setTintFill(0xffffff);
     this.scene.time.delayedCall(40, () => { if (this.active && !this._elem) this.clearTint(); });

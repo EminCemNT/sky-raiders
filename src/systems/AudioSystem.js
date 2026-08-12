@@ -123,6 +123,15 @@ class AudioSystem {
         if (!this._throttle('hit', 80)) return;
         this._tone(160, 'sawtooth', 0.18, 0.32, 60);
         break;
+      case 'enemyHit': {
+        // 打中敌人的轻脆反馈：高频短促 + 音高随机化（业界：避免机械重复疲劳感）
+        // 35ms 节流，避免高射速下成片命中变成嘈杂噪声
+        if (!this._throttle('enemyHit', 35)) return;
+        const base = 1300 + Math.random() * 500;   // 1300~1800Hz
+        this._tone(base, 'square', 0.035, 0.07, base * 0.55);
+        this._noiseBurst(0.03, 0.05, 3200);         // 轻微金属/冲击质感，与音调分层
+        break;
+      }
       case 'pickup':
         this._tone(660, 'triangle', 0.08, 0.18, 990);
         break;
