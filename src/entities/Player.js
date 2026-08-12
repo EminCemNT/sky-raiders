@@ -281,7 +281,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     // 受击视觉反馈：有护盾时光罩，无护盾时红屏闪
     VFX.playerHitFlash(this.scene, this.shield > 0);
 
-    this.scene.cameras.main.shake(160, 0.01);
+    VFX.shake(this.scene, 'medium');
     if (this.hp <= 0) {
       EventBus.emit(EVENTS.PLAYER_DIED);
       this.kill();

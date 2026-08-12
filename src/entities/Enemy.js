@@ -3,6 +3,7 @@ import { BULLET, GAME_HEIGHT, GAME_WIDTH, EVENTS, ELEMENTS } from '../config/Gam
 import { EventBus } from '../utils/EventBus.js';
 import { audio } from '../systems/AudioSystem.js';
 import * as VFX from '../systems/VFX.js';
+import { damageNumber } from '../systems/FloatingText.js';
 
 /**
  * 敌机（从对象池取用）。
@@ -12,6 +13,9 @@ import * as VFX from '../systems/VFX.js';
  *
  * 契约：由 GameScene 的 enemies 物理组管理；敌弹发到 scene.enemyBullets。
  */
+const PREFERS_REDUCED = (typeof window !== 'undefined' && window.matchMedia
+  && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
 const TYPES = {
   small: { tex: 'enemy_small', hp: 20, score: 100, coin: 0.35, speed: 130, fireRate: 0,    color: 0xff5a6e },
   mid:   { tex: 'enemy_mid',   hp: 60, score: 300, coin: 0.6,  speed: 90,  fireRate: 1400, color: 0xff8a3d },
@@ -172,6 +176,9 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     const willDie = this.hp - dmg <= 0;        // 致命一击交给 die() 的爆炸音，避免双重音
     this.hp -= dmg;
     if (!willDie) audio.sfx('enemyHit');       // 非致死命中：轻脆命中反馈（音高随机在 AudioSystem 内处理）
+    // 受击反馈：伤害飘字 + 颤动（flinch）+ 闪白
+    damageNumber(this.scene, this.x, this.y - 14, Math.max(1, Math.round(dmg)));
+    this._flinch();
     // 受击闪白
     this.setTintFill(0xffffff);
     this.scene.time.delayedCall(40, () => { if (this.active && !this._elem) this.clearTint(); });
@@ -180,6 +187,21 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
       return true;
     }
     return false;
+  }
+
+  /** 受击颤动（flinch）：scale 挤压 + 角度回弹；连续命中先 stop 旧 tween 防累积。reduced-motion 跳过 */
+  _flinch() {
+    if (PREFERS_REDUCED) return;
+    if (this._flinchTween) this._flinchTween.stop();
+    this.setScale(1, 1);
+    this.angle = 0;
+    this._flinchTween = this.scene.tweens.add({
+      targets: this,
+      scaleX: 1.16, scaleY: 0.86,
+      angle: Phaser.Math.Between(-6, 6),
+      duration: 70, yoyo: true, ease: 'Quad.easeOut',
+      onComplete: () => { this.setScale(1, 1); this.angle = 0; this._flinchTween = null; },
+    });
   }
 
   /** 附加元素状态（B6）：火=灼烧 / 冰=减速 / 雷=麻痹 */

@@ -63,16 +63,18 @@ class AudioSystem {
     return true;
   }
 
-  _tone(freq, type, dur, vol, slideTo) {
+  _tone(freq, type, dur, vol, slideTo, randomize = true) {
     if (!this.enabled) return;
     this._ensure();
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
+    // 全局音高随机化 ±7%：规避机械重复疲劳感（业界 juice 惯例）；BGM 传 false 保持音准
+    const f = randomize ? freq * (1 + (Math.random() * 2 - 1) * 0.07) : freq;
     const osc = this.ctx.createOscillator();
     const g = this.ctx.createGain();
     osc.type = type;
-    osc.frequency.setValueAtTime(freq, t);
-    if (slideTo) osc.frequency.exponentialRampToValueAtTime(Math.max(1, slideTo), t + dur);
+    osc.frequency.setValueAtTime(f, t);
+    if (slideTo) osc.frequency.exponentialRampToValueAtTime(Math.max(1, randomize ? slideTo * (1 + (Math.random() * 2 - 1) * 0.07) : slideTo), t + dur);
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(vol, t + 0.005);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
@@ -202,7 +204,7 @@ class AudioSystem {
       if (!this.ctx || this.ctx.state !== 'running') return;
       const f = scale[this._bgmStep % scale.length];
       this._bgmStep++;
-      this._tone(f, 'triangle', 0.3, 0.05, 0);
+      this._tone(f, 'triangle', 0.3, 0.05, 0, false);   // BGM 不随机化，保持音阶准确
     }, 320);
   }
 

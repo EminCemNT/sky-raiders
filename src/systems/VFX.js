@@ -68,7 +68,7 @@ export function bombShockwave(scene, x, y) {
   });
   p.setDepth(80);
   p.explode();
-  scene.cameras.main.shake(220, 0.03);
+  shake(scene, 'heavy');
   scene.cameras.main.flash(120, 90, 75, 45);
   scene.time.delayedCall(800, () => { if (p && p.active) p.destroy(); });
 }
@@ -92,7 +92,7 @@ export function playerHitFlash(scene, shieldActive) {
 /** Boss 死亡：多段连环爆炸 + 屏震 + 闪光 */
 export function bossDeathExplosion(scene, boss, color) {
   if (prefersReduced) {
-    scene.cameras.main.shake(450, 0.025);
+    shake(scene, 'catastrophic');
     return;
   }
   for (let i = 0; i < 8; i++) {
@@ -103,7 +103,7 @@ export function bossDeathExplosion(scene, boss, color) {
       explosion(scene, boss.x + ox, boss.y + oy, color, s);
     });
   }
-  scene.cameras.main.shake(520, 0.035);
+  shake(scene, 'catastrophic');
   scene.cameras.main.flash(280, 120, 70, 45);
 }
 
@@ -182,4 +182,23 @@ export function setEmitterActive(emitter, active) {
 
 export function destroyEmitter(emitter) {
   if (emitter && emitter.active) emitter.destroy();
+}
+
+/**
+ * 分级屏震语言（game juice 惯例）：用语义档位替代散落的 magic number，
+ * 让"多强的事件抖多狠"在全局一致可控。
+ *   light        ~轻擦（普通命中/拾取）
+ *   medium       ~受创（玩家挨打/激光命中）
+ *   heavy        ~爆裂（炸弹/中型敌机爆炸）
+ *   catastrophic ~毁灭（Boss 死亡/星风暴）
+ */
+const SHAKE_LEVELS = {
+  light:        { d: 80,  i: 0.004 },
+  medium:       { d: 160, i: 0.009 },
+  heavy:        { d: 260, i: 0.016 },
+  catastrophic: { d: 450, i: 0.03  },
+};
+export function shake(scene, level = 'medium') {
+  const s = SHAKE_LEVELS[level] || SHAKE_LEVELS.medium;
+  scene.cameras.main.shake(s.d, s.i);
 }

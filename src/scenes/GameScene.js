@@ -484,7 +484,7 @@ export default class GameScene extends Phaser.Scene {
     }
     const color = element && ELEMENTS[element] ? ELEMENTS[element].color : 0xff7a3a;
     VFX.explosion(this, x, y, color, 2);
-    this.cameras.main.shake(180, 0.012);
+    VFX.shake(this, 'medium');
   }
 
   /** C3 敌弹追踪转向（tracking 弹，逐帧朝玩家微调） */
@@ -857,7 +857,7 @@ export default class GameScene extends Phaser.Scene {
 
     // 清屏冲击波
     this.cameras.main.flash(300, 120, 200, 255);
-    this.cameras.main.shake(300, 0.015);
+    VFX.shake(this, 'heavy');
     VFX.bombShockwave(this, this.player.x, this.player.y);
     this.requestHitStop(250);       // 炸弹：强命中定格
 
@@ -887,7 +887,7 @@ export default class GameScene extends Phaser.Scene {
     const skill = SKILLS[DEFAULT_SKILL] || SKILLS.starstorm;
     // 强视觉：闪光 + 震屏
     this.cameras.main.flash(450, 180, 230, 255);
-    this.cameras.main.shake(450, 0.03);
+    VFX.shake(this, 'catastrophic');
 
     // 清屏敌弹
     this.enemyBullets.children.each((b) => { if (b.active) this.killBullet(b); });
