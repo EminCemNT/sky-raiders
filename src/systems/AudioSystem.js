@@ -175,6 +175,8 @@ class AudioSystem {
     add(EVENTS.USE_BOMB, () => this.sfx('bomb'));
     add(EVENTS.USE_SUPER, () => this.sfx('super'));
     add(EVENTS.BOSS_SPAWNED, () => this.sfx('bosswarn'));
+    add(EVENTS.BOSS_SPAWNED, () => this.startBgm('boss'));   // P1-9 Boss 动态音乐：进 Boss 切激烈段
+    add(EVENTS.BOSS_DEFEATED, () => this.startBgm('stage')); // 退 Boss 切回普通段
     add(EVENTS.PLAYER_DIED, () => this.sfx('explosion'));
   }
 
@@ -184,28 +186,37 @@ class AudioSystem {
     this._bound = false;
   }
 
-  /** 循环 BGM：低音 pad + 轻量琶音（幂等，重复调用安全） */
-  startBgm() {
+  /** 循环 BGM：根据 mode('stage'|'boss') 切换低音 pad + 琶音（幂等，重复调用安全） */
+  startBgm(mode = 'stage') {
     if (!this.enabled) return;
     this._ensure();
-    if (!this.ctx || this._bgmTimer) return;
+    if (!this.ctx) return;
+    // 已是同一模式且正在跑：幂等返回（避免 Boss 事件重复触发时反复重启）
+    if (this._bgmTimer && this._bgmMode === mode) return;
+    // 切换模式：先停旧 loop（保留 this._bgmMode 用于 resumeBgm 恢复）
+    this.stopBgm();
+    this._bgmMode = mode;
     const bg = (AUDIO && AUDIO.bgm) || 0.16;
     const bass = this.ctx.createOscillator();
     const bgGain = this.ctx.createGain();
     bass.type = 'sine';
-    bass.frequency.value = 55;
+    bass.frequency.value = mode === 'boss' ? 73 : 55;   // Boss 段低音略高更紧张
     bgGain.gain.value = bg;
     bass.connect(bgGain);
     bgGain.connect(this.bgmGain);
     bass.start();
     this._bgmBass = bass;
-    const scale = [220, 277, 330, 440, 330, 277, 220, 165];
+    // 琶音音阶：stage=明亮大调；boss=更紧凑/侵略性（小调感）
+    const scale = mode === 'boss'
+      ? [233, 294, 311, 349, 392, 349, 311, 294]
+      : [220, 277, 330, 440, 330, 277, 220, 165];
+    const interval = mode === 'boss' ? 240 : 320;        // Boss 更快
     this._bgmTimer = setInterval(() => {
       if (!this.ctx || this.ctx.state !== 'running') return;
       const f = scale[this._bgmStep % scale.length];
       this._bgmStep++;
-      this._tone(f, 'triangle', 0.3, 0.05, 0, false);   // BGM 不随机化，保持音阶准确
-    }, 320);
+      this._tone(f, 'triangle', mode === 'boss' ? 0.26 : 0.3, mode === 'boss' ? 0.06 : 0.05, 0, false);  // BGM 不随机化，保持音阶准确
+    }, interval);
   }
 
   stopBgm() {
@@ -241,7 +252,7 @@ class AudioSystem {
     if (this._bgmBass) { try { this._bgmBass.stop(); } catch (e) { /* 已停 */ } this._bgmBass = null; }
   }
 
-  resumeBgm() { this.startBgm(); }
+  resumeBgm() { this.startBgm(this._bgmMode || 'stage'); }
 }
 
 export const audio = new AudioSystem();

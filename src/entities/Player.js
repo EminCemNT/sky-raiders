@@ -76,6 +76,11 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
 
     // 尾焰粒子（增强版）
     this.thruster = VFX.attachPlayerThruster(scene, this);
+
+    // P1-6 可见判定点：半径=真实判定圈的小圆（斑鸠/虫姬同款），由存档 showHitbox 控制显隐
+    this.hitboxDot = scene.add.circle(this.x, this.y, PLAYER.HITBOX_RADIUS, 0xff3344, 0.3)
+      .setStrokeStyle(2, 0xff6677, 0.95).setDepth(22)
+      .setVisible(SaveManager.load().showHitbox);
   }
 
   /** 每帧：移动 + 开火 */
@@ -118,6 +123,9 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     } else {
       this.setAlpha(1);
     }
+
+    // P1-6 判定点跟随玩家 + 显隐同步（每帧读内存存档缓存，开销可忽略）
+    if (this.hitboxDot) this.hitboxDot.setPosition(this.x, this.y).setVisible(SaveManager.load().showHitbox);
   }
 
   /** 按火力等级发射多路子弹 */

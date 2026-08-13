@@ -222,6 +222,7 @@ export default class GameScene extends Phaser.Scene {
         this.registerKill(enemy.x, enemy.y, { enemyType: enemy.typeKey, byWingman: byWm, element: el });
         this.addEnergy(2);
       }
+      this._impactFeedback();   // P1-8 普通命中轻震 + 玩家机微后坐（节流）
     });
 
     // 注：激光束对敌机的伤害走 checkBossHits 内的手动包围盒判定（B4），
@@ -551,6 +552,12 @@ export default class GameScene extends Phaser.Scene {
       ...cfg,
       difficulty: (overrides && overrides.difficulty) || (this.level && this.level.difficulty) || 1,
     });
+    // P1-9 Boss 动态音乐 + UIScene 血条：boss 生成唯一入口统一 emit（原仅 rush 发，普通关 Boss 缺此事件）
+    EventBus.emit(EVENTS.BOSS_SPAWNED, {
+      key: bossKey,
+      name: (cfg && cfg.name) || 'BOSS',
+      color: cfg && cfg.color,
+    });
   }
 
   // ---- Boss Rush 模式：连打 BOSS_RUSH 序列，血量随轮次递增 ----
@@ -563,13 +570,9 @@ export default class GameScene extends Phaser.Scene {
     const seq = BOSS_RUSH[this.bossRushIndex];
     if (!seq) { this.endGame(true); return; }
     this.spawnBoss(seq.bossKey, {
-      name: seq.name, color: seq.color, pattern: seq.pattern,
-      maxHp: Math.round(seq.maxHp * seq.hpMult), difficulty: 1.2,
-    });
-    EventBus.emit(EVENTS.BOSS_SPAWNED, {
-      key: seq.bossKey,
       name: `BOSS RUSH ${this.bossRushIndex + 1}/${BOSS_RUSH.length} · ${seq.name}`,
-      color: seq.color,
+      color: seq.color, pattern: seq.pattern,
+      maxHp: Math.round(seq.maxHp * seq.hpMult), difficulty: 1.2,
     });
   }
 
@@ -719,6 +722,25 @@ export default class GameScene extends Phaser.Scene {
     this._hitStopMs = Math.max(this._hitStopMs || 0, ms);
     if (this.physics && this.physics.world && !this.physics.world.isPaused) {
       this.physics.world.pause();
+    }
+  }
+
+  /** P1-8 普通命中轻震 + 玩家机微后坐：极轻 + 90ms 节流，避免高射速下持续抖动。reduced-motion 跳过后坐 */
+  _impactFeedback() {
+    const now = this.time.now;
+    if (this._lastImpact && now - this._lastImpact < 90) return;
+    this._lastImpact = now;
+    VFX.shake(this, 'light');
+    const p = this.player;
+    const reduced = (typeof window !== 'undefined' && window.matchMedia
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    if (p && p.active && !reduced) {
+      if (p._recoilTween) p._recoilTween.stop();
+      p.setScale(1, 1);
+      p._recoilTween = this.tweens.add({
+        targets: p, scaleY: 0.9, duration: 50, yoyo: true, ease: 'Quad.easeOut',
+        onComplete: () => { if (p.active) p.setScale(1, 1); p._recoilTween = null; },
+      });
     }
   }
 

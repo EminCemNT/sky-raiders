@@ -83,7 +83,7 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
   }
 
   update(time, dt) {
-    if (!this.active) return;
+    if (!this.active || this._dying) return;
 
     // B6 火元素 DoT（灼烧）
     if (time < this._dotUntil) {
@@ -172,6 +172,7 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
 
   /** 受伤，返回是否死亡 */
   hit(dmg, element) {
+    if (this._dying) return false;            // 死亡演出进行中，忽略后续命中（防对象池复用前的重复结算）
     if (element) this.applyElement(element);   // B6 命中附加元素状态
     const willDie = this.hp - dmg <= 0;        // 致命一击交给 die() 的爆炸音，避免双重音
     this.hp -= dmg;
@@ -228,6 +229,8 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
   }
 
   die() {
+    if (this._dying) return;
+    this._dying = true;
     audio.sfx('explosion');
     EventBus.emit(EVENTS.SCORE_CHANGED, this.def.score);
     // 掉金币
@@ -237,13 +240,26 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     // 增强爆炸
     VFX.explosion(this.scene, this.x, this.y, this.getColor(), this.typeKey === 'mid' ? 1.3 : 1);
     if (this.scene.maybeDropItem) this.scene.maybeDropItem(this.x, this.y);
-    this.recycle();
+    // 死亡演出（P1-7）：先停用碰撞体避免死敌仍挡子弹/被重复 overlap，再短命中定格 + 弹性缩放消失
+    if (this.body) this.body.enable = false;
+    if (this.scene.requestHitStop) this.scene.requestHitStop(60);
+    if (PREFERS_REDUCED) { this.recycle(); return; }
+    this.scene.tweens.add({
+      targets: this, scaleX: 1.28, scaleY: 1.28, duration: 90, ease: 'Back.easeOut',
+      onComplete: () => {
+        this.scene.tweens.add({
+          targets: this, scaleX: 0, scaleY: 0, duration: 150, ease: 'Back.easeIn',
+          onComplete: () => this.recycle(),
+        });
+      },
+    });
   }
 
   recycle() {
     VFX.setEmitterActive(this.thruster, false);
     this.setActive(false).setVisible(false);
     if (this.body) { this.body.enable = false; this.setVelocity(0, 0); }
+    this._dying = false; this.setScale(1, 1); this.angle = 0;  // P1-7 复位死亡演出状态，保障对象池复用
   }
 
   destroy(fromScene) {

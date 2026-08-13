@@ -5,6 +5,9 @@ import { SaveManager } from '../utils/SaveManager.js';
 import { audio } from '../systems/AudioSystem.js';
 import { NeonBar, NeonButton, makeIconButton, THEME } from '../utils/UIWidgets.js';
 
+const PREFERS_REDUCED = (typeof window !== 'undefined' && window.matchMedia
+  && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
 /**
  * UIScene：HUD 叠层，与 GameScene 并行运行。
  * ---------------------------------------------------------------------------
@@ -130,12 +133,22 @@ export default class UIScene extends Phaser.Scene {
     }).setOrigin(0.5).setShadow(0, 0, '#2a86c0', 16, true, true);
     const resumeBtn = this.makePauseButton(GAME_WIDTH / 2, 440, '继续', () => this.togglePause());
     const quitBtn = this.makePauseButton(GAME_WIDTH / 2, 530, '退出到菜单', () => this.quitToMenu());
-    this.pauseOverlay.add([dim, pTitle, resumeBtn, quitBtn]);
+    // P1-6 可见判定点开关（斑鸠/虫姬同款）：暂停面板内一键切换存档 showHitbox
+    const hbBtn = new NeonButton(this, GAME_WIDTH / 2, 620, this._hitboxLabel(), {
+      onDown: () => {
+        const cur = SaveManager.load().showHitbox;
+        SaveManager.set('showHitbox', !cur);
+        hbBtn.setLabel(this._hitboxLabel());
+        audio.sfx('ui');
+      },
+    });
+    this.pauseOverlay.add([dim, pTitle, resumeBtn, quitBtn, hbBtn.container]);
 
     // 键盘暂停（P / ESC）
     this.input.keyboard.on('keydown-P', () => this.togglePause());
     this.input.keyboard.on('keydown-ESC', () => this.togglePause());
 
+    this._buildLowHpVignette();   // P1-5 低血量暗角图层（先于 updateHp 首次调用建立）
     this.bindEvents();
     this.events.once('shutdown', () => this.unbind());
 
@@ -340,6 +353,14 @@ export default class UIScene extends Phaser.Scene {
       const left = Math.max(0, Math.ceil((this._weaponUntilTime - this.time.now) / 1000));
       this.weaponText.setText(`武器 · ${short} ${left}s`);
     }
+    // P1-5 低血量暗角脉动（心跳感）；reduced-motion 用静态基线
+    if (this._lowHpVignette) {
+      if (this._lowHpBase > 0 && !PREFERS_REDUCED) {
+        this._lowHpVignette.setAlpha(this._lowHpBase + 0.16 * (0.5 + 0.5 * Math.sin(this.time.now * 0.006)));
+      } else {
+        this._lowHpVignette.setAlpha(this._lowHpBase);
+      }
+    }
   }
 
   updateEnergy(val, max) {
@@ -377,6 +398,28 @@ export default class UIScene extends Phaser.Scene {
     const color = ratio > 0.5 ? THEME.hp.good : ratio > 0.25 ? THEME.hp.warn : THEME.hp.bad;
     this.hpBar.setRatio(ratio, color);
     this.hpText.setText(`${Math.ceil(hp)}/${max}`);
+    if (this._lowHpVignette) {
+      this._lowHpBase = ratio <= 0.3 ? 0.7 * (1 - ratio / 0.3) : 0;   // P1-5 低血量驱动暗角强度
+    }
+  }
+
+  /** P1-5 低血量暗角：程序生成径向渐变纹理（中心透明→边缘红），全屏铺底，alpha 由 HP 驱动 */
+  _buildLowHpVignette() {
+    const key = 'vignette-lowhp';
+    if (!this.textures.exists(key)) {
+      const W = GAME_WIDTH, H = GAME_HEIGHT;
+      const ct = this.textures.createCanvas(key, W, H);
+      const ctx = ct.getContext();
+      const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.28, W / 2, H / 2, Math.max(W, H) * 0.62);
+      g.addColorStop(0, 'rgba(180,0,0,0)');
+      g.addColorStop(0.7, 'rgba(180,0,0,0)');
+      g.addColorStop(1, 'rgba(200,10,10,0.9)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+      ct.refresh();
+    }
+    this._lowHpVignette = this.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, key).setDepth(90).setAlpha(0);
+    this._lowHpBase = 0;
   }
 
   flashCenter(text, color = '#7cf3ff') {
@@ -387,6 +430,11 @@ export default class UIScene extends Phaser.Scene {
       targets: t, alpha: 1, scale: 1.2, duration: 300, yoyo: true, hold: 500,
       onComplete: () => t.destroy(),
     });
+  }
+
+  /** P1-6 判定点按钮文案：随存档开关显示 开/关 */
+  _hitboxLabel() {
+    return `判定点：${SaveManager.load().showHitbox ? '开' : '关'}`;
   }
 
   // ---- 成就解锁横幅（顶部滑入，2.2s 后滑出）----

@@ -29,6 +29,7 @@ const DEFAULT_SAVE = {
   checkinStreak: 0,
   tutorialDone: false,
   startWeapon: null, // 开局主武器覆盖（机库选择；null=用战机绑定武器）
+  showHitbox: false, // 显示玩家判定点（P1-6：斑鸠/虫姬同款，默认关）
   // 每日任务（留存系统 #每日任务）：date=当天日期 / claimed=是否已领 / progress=各指标进度 / picked=当天抽中的指标
   dailyQuest: { date: '', claimed: false, progress: {}, picked: [] },
 };
