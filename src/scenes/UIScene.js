@@ -149,6 +149,14 @@ export default class UIScene extends Phaser.Scene {
     this.input.keyboard.on('keydown-ESC', () => this.togglePause());
 
     this._buildLowHpVignette();   // P1-5 低血量暗角图层（先于 updateHp 首次调用建立）
+
+    // 连击 HUD（常驻，复用不重建）：击杀连击计数，脉冲缩放 + 档位变色（D）
+    // y≈150 顶部区域，不挡玩家判定区（约 y≈860）；初始隐藏，COMBO_CHANGED 触发显隐
+    this.comboText = this.add.text(GAME_WIDTH / 2, 150, '', {
+      fontFamily: 'sans-serif', fontSize: '42px', fontStyle: '800', color: '#7cf3ff', align: 'center',
+    }).setOrigin(0.5).setDepth(120).setShadow(0, 0, '#000000', 8, true, true).setVisible(false);
+    this._lastComboPulse = 0;     // 连击脉冲频控（120ms）
+
     this.bindEvents();
     this.events.once('shutdown', () => this.unbind());
 
@@ -304,18 +312,33 @@ export default class UIScene extends Phaser.Scene {
     EventBus.on(EVENTS.MAGNET_CHANGED, this._onMagnet);
 
     this._onCombo = (combo, mult) => {
-      if (combo <= 1) return;
-      // 居中大字号连击（每次连击变化弹一次，缩放弹入 1.3→1.0 + 渐隐，A6）
-      const size = Phaser.Math.Clamp(44 + Math.floor((combo - 1) / 5) * 2, 44, 60);
-      const color = combo >= 40 ? '#ff5566' : combo >= 20 ? '#ffd54a' : '#7cf3ff';
-      const t = this.add.text(GAME_WIDTH / 2, 150, `连击 ×${combo}\n×${mult.toFixed(1)}`, {
-        fontFamily: 'sans-serif', fontSize: `${size}px`, fontStyle: '800', color, align: 'center',
-      }).setOrigin(0.5).setDepth(120).setScale(1.3).setAlpha(1)
-        .setShadow(0, 0, '#000000', 8, true, true);
-      this.tweens.add({
-        targets: t, scale: 1.0, alpha: 0, duration: 900, ease: 'Cubic.out',
-        onComplete: () => t.destroy(),
-      });
+      if (!this.comboText) return;
+      // 断连（combo≤1）：快速收缩隐藏（复用常驻对象，不重建）
+      if (combo <= 1) {
+        if (this.comboText.visible) {
+          this.tweens.killTweensOf(this.comboText);
+          this.comboText.setVisible(false).setScale(1);
+        }
+        return;
+      }
+      // 每次连击变化都更新文本 + 档位变色（combo<20 青 / 20~39 金 / ≥40 红）
+      this.comboText.setText(`连击 ×${combo}\n×${(mult || 1).toFixed(1)}`);
+      this.comboText.setColor(combo >= 40 ? '#ff5566' : combo >= 20 ? '#ffd54a' : '#7cf3ff');
+      // combo>1 即立即显示（优先于频控，保证断连后 120ms 内重新击杀也能立即显示）
+      this.comboText.setVisible(true);
+      // 频控：120ms 内跳过脉冲重放，防高频击杀抖动（但仍刷新文本/颜色/显隐）
+      if (this.time.now - this._lastComboPulse < 120) return;
+      this._lastComboPulse = this.time.now;
+      if (PREFERS_REDUCED) {
+        // reduced-motion：静态（保留色变/字号），去掉 scale 弹入
+        this.comboText.setScale(1);
+      } else {
+        this.tweens.killTweensOf(this.comboText);   // 防叠加：先清旧脉冲再放新脉冲
+        this.comboText.setScale(1.35);
+        this.tweens.add({
+          targets: this.comboText, scale: 1.0, duration: 180, ease: 'Back.easeOut',
+        });
+      }
     };
     EventBus.on(EVENTS.COMBO_CHANGED, this._onCombo);
 

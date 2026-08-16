@@ -16,13 +16,15 @@ import { EventBus } from '../utils/EventBus.js';
  *
  * 纪律：
  *   - 金单一来源 = COLORS.coin，严禁硬编码 #C8A96A 等
- *   - reduced_motion（系统"减少动态效果"）开启时不飘，直接 return
+ *   - reduced_motion（OS matchMedia，不新增存档开关）：保留静态出现 + 淡出，
+ *     跳过弹入 scale 与上升位移（BIG numbers 降级为静态大字 + 淡出）
  *   - shutdown 时解绑 EventBus，避免场景重启后重复回调
  */
 
 const RISE = 42;          // 上飘像素，对齐 d-float FLOAT_RISE 手感
 const LIFETIME = 800;     // ms，对齐 d-float FLOAT_LIFETIME
 const DEPTH = 80;         // 压在玩法层之上、HUD 叠层之下
+const MAX_FLOATERS = 24;  // 同屏飘字上限：超出丢弃最旧（优先非 special），防清屏(useBomb/useSuper)瞬时数十弹遮挡
 
 const prefersReduced = (typeof window !== 'undefined' && window.matchMedia
   && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
@@ -35,6 +37,7 @@ function fmtMult(m) {
 export class FloatingTextManager {
   constructor(scene) {
     this.scene = scene;
+    this._floaters = [];   // 活跃飘字引用（用于同屏上限裁剪）
     this._onFloat = (p) => this.spawn(p);
     EventBus.on(EVENTS.FLOAT_SCORE, this._onFloat);
     scene.events.once('shutdown', () => this.destroy());
@@ -42,8 +45,10 @@ export class FloatingTextManager {
 
   spawn(p) {
     if (!p || p.x == null || p.y == null) return;
-    // reduced_motion：系统级"减少动态"，直接跳过飘字
-    if (prefersReduced) return;
+    const reduced = prefersReduced;
+
+    // 同屏上限裁剪：清屏炸弹/星风暴瞬时数十弹，超出则丢弃最旧（优先非 special）飘字防遮挡
+    if (this._floaters.length >= MAX_FLOATERS) this._dropOldest();
 
     let text;
     if (p.label) {
@@ -52,25 +57,77 @@ export class FloatingTextManager {
       text = '+' + (p.amount | 0);
       if (p.mult > 1.05) text += ' ×' + fmtMult(p.mult);
     }
-    const color = p.special ? '#ffd54a' : '#ffffff';
+
+    // 虫姬风 BIG numbers：倍率 > 1.05（即连击累积）时字号放大到 40~48px，倍率越高越大越醒目
+    const big = p.mult > 1.05;
+    let fontSize, color, stroke, strokeThickness;
+    if (big) {
+      fontSize = Phaser.Math.Clamp(
+        Math.round(40 + (Math.max(p.mult, 1.05) - 1.05) / (5 - 1.05) * 8), 40, 48,
+      );
+      color = '#ffffff';
+      stroke = '#ffd54a';      // == COLORS.coin 单一金来源：加粗金色描边
+      strokeThickness = 6;
+    } else {
+      fontSize = p.special ? '28px' : '22px';
+      color = p.special ? '#ffd54a' : '#ffffff';
+      stroke = '#040a16';
+      strokeThickness = 4;
+    }
 
     const t = this.scene.add.text(p.x, p.y, text, {
       fontFamily: 'sans-serif',
-      fontSize: p.special ? '28px' : '22px',
+      fontSize: typeof fontSize === 'number' ? fontSize + 'px' : fontSize,
       fontStyle: 'bold',
       color,
-      stroke: '#040a16',
-      strokeThickness: 4,
+      stroke,
+      strokeThickness,
     }).setOrigin(0.5).setDepth(DEPTH);
+    t._special = !!p.special;
+    this._floaters.push(t);
 
-    this.scene.tweens.add({
-      targets: t,
-      y: p.y - RISE,
-      alpha: 0,
-      duration: LIFETIME,
-      ease: 'Cubic.out',
-      onComplete: () => t.destroy(),
-    });
+    const onDone = () => {
+      const i = this._floaters.indexOf(t);
+      if (i >= 0) this._floaters.splice(i, 1);
+      if (t && t.active) t.destroy();
+    };
+
+    if (reduced) {
+      // reduced-motion：静态出现 + 淡出，跳过弹入 scale 与上升位移
+      this.scene.tweens.add({
+        targets: t, alpha: 0, duration: LIFETIME, ease: 'Cubic.out', onComplete: onDone,
+      });
+    } else {
+      if (big) {
+        t.setScale(1.4);
+        this.scene.tweens.add({
+          targets: t, scale: 1.0, duration: 320, ease: 'Back.easeOut',
+        });
+      }
+      this.scene.tweens.add({
+        targets: t, y: p.y - RISE, alpha: 0, duration: LIFETIME, ease: 'Cubic.out', onComplete: onDone,
+      });
+    }
+  }
+
+  /** 同屏飘字超出上限时裁剪：优先丢弃最旧的非 special 飘字，全 special 时丢弃最旧整体；跳过已失效引用 */
+  _dropOldest() {
+    let idx = -1;
+    for (let i = 0; i < this._floaters.length; i++) {
+      if (this._floaters[i].active && !this._floaters[i]._special) { idx = i; break; }
+    }
+    if (idx < 0) {
+      for (let i = 0; i < this._floaters.length; i++) {
+        if (this._floaters[i].active) { idx = i; break; }
+      }
+    }
+    if (idx < 0) { this._floaters.length = 0; return; }
+    const old = this._floaters[idx];
+    this._floaters.splice(idx, 1);
+    if (old.active) {
+      this.scene.tweens.killTweensOf(old);   // 先停 tween，防销毁后回调残留
+      old.destroy();
+    }
   }
 
   destroy() {
