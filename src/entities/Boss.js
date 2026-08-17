@@ -69,6 +69,7 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
       case 'ring': this._patternRing(); break;
       case 'spiral': this._patternSpiral(); break;
       case 'cross': this._patternCross(); break;
+      case 'nova': this._patternNova(); break;
       default: this._patternFan(); break;
     }
   }
@@ -134,6 +135,32 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
       [0, Math.PI / 2, Math.PI, Math.PI * 1.5].forEach((ang) => {
         this.spawnBullet(ang, this.bulletSpeed * 0.85);
       });
+    }
+  }
+
+  // 新星弹幕（第4关 Boss「湮灭者」finale 形态）：环弹铺底 + 朝玩家瞄准爆发，
+  // 阶段2 起追加反向旋转臂。复用 spawnBullet / bulletSpeed，不与现有 pattern 耦合。
+  _patternNova() {
+    const n = 16 + this.phase * 4;
+    for (let i = 0; i < n; i++) {
+      const ang = (Math.PI * 2 / n) * i;
+      this.spawnBullet(ang, this.bulletSpeed * 0.7);
+    }
+    const player = this.scene.player;
+    const base = (player && player.active)
+      ? Phaser.Math.Angle.Between(this.x, this.y, player.x, player.y)
+      : Math.PI / 2;
+    const burst = 3 + this.phase;
+    for (let i = 0; i < burst; i++) {
+      const ang = base + (i - (burst - 1) / 2) * 0.18;
+      this.spawnBullet(ang, this.bulletSpeed * 1.05);
+    }
+    if (this.phase >= 2) {
+      this._novaAng = (this._novaAng || 0) + 0.4;
+      for (let i = 0; i < 4; i++) {
+        const ang = this._novaAng + (Math.PI / 2) * i;
+        this.spawnBullet(ang, this.bulletSpeed * 0.9);
+      }
     }
   }
 

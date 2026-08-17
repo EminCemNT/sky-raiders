@@ -161,14 +161,39 @@ export const LEVELS = [
       { count: 16, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['small', 'sine', 1], ['mid', 'dive', 1], ['mid', 'sine', 1], ['diver', 'dive', 1]] },
     ],
   },
+  {
+    id: 4, name: '终焉星核', bg: 'bg_abyss', waves: 9, bossKey: 'boss_annihilator',
+    difficulty: 2.2,
+    theme: {
+      skyTop: 0x2a0a1a, skyBottom: 0x0a0408,
+      starTints: [0x6a2a3a, 0xd66a7a, 0xffb0c0, 0xff7a8a],
+      accent: 0xff6a8a,
+      nebula: { tints: [0x6a1a2a, 0x3a0a1a], alpha: 0.20 },
+      cloudTint: 0xd66a7a,
+      silhouette: { kind: 'building', color: 0x0a0408, density: 1, speed: 44 },
+    },
+    boss: { maxHp: 5600, pattern: 'nova', name: '湮灭者 Annihilator', color: 0xff6a3d },
+    wavePlan: [
+      { count: 10, comp: [['small', 'straight', 1], ['small', 'sine', 1], ['mid', 'straight', 1]] },
+      { count: 11, comp: [['small', 'sine', 2], ['mid', 'straight', 1], ['mid', 'dive', 1]] },
+      { count: 12, comp: [['small', 'dive', 2], ['mid', 'sine', 2], ['mid', 'straight', 1]] },
+      { count: 13, comp: [['small', 'sine', 2], ['mid', 'dive', 2], ['mid', 'straight', 1], ['diver', 'dive', 1]] },
+      { count: 14, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['mid', 'sine', 2], ['diver', 'dive', 1]] },
+      { count: 15, comp: [['small', 'dive', 2], ['mid', 'sine', 2], ['mid', 'straight', 2], ['diver', 'dive', 1]] },
+      { count: 16, comp: [['small', 'sine', 2], ['mid', 'dive', 2], ['mid', 'straight', 1], ['mid', 'sine', 1], ['diver', 'dive', 2]] },
+      { count: 18, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['small', 'sine', 1], ['mid', 'dive', 1], ['mid', 'sine', 1], ['diver', 'dive', 2]] },
+      { count: 20, comp: [['small', 'sine', 2], ['mid', 'dive', 2], ['mid', 'straight', 1], ['mid', 'sine', 1], ['diver', 'dive', 3]] },
+    ],
+  },
 ];
 
-// Boss Rush 序列（独立于主线 3 关）：连打现有 3 个 Boss，血量随轮次递增。
+// Boss Rush 序列（独立于主线 4 关）：连打现有 4 个 Boss，血量随轮次递增。
 // pattern / name / color 直接取自各关 Boss 配置，避免重复定义。
 export const BOSS_RUSH = [
   { bossKey: 'boss_sentinel', name: '哨兵 Sentinel', color: 0x66ccff, pattern: 'fan',    maxHp: 2600, hpMult: 1.0 },
   { bossKey: 'boss_crusher',  name: '粉碎者 Crusher', color: 0xff9a4a, pattern: 'spiral',  maxHp: 3300, hpMult: 1.15 },
   { bossKey: 'boss_overlord',  name: '霸主 Overlord',  color: 0x66ff99, pattern: 'cross',  maxHp: 4200, hpMult: 1.3 },
+  { bossKey: 'boss_annihilator', name: '湮灭者 Annihilator', color: 0xff6a3d, pattern: 'nova', maxHp: 5600, hpMult: 1.5 },
 ];
 
 // 星级评分阈值（每关结束按这些维度算 1~3 星 + 完成度百分比）

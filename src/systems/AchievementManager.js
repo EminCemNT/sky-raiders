@@ -59,7 +59,7 @@ export const ACHIEVEMENTS = [
     condition: (s) => s.coins >= 30,
     progress: (s) => ({ cur: _safeMin(s.coins, 30), target: 30 }) },
 
-  { id: 'all_clear', name: '苍穹制霸', desc: '累计通关全部 3 关', icon: '👑', type: 'clear', category: 'progression', hidden: false, live: false,
+  { id: 'all_clear', name: '苍穹制霸', desc: '累计通关全部 4 关', icon: '👑', type: 'clear', category: 'progression', hidden: false, live: false,
     condition: (s) => Object.keys(SaveManager.get('levelStars') || {}).length >= MAX_LEVEL,
     progress: (s) => ({ cur: _safeMin(Object.keys(SaveManager.get('levelStars') || {}).length, MAX_LEVEL), target: MAX_LEVEL }) },
 
