@@ -182,6 +182,33 @@ export default class UIScene extends Phaser.Scene {
     // 初始化状态
     this.updateHp(d.hp || 100, d.maxHp || 100);
     this.updateEnergy(d.energy || 0, 100);
+
+    // Phase C：关卡开场大字 banner（Stage Banner，Back.easeOut 弹入 + 辉光 + 淡出）
+    const stageName = this.mode === 'bossrush' ? 'BOSS RUSH' : lvl.name;
+    const stageSub = this.mode === 'bossrush' ? '挑战连战' : `STAGE ${lvl.id}`;
+    this.showStageBanner(stageName, stageSub);
+  }
+
+  /** Phase C：关卡开场大字横幅（弹入 + 停留 + 淡出；reduced-motion 静态） */
+  showStageBanner(name, sub) {
+    const cx = GAME_WIDTH / 2;
+    const cy = GAME_HEIGHT * 0.4;
+    const cont = this.add.container(cx, cy).setDepth(130);
+    const title = this.add.text(0, 0, name, {
+      fontFamily: 'sans-serif', fontSize: '46px', fontStyle: '800', color: '#aef6ff',
+    }).setOrigin(0.5).setShadow(0, 0, '#2a86c0', 22, true, true);
+    const subT = this.add.text(0, 46, sub, {
+      fontFamily: 'sans-serif', fontSize: '16px', color: '#7cf3ff', fontStyle: '700',
+    }).setOrigin(0.5).setAlpha(0.9).setLetterSpacing(6);
+    cont.add([title, subT]);
+    if (PREFERS_REDUCED) {
+      cont.setScale(1).setAlpha(1);
+      this.time.delayedCall(1800, () => this.tweens.add({ targets: cont, alpha: 0, duration: 400, onComplete: () => cont.destroy() }));
+    } else {
+      cont.setScale(0.6).setAlpha(0);
+      this.tweens.add({ targets: cont, scale: 1, alpha: 1, duration: 420, ease: 'Back.easeOut' });
+      this.tweens.add({ targets: cont, alpha: 0, delay: 1700, duration: 500, onComplete: () => cont.destroy() });
+    }
   }
 
   makePauseButton(x, y, label, cb) {

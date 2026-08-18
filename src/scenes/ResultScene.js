@@ -28,6 +28,11 @@ export default class ResultScene extends Phaser.Scene {
 
     this.starfield = createStarfield(this, { layers: 4, starTints: theme.starTints });
 
+    // 霓虹装饰边框（Phase C）
+    const frame = this.add.graphics().setDepth(10);
+    frame.lineStyle(3, COLORS.accent, 0.5);
+    frame.strokeRoundedRect(12, 12, GAME_WIDTH - 24, GAME_HEIGHT - 24, 18);
+
     // 半透明遮罩
     this.add.rectangle(cx, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.55);
 
@@ -37,6 +42,12 @@ export default class ResultScene extends Phaser.Scene {
     this.add.text(cx, 200, title, {
       fontFamily: 'sans-serif', fontSize: '48px', fontStyle: '800', color: titleColor,
     }).setOrigin(0.5).setShadow(0, 0, titleColor, 20, true, true);
+
+    // Phase C：胜利全屏爆闪
+    if (r.victory) {
+      const flash = this.add.rectangle(cx, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xffffff, 0.85).setDepth(40);
+      this.tweens.add({ targets: flash, alpha: 0, duration: 650, ease: 'Cubic.out', onComplete: () => flash.destroy() });
+    }
 
     // 星级
     this.drawStars(cx, 280, r.stars || 0);
@@ -95,7 +106,13 @@ export default class ResultScene extends Phaser.Scene {
       if (filled) {
         star.setScale(0);
         this.tweens.add({
-          targets: star, scale: 1, duration: 400, delay: i * 200, ease: 'Back.out',
+          targets: star, scale: 1, duration: 400, delay: i * 220, ease: 'Back.out',
+        });
+        // Phase C：星级弹入爆闪光圈
+        const burst = this.add.circle(x, y, 8, 0xfff3b0, 0.5).setScale(0.3).setDepth(2);
+        this.tweens.add({
+          targets: burst, scale: 6, alpha: 0, duration: 440, delay: i * 220,
+          ease: 'Cubic.out', onComplete: () => burst.destroy(),
         });
       }
     }
