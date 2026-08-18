@@ -97,21 +97,27 @@ export class NeonButton {
     const stroke = opts.stroke ?? THEME.btnStroke;
     const textColor = opts.textColor ?? '#ffffff';
     this._bg = bgColor; this._stroke = stroke;
+    this.glow = opts.glow ?? false;
     this.container = scene.add.container(x, y);
+    // 外发光层（默认隐藏，hover 时淡入；向后兼容，仅 glow:true 生效）
+    this.glowG = scene.add.graphics();
+    this.glowG.fillStyle(stroke, 0.5).fillRoundedRect(-this.w / 2 - 10, -this.h / 2 - 10, this.w + 20, this.h + 20, 16);
+    this.glowG.fillStyle(stroke, 0.8).fillRoundedRect(-this.w / 2 - 5, -this.h / 2 - 5, this.w + 10, this.h + 10, 13);
+    this.glowG.setAlpha(0);
     this.g = scene.add.graphics();
     this._drawBg(bgColor, stroke, 1);
     this.text = scene.add.text(0, 0, label, {
       fontFamily: 'sans-serif', fontSize: `${opts.fontSize ?? 22}px`,
       fontStyle: '700', color: textColor,
     }).setOrigin(0.5);
-    this.container.add([this.g, this.text]);
+    this.container.add([this.glowG, this.g, this.text]);
     this.container.setSize(this.w, this.h).setDepth(opts.depth ?? 10).setInteractive({
       hitArea: new Phaser.Geom.Rectangle(-this.w / 2, -this.h / 2, this.w, this.h),
       hitAreaCallback: (rect, x, y) => rect.contains(x, y),
       useHandCursor: true,
     });
-    this.container.on('pointerover', () => this._drawBg(0x1b5580, stroke, 1));
-    this.container.on('pointerout', () => this._drawBg(this._bg, stroke, 1));
+    this.container.on('pointerover', () => { this._drawBg(0x1b5580, stroke, 1); if (this.glow) this.scene.tweens.add({ targets: this.glowG, alpha: 0.4, duration: 160 }); });
+    this.container.on('pointerout', () => { this._drawBg(this._bg, stroke, 1); if (this.glow) this.scene.tweens.add({ targets: this.glowG, alpha: 0, duration: 160 }); });
     this.container.on('pointerdown', () => {
       scene.tweens.add({ targets: this.container, scale: 0.96, duration: 80, yoyo: true });
     });

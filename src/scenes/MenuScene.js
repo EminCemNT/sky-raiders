@@ -29,19 +29,33 @@ export default class MenuScene extends Phaser.Scene {
       this.scene.add('HangarScene', HangarScene, false);
     }
 
-    // 标题
-    this.add.text(cx, 220, '苍穹战机', {
-      fontFamily: 'sans-serif', fontSize: '58px', fontStyle: '800',
-      color: '#7cf3ff',
-    }).setOrigin(0.5).setShadow(0, 0, '#2a86c0', 24, true, true);
+    // 标题（霓虹辉光层 + 本体 + 呼吸脉动）
+    this.titleGlow = this.add.text(cx, 218, '苍穹战机', {
+      fontFamily: 'sans-serif', fontSize: '62px', fontStyle: '800', color: '#7cf3ff',
+    }).setOrigin(0.5).setShadow(0, 0, '#7cf3ff', 38, true, true).setAlpha(0.32).setDepth(1);
+    this.title = this.add.text(cx, 218, '苍穹战机', {
+      fontFamily: 'sans-serif', fontSize: '58px', fontStyle: '800', color: '#aef6ff',
+    }).setOrigin(0.5).setShadow(0, 0, '#2a86c0', 24, true, true).setDepth(2);
+    this.tweens.add({ targets: [this.title, this.titleGlow], scale: { from: 1, to: 1.035 }, duration: 1700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    this.tweens.add({ targets: this.titleGlow, alpha: { from: 0.26, to: 0.5 }, duration: 1700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
-    this.add.text(cx, 280, 'SKY  RAIDERS', {
-      fontFamily: 'sans-serif', fontSize: '20px', color: '#4a90c0',
-    }).setOrigin(0.5).setAlpha(0.8);
+    // 英文名（宽字距 + 副色呼吸）
+    this.subTitle = this.add.text(cx, 284, 'S K Y   R A I D E R S', {
+      fontFamily: 'sans-serif', fontSize: '17px', color: '#6fb6e6', fontStyle: '700',
+    }).setOrigin(0.5).setAlpha(0.75).setDepth(2).setLetterSpacing(8);
+    this.tweens.add({ targets: this.subTitle, alpha: { from: 0.5, to: 0.95 }, duration: 2200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+
+    // 标题能量环装饰（缓慢旋转 + 脉动）
+    this.energyRing = this.add.graphics().setPosition(cx, 218).setDepth(0);
+    this.energyRing.lineStyle(3, COLORS.accent, 0.5).strokeCircle(0, 0, 132);
+    this.energyRing.lineStyle(1, 0xffffff, 0.25).strokeCircle(0, 0, 120);
+    this.energyRing.lineStyle(2, 0x66ccff, 0.3).strokeCircle(0, 0, 144);
+    this.tweens.add({ targets: this.energyRing, angle: 360, duration: 28000, repeat: -1 });
+    this.tweens.add({ targets: this.energyRing, scale: { from: 0.97, to: 1.05 }, duration: 3200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
     // 教程按钮（重看新手引导，进入第 1 关并强制显示教程）
     new NeonButton(this, cx, 400, '新手教程', {
-      stroke: COLORS.accent, fontSize: 22, onDown: () => {
+      stroke: COLORS.accent, fontSize: 22, glow: true, onDown: () => {
         if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen) return;
         audio.resume(); audio.startBgm(); audio.sfx('ui');
         this.scene.start(SCENES.GAME, { levelId: 1, mode: 'normal', forceTutorial: true });
@@ -50,7 +64,7 @@ export default class MenuScene extends Phaser.Scene {
 
     // 开始按钮
     new NeonButton(this, cx, 480, '开始游戏', {
-      fontSize: 26,
+      fontSize: 26, glow: true,
       onDown: () => {
         if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen) return;
         audio.resume(); audio.startBgm(); audio.sfx('ui'); this.startGame();
@@ -59,6 +73,7 @@ export default class MenuScene extends Phaser.Scene {
 
     // 机库按钮
     new NeonButton(this, cx, 548, '机  库', {
+      glow: true,
       onDown: () => {
         if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen) return;
         this.scene.start('HangarScene');
@@ -66,37 +81,37 @@ export default class MenuScene extends Phaser.Scene {
     });
 
     // 成就按钮
-    new NeonButton(this, cx, 616, '成  就', { stroke: COLORS.coin, onDown: () => {
+    new NeonButton(this, cx, 616, '成  就', { stroke: COLORS.coin, glow: true, onDown: () => {
       if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen) return;
       audio.sfx('ui'); this.openAchievements();
     } });
 
     // 设置按钮
-    new NeonButton(this, cx, 680, '设  置', { onDown: () => {
+    new NeonButton(this, cx, 680, '设  置', { glow: true, onDown: () => {
       if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen) return;
       this.openSettings();
     } });
 
     // Boss Rush 按钮
-    new NeonButton(this, cx, 740, 'BOSS RUSH', { stroke: 0xff5566, onDown: () => {
+    new NeonButton(this, cx, 740, 'BOSS RUSH', { stroke: 0xff5566, glow: true, onDown: () => {
       if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen) return;
       audio.sfx('ui'); this.scene.start(SCENES.GAME, { mode: 'bossrush' });
     } });
 
     // 选择关卡按钮
-    new NeonButton(this, cx, 800, '选择关卡', { onDown: () => {
+    new NeonButton(this, cx, 800, '选择关卡', { glow: true, onDown: () => {
       if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen) return;
       audio.sfx('ui'); this.openLevelSelect();
     } });
 
     // 每日签到按钮（主动点击才弹，避免自动弹窗挡住"开始游戏"）
-    new NeonButton(this, cx, 864, '每日签到', { stroke: COLORS.coin, onDown: () => {
+    new NeonButton(this, cx, 864, '每日签到', { stroke: COLORS.coin, glow: true, onDown: () => {
       if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen) return;
       audio.sfx('ui'); this.openCheckIn();
     } });
 
     // 每日任务按钮（留存系统：击杀/金币/炸弹等每日目标，完成领金币）
-    new NeonButton(this, cx, 928, '每日任务', { stroke: COLORS.accent, onDown: () => {
+    new NeonButton(this, cx, 928, '每日任务', { stroke: COLORS.accent, glow: true, onDown: () => {
       if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.dailyQuestOpen) return;
       audio.sfx('ui'); this.openDailyQuest();
     } });
@@ -112,6 +127,11 @@ export default class MenuScene extends Phaser.Scene {
       '移动：拖动 / 方向键     开火：自动     炸弹：空格 / 屏幕按钮', {
       fontFamily: 'sans-serif', fontSize: '13px', color: '#5a7a99',
     }).setOrigin(0.5);
+
+    // 版本号（右上角装饰）
+    this.add.text(GAME_WIDTH - 14, 14, 'v1.4.0', {
+      fontFamily: 'sans-serif', fontSize: '13px', color: '#4a90c0',
+    }).setOrigin(1, 0).setAlpha(0.6).setDepth(50);
 
     // 键盘也能开始
     this.input.keyboard.once('keydown-ENTER', () => this.startGame());
