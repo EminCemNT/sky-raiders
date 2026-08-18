@@ -28,10 +28,13 @@ export default class UIScene extends Phaser.Scene {
   create() {
     const d = this.hudData;
 
-    // 分数（带霓虹投影）
-    this.scoreText = this.add.text(16, 14, '0', {
-      fontFamily: 'sans-serif', fontSize: '28px', fontStyle: '800', color: '#ffffff',
-    }).setDepth(100).setShadow(0, 0, '#2a86c0', 10, true, true);
+    // 分数（等宽数字防跳动 + 霓虹辉光 + SCORE 标签）
+    this.add.text(16, 14, 'SCORE', {
+      fontFamily: 'sans-serif', fontSize: '11px', fontStyle: '700', color: '#5fb0e0',
+    }).setDepth(100).setAlpha(0.8);
+    this.scoreText = this.add.text(16, 28, '000000', {
+      fontFamily: 'Consolas, "Courier New", monospace', fontSize: '26px', fontStyle: '800', color: '#aef6ff',
+    }).setDepth(100).setShadow(0, 0, '#2a86c0', 12, true, true);
 
     // 关卡名 / Boss Rush 标签
     const lvl = LEVELS.find((l) => l.id === d.levelId) || LEVELS[0];
@@ -63,12 +66,21 @@ export default class UIScene extends Phaser.Scene {
       { color: 0xff3355, bgColor: 0x330011, borderColor: 0xcc4466 },
     );
     this.bossBar.setVisible(false);
+    // Boss 名字（常驻，血条上方居中，霓虹辉光描边）
+    this.bossNameText = this.add.text(GAME_WIDTH / 2, 66, '', {
+      fontFamily: 'sans-serif', fontSize: '15px', fontStyle: '800', color: '#ff8aa0', align: 'center',
+    }).setOrigin(0.5).setDepth(100).setShadow(0, 0, '#ff3355', 14, true, true).setVisible(false);
 
     // 炸弹按钮（右下角图标化）
     this.bombs = d.bombs || 0;
     this.bombIcon = makeIconButton(this, GAME_WIDTH - 62, GAME_HEIGHT - 72, 'item_bomb', {
-      radius: 40, count: `x${this.bombs}`,
+      radius: 40, count: `x${this.bombs}`, ringAlpha: 0.18,
       onDown: () => { audio.sfx('ui'); EventBus.emit(EVENTS.USE_BOMB); },
+    });
+    // 炸弹常驻辉光（轻脉动，区分"始终可用"与能量技能）
+    this.tweens.add({
+      targets: this.bombIcon.ring, alpha: { from: 0.12, to: 0.34 },
+      duration: 1100, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
     });
 
     // 技能按钮（右下角图标化，能量满时发光脉冲）
@@ -149,6 +161,13 @@ export default class UIScene extends Phaser.Scene {
     this.input.keyboard.on('keydown-ESC', () => this.togglePause());
 
     this._buildLowHpVignette();   // P1-5 低血量暗角图层（先于 updateHp 首次调用建立）
+
+    // Phase B：低血屏幕红色告警边框（与 vignette 暗角互补：亮红框强调危险）
+    const bw = 6;
+    this._lowHpBorder = this.add.graphics().setDepth(95).setVisible(false);
+    this._lowHpBorder.lineStyle(bw, 0xff2a44, 1);
+    this._lowHpBorder.strokeRect(bw / 2, bw / 2, GAME_WIDTH - bw, GAME_HEIGHT - bw);
+    this._lowHpBorderBase = 0;
 
     // 连击 HUD（常驻，复用不重建）：击杀连击计数，脉冲缩放 + 档位变色（D）
     // y≈150 顶部区域，不挡玩家判定区（约 y≈860）；初始隐藏，COMBO_CHANGED 触发显隐
@@ -258,7 +277,7 @@ export default class UIScene extends Phaser.Scene {
     this._achShowing = false;
     this._achQueue = [];
 
-    this._onScore = (s) => { if (this.scoreText) this.scoreText.setText(String(s)); };
+    this._onScore = (s) => { if (this.scoreText) this.scoreText.setText(String(s).padStart(6, '0')); };
     EventBus.on('__hud_score', this._onScore);
 
     this._onHp = (hp, max) => this.updateHp(hp, max);
@@ -279,6 +298,7 @@ export default class UIScene extends Phaser.Scene {
     this._onBossSpawn = (info) => {
       this.bossBar.setVisible(true);
       const name = (info && info.name) ? info.name : 'BOSS';
+      if (this.bossNameText) this.bossNameText.setText(name).setVisible(true);
       this.flashCenter(`⚠ ${name} 来袭`, '#ff5566');
       if (this.waveText) this.waveText.setText('BOSS 战');
     };
@@ -289,7 +309,7 @@ export default class UIScene extends Phaser.Scene {
     };
     EventBus.on(EVENTS.BOSS_HP_CHANGED, this._onBossHp);
 
-    this._onBossDead = () => { this.bossBar.setVisible(false); };
+    this._onBossDead = () => { this.bossBar.setVisible(false); if (this.bossNameText) this.bossNameText.setVisible(false); };
     EventBus.on(EVENTS.BOSS_DEFEATED, this._onBossDead);
 
     this._onBossPhase = (phase) => {
@@ -384,6 +404,19 @@ export default class UIScene extends Phaser.Scene {
         this._lowHpVignette.setAlpha(this._lowHpBase);
       }
     }
+    // Phase B：低血红框告警脉动（比暗角更快，强调危险）
+    if (this._lowHpBorder) {
+      if (this._lowHpBorderBase > 0) {
+        this._lowHpBorder.setVisible(true);
+        if (!PREFERS_REDUCED) {
+          this._lowHpBorder.setAlpha(this._lowHpBorderBase + 0.3 * (0.5 + 0.5 * Math.sin(this.time.now * 0.009)));
+        } else {
+          this._lowHpBorder.setAlpha(this._lowHpBorderBase);
+        }
+      } else {
+        this._lowHpBorder.setVisible(false);
+      }
+    }
   }
 
   updateEnergy(val, max) {
@@ -423,6 +456,9 @@ export default class UIScene extends Phaser.Scene {
     this.hpText.setText(`${Math.ceil(hp)}/${max}`);
     if (this._lowHpVignette) {
       this._lowHpBase = ratio <= 0.3 ? 0.7 * (1 - ratio / 0.3) : 0;   // P1-5 低血量驱动暗角强度
+    }
+    if (this._lowHpBorder) {
+      this._lowHpBorderBase = ratio <= 0.3 ? 0.55 * (1 - ratio / 0.3) : 0;  // Phase B 低血红框告警强度
     }
   }
 
