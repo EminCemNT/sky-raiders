@@ -174,6 +174,85 @@ export function enemyBulletGlow(scene) {
   return e;
 }
 
+/** 机首瞬时发射闪光（复用粒子白 emitter 一次），激光束创建时调用 */
+export function laserMuzzleFlash(scene, x, y) {
+  if (prefersReduced) return;
+  const p = scene.add.particles(x, y, 'particle', {
+    speed: { min: 40, max: 120 },
+    lifespan: 180,
+    scale: { start: 1.2, end: 0 },
+    alpha: { start: 0.9, end: 0 },
+    quantity: 8,
+    blendMode: 'ADD',
+    tint: [0xffffff, 0x9ff0ff],
+    emitting: false,
+  });
+  p.setDepth(22);
+  p.explode();
+  scene.time.delayedCall(220, () => { if (p && p.active) p.destroy(); });
+}
+
+/**
+ * 玩家子弹尾迹：为 pulse/scatter/missile/bomb/fire/ice/thunder 各建一个 ADD 粒子
+ * emitter（emitting:false, offscreen），返回对象供 GameScene.update 按 texture.key 分派。
+ * reduced-motion 下返回 null（调用方按 key 取 emitter 时自然降级）。
+ */
+export function createBulletTrails(scene) {
+  if (prefersReduced) return null;
+  const mk = (tint) => scene.add.particles(0, 0, 'particle', {
+    lifespan: 160,
+    scale: { start: 0.9, end: 0 },
+    alpha: { start: 0.8, end: 0 },
+    quantity: 1,
+    blendMode: 'ADD',
+    tint,
+    emitting: false,
+  }).setDepth(18);
+  return {
+    pulse: mk([0x8fe3ff, 0x66ccff, 0xffffff]),
+    scatter: mk([0xbfe8ff, 0x9fd8ff, 0xffffff]),
+    missile: mk([0xffcc44, 0xff8a3d, 0xffffff]),
+    bomb: mk([0xffd0a0, 0xff7a3a, 0xffffff]),
+    fire: mk([0xffd0a0, 0xff7a3a, 0xffe14a, 0xffffff]),
+    ice: mk([0xbfefff, 0x6fd6ff, 0xffffff]),
+    thunder: mk([0xffe14a, 0xffd54a, 0xffffff]),
+  };
+}
+
+/**
+ * 首击卡顿预热：在 create 阶段（createBulletTrails 之后）调用一次。
+ * 预建 hitSpark + explosion 两个 offscreen emitter 各 explode(1) 一次（编译粒子管线），
+ * 顺带预 emit 各 bulletTrail 一次；延迟销毁。reduced-motion 下直接 return（无粒子开销）。
+ */
+export function warmup(scene) {
+  if (prefersReduced) return;
+  const hs = scene.add.particles(-300, -300, 'particle', {
+    speed: { min: 25, max: 100 }, lifespan: 150, scale: { start: 0.7, end: 0 },
+    alpha: { start: 0.9, end: 0 }, quantity: 6, blendMode: 'ADD',
+    tint: [0xffffff, 0xffd54a, 0x8fe3ff, 0xffaa33], emitting: false,
+  });
+  hs.setDepth(55);
+  hs.explode(1);
+  const ex = scene.add.particles(-300, -300, 'particle', {
+    speed: { min: 70, max: 280 }, lifespan: 550, scale: { start: 1.7, end: 0 },
+    alpha: { start: 0.9, end: 0 }, quantity: 22, blendMode: 'ADD',
+    tint: [COLORS.enemy, 0xffaa33, 0xffffff, 0xff6622], gravityY: 18, emitting: false,
+  });
+  ex.setDepth(50);
+  ex.explode(1);
+  // 顺带预 emit 各 bulletTrail 一次，编译其粒子配置
+  if (scene.bulletTrails) {
+    for (const k in scene.bulletTrails) {
+      const e = scene.bulletTrails[k];
+      if (e && e.emitParticleAt) e.emitParticleAt(-300, -300);
+    }
+  }
+  scene.time.delayedCall(40, () => {
+    if (hs && hs.active) hs.destroy();
+    if (ex && ex.active) ex.destroy();
+  });
+}
+
 /** 控制 emitter 启动/停止，用于对象池回收 */
 export function setEmitterActive(emitter, active) {
   if (!emitter) return;

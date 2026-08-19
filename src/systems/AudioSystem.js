@@ -56,6 +56,43 @@ class AudioSystem {
     if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
   }
 
+  /**
+   * 音频管线预热：静默(增益0)编译 oscillator + noise 缓冲两条音频节点路径，
+   * 消除"首击卡顿"中音频节点首次编译的尖峰。仅当 ctx.state==='running' 且 enabled 时执行；
+   * 否则（未 resume / 被禁用）直接跳过，零副作用。
+   */
+  warmup() {
+    if (!this.enabled) return;
+    this._ensure();
+    if (!this.ctx || this.ctx.state !== 'running') return;
+    const t = this.ctx.currentTime;
+    // 静默振荡器路径
+    const osc = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    g.gain.value = 0;
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(440, t);
+    osc.connect(g);
+    g.connect(this.sfxGain || this.master);
+    osc.start(t);
+    osc.stop(t + 0.015);
+    // 静默噪声缓冲路径（lowpass 滤波）
+    const len = Math.floor(this.ctx.sampleRate * 0.015);
+    const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    const lp = this.ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 1200;
+    const g2 = this.ctx.createGain();
+    g2.gain.value = 0;
+    src.connect(lp);
+    lp.connect(g2);
+    g2.connect(this.sfxGain || this.master);
+    src.start(t);
+    src.stop(t + 0.015);
+  }
+
   _throttle(name, gap = 50) {
     const now = performance.now();
     if (this._last[name] && now - this._last[name] < gap) return false;

@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { SCENES } from '../config/GameConfig.js';
 import { generateAll } from '../utils/TextureFactory.js';
+import { warmFonts } from '../systems/FloatingText.js';
 
 /**
  * PreloadScene：生成所有纹理并进入菜单。
@@ -27,6 +28,9 @@ export default class PreloadScene extends Phaser.Scene {
   create() {
     // 生成全部游戏纹理（覆盖式，确保实体引用的是代码绘制版本）
     generateAll(this);
+
+    // 字体光栅化预热（双保险：GameScene.create 也会再预热一次）
+    warmFonts(this);
 
     // 移除首屏 HTML loader
     const loader = document.getElementById('boot-loader');

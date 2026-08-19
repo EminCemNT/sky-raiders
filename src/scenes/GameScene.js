@@ -11,7 +11,7 @@ import Boss from '../entities/Boss.js';
 import Item from '../entities/Item.js';
 import WaveSystem from '../systems/WaveSystem.js';
 import WingmanSystem from '../systems/WingmanSystem.js';
-import { FloatingTextManager } from '../systems/FloatingText.js';
+import { FloatingTextManager, warmFonts } from '../systems/FloatingText.js';
 import { AchievementManager } from '../systems/AchievementManager.js';
 import { audio } from '../systems/AudioSystem.js';
 import * as VFX from '../systems/VFX.js';
@@ -147,8 +147,16 @@ export default class GameScene extends Phaser.Scene {
     this.floaters = new FloatingTextManager(this);
 
     // 子弹特效 emitter（reduced-motion 下返回 null，调用方判空降级）
-    this.bulletTrail = VFX.bulletTrail(this);
+    this.bulletTrails = VFX.createBulletTrails(this);
     this.enemyGlow = VFX.enemyBulletGlow(this);
+
+    // 首击卡顿预热：在 createBulletTrails 之后调用。
+    // 编译粒子管线 / 字体光栅化 / 音频节点路径，确保首次命中无可见卡顿。
+    // reduced-motion 下 VFX.warmup 内部直接 return（warmFonts 仍执行，字体预热不依赖动效）。
+    VFX.warmup(this);
+    warmFonts(this);
+    audio.warmup();
+    window.__SKY_WARMUP = true;
 
     // 并行启动 HUD
     this.scene.launch(SCENES.UI, {
@@ -394,12 +402,15 @@ export default class GameScene extends Phaser.Scene {
     }
 
     // 子弹特效尾迹（节流每 2 帧；emitter 为 null 时降级，零运行时报错）
-    if (this.bulletTrail || this.enemyGlow) {
+    if (this.bulletTrails || this.enemyGlow) {
       this._trailTick = (this._trailTick || 0) + 1;
       if (this._trailTick % 2 === 0) {
-        if (this.bulletTrail) {
+        if (this.bulletTrails) {
           this.playerBullets.children.each((b) => {
-            if (b.active) this.bulletTrail.emitParticleAt(b.x, b.y + b.height * 0.4);
+            if (!b.active || b.isBeam) return;
+            const key = b.texture.key.replace('bullet_', '');
+            const e = this.bulletTrails[key];
+            if (e) e.emitParticleAt(b.x, b.y + b.height * 0.4);
           });
         }
         if (this.enemyGlow) {

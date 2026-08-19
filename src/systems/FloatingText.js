@@ -167,3 +167,26 @@ export function damageNumber(scene, x, y, dmg, opts = {}) {
     onComplete: () => t.destroy(),
   });
 }
+
+/**
+ * 字体光栅化预热：用与 damageNumber / FLOAT_SCORE / flashPickup 完全一致的样式签名
+ * 预建若干隐藏 Text（-300,-300）并 delayedCall(40) 销毁。reduced-motion 下仍执行
+ * （字体预热不依赖动效）。必须在 GameScene.create 阶段调用一次，消除首击飘字时
+ * 的字体光栅化尖峰。
+ */
+export function warmFonts(scene) {
+  const mk = (text, style) => {
+    const t = scene.add.text(-300, -300, text, style).setVisible(false);
+    scene.time.delayedCall(40, () => { if (t && t.active) t.destroy(); });
+    return t;
+  };
+  // damageNumber 普通 / 暴击
+  mk('120', { fontFamily: 'sans-serif', fontSize: '18px', fontStyle: 'bold', color: '#ffd2a6', stroke: '#040a16', strokeThickness: 4 });
+  mk('260', { fontFamily: 'sans-serif', fontSize: '26px', fontStyle: 'bold', color: '#ff4d6d', stroke: '#040a16', strokeThickness: 4 });
+  // FLOAT_SCORE 普通得分 / 特殊金 / BIG numbers 金描边
+  mk('+20', { fontFamily: 'sans-serif', fontSize: '22px', fontStyle: 'bold', color: '#ffffff', stroke: '#040a16', strokeThickness: 4 });
+  mk('+50', { fontFamily: 'sans-serif', fontSize: '28px', fontStyle: 'bold', color: '#ffd54a', stroke: '#040a16', strokeThickness: 4 });
+  mk('+100 ×5', { fontFamily: 'sans-serif', fontSize: '48px', fontStyle: 'bold', color: '#ffffff', stroke: '#ffd54a', strokeThickness: 6 });
+  // flashPickup 标签
+  mk('护盾', { fontFamily: 'sans-serif', fontSize: '14px', fontStyle: '700', color: '#7cf3ff' });
+}

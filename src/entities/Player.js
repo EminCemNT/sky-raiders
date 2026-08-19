@@ -10,6 +10,10 @@ const SHIELD_PER_LEVEL = 15;    // 每级护盾吸收池上限
 const MAGNET_BASE_RADIUS = 90;  // 0 级基础金币吸取半径
 const MAGNET_PER_LEVEL = 45;    // 每级额外增加的吸取半径
 
+// 纯视觉层：reduced-motion 守卫（不影响任何玩法/数值）
+const prefersReduced = (typeof window !== 'undefined' && window.matchMedia
+  && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
 /**
  * 玩家战机。
  * ---------------------------------------------------------------------------
@@ -115,6 +119,12 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
       this.laserBeam.visible = true;
       this.laserBeam.element = this.shipElement;
       if (this.laserBeam.body) this.laserBeam.body.enable = true;
+      // 辉光层跟随核心
+      if (this.laserBeam._glow) {
+        this.laserBeam._glow.x = this.x;
+        this.laserBeam._glow.y = this.y - GAME_HEIGHT / 2;
+        this.laserBeam._glow.visible = this.laserBeam.visible;
+      }
     }
 
     // 无敌闪烁
@@ -126,8 +136,12 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
 
     // P1-6 判定点跟随玩家 + 显隐同步（每帧读内存存档缓存，开销可忽略）
     if (this.hitboxDot) this.hitboxDot.setPosition(this.x, this.y).setVisible(SaveManager.load().showHitbox);
-    // 战机皮肤aura跟随（随无敌闪烁同步透明度，纯视觉）
-    if (this.aura) { this.aura.setPosition(this.x, this.y).setAlpha(this.alpha * 0.5); }
+    // 战机皮肤 aura 跟随 + alpha 呼吸（待机微动，纯视觉；reduced-motion 下常量）
+    if (this.aura) {
+      this.aura.setPosition(this.x, this.y);
+      const a = prefersReduced ? 0.5 : (0.4 + 0.12 * Math.sin(time * 0.004));
+      this.aura.setAlpha(a);
+    }
   }
 
   /** 按火力等级发射多路子弹 */
@@ -144,12 +158,18 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     audio.sfx('shoot');
     const patterns = this.getFirePattern(this.firepower);
     for (const p of patterns) {
-      const key = p.bulletKey || 'bullet_pulse';
+      // 中央脉冲弹按战斗机元素替换元素纹理 key（苍鹰 thunder→bullet_thunder 等）；
+      // 其余弹型保持原 key。逻辑 key 不变，伤害/body/命中判定零改动。
+      const baseKey = p.bulletKey || 'bullet_pulse';
+      const ELEMENT_BOLT = { fire: 'bullet_fire', ice: 'bullet_ice', thunder: 'bullet_thunder' };
+      const drawKey = (baseKey === 'bullet_pulse' && this.shipElement && ELEMENT_BOLT[this.shipElement])
+        ? ELEMENT_BOLT[this.shipElement] : baseKey;
+      const key = baseKey;
       const b = this.bullets.get(this.x + p.dx, this.y - 20, key);
       if (!b) continue;
       // P1-2 池贴图不变量：复用的子弹可能残留旧贴图键，先统一成本次请求的贴图，
-      // 再读 bw/bh 计算 body（下方在 setTexture 之后读取），避免不同武器共用同一池时贴图错乱。
-      if (b.texture && b.texture.key !== key) b.setTexture(key);
+      // 用 drawKey（元素弹时与 key 不同）重设，再读 bw/bh 计算 body。
+      if (b.texture && b.texture.key !== drawKey) b.setTexture(drawKey);
       b.setActive(true).setVisible(true);
       b.body.enable = true;
       b.homing = false;
@@ -183,16 +203,22 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
   _ensureLaserBeam() {
     if (!this.beamGroup) return;
     if (this.laserBeam) return;
-    const beam = this.scene.add.rectangle(this.x, this.y - GAME_HEIGHT / 2, BULLET.LASER_WIDTH, GAME_HEIGHT, 0x9ff0ff, 0.85);
-    beam.setDepth(18);
-    this.scene.physics.add.existing(beam);
-    beam.body.setAllowGravity(false);
-    this.beamGroup.add(beam);
-    beam.isBeam = true;
-    beam.dps = BULLET.LASER_DPS;
-    beam.element = this.shipElement;
-    beam.wielder = this;
-    this.laserBeam = beam;
+    // 主束双层：细白核(亮) + 宽柔青罩(ADD, 叠加在核之下)
+    const core = this.scene.add.rectangle(this.x, this.y - GAME_HEIGHT / 2, BULLET.LASER_WIDTH, GAME_HEIGHT, 0xffffff, 0.9);
+    core.setDepth(18);
+    this.scene.physics.add.existing(core);
+    core.body.setAllowGravity(false);
+    this.beamGroup.add(core);
+    core.isBeam = true;
+    core.dps = BULLET.LASER_DPS;
+    core.element = this.shipElement;
+    core.wielder = this;
+    const glow = this.scene.add.rectangle(this.x, this.y - GAME_HEIGHT / 2, BULLET.LASER_WIDTH + 12, GAME_HEIGHT, 0x9ff0ff, 0.35)
+      .setBlendMode(Phaser.BlendModes.ADD).setDepth(17);
+    core._glow = glow;
+    this.laserBeam = core;
+    // 机首瞬时发射闪光（复用 particle 白 emitter 一次）
+    if (VFX.laserMuzzleFlash) VFX.laserMuzzleFlash(this.scene, this.x, this.y - 24);
   }
 
   /** 切换武器（B/C 武器系统）。pulse / missile / laser / bomb */
@@ -203,6 +229,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     if (this.weapon !== 'laser' && this.laserBeam && this.laserBeam.active) {
       this.laserBeam.setActive(false).setVisible(false);
       if (this.laserBeam.body) this.laserBeam.body.enable = false;
+      if (this.laserBeam._glow) this.laserBeam._glow.setVisible(false);
     }
   }
 
@@ -323,6 +350,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     if (this.laserBeam) {
       this.laserBeam.setActive(false).setVisible(false);
       if (this.laserBeam.body) this.laserBeam.body.enable = false;
+      if (this.laserBeam._glow) this.laserBeam._glow.setVisible(false);
     }
   }
 
