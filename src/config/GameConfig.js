@@ -196,6 +196,28 @@ export const BOSS_RUSH = [
   { bossKey: 'boss_annihilator', name: '湮灭者 Annihilator', color: 0xff6a3d, pattern: 'nova', maxHp: 5600, hpMult: 1.5 },
 ];
 
+// ───────────────────────────────────────────────────────────────
+// 四档难度系统（P0）：休闲 / 标准 / 困难 / 地狱
+// 系数乘在关卡 difficulty 之上；标准档全 1.0，与历史行为逐字段等价（零回归）。
+//   hpMul       敌机 HP 倍率
+//   speedMul    敌机移动速度倍率
+//   bossBulletMul Boss 弹速倍率（乘到 Boss.difficulty 上）
+//   scoreMul    结算得分倍率
+//   coinMul     结算金币倍率
+// 消费方：Enemy.spawn(hpMul/speedMul) / GameScene.spawnBoss(bossBulletMul) / GameScene.endGame(scoreMul/coinMul)
+// ───────────────────────────────────────────────────────────────
+export const DIFFICULTIES = [
+  { id: 'casual',   name: '休闲', hpMul: 0.7,  speedMul: 0.85, bossBulletMul: 0.85, scoreMul: 0.8, coinMul: 0.9 },
+  { id: 'standard', name: '标准', hpMul: 1.0,  speedMul: 1.0,  bossBulletMul: 1.0,  scoreMul: 1.0, coinMul: 1.0 },
+  { id: 'hard',     name: '困难', hpMul: 1.4,  speedMul: 1.15, bossBulletMul: 1.2,  scoreMul: 1.3, coinMul: 1.2 },
+  { id: 'hell',     name: '地狱', hpMul: 2.0,  speedMul: 1.3,  bossBulletMul: 1.5,  scoreMul: 1.8, coinMul: 1.5 },
+];
+
+/** 按 id 取难度档；未知 id 回退 standard（默认档）。 */
+export function getDifficulty(id) {
+  return DIFFICULTIES.find((d) => d.id === id) || DIFFICULTIES[1];
+}
+
 // 星级评分阈值（每关结束按这些维度算 1~3 星 + 完成度百分比）
 export const RATING = {
   // 三项各占权重，加权后映射到星级

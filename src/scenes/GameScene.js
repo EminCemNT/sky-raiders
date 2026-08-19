@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import {
   SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, COLORS, PLAYER, BULLET, LEVELS, BOSS_RUSH, SHIPS, ELEMENTS, WINGMAN,
+  DIFFICULTIES, getDifficulty,
 } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
@@ -58,6 +59,9 @@ export default class GameScene extends Phaser.Scene {
     // 当前关卡（色调 / 难度 / Boss 配置 / 波次表）
     this.level = LEVELS.find((l) => l.id === this.levelId) || LEVELS[0];
     const theme = this.level.theme;
+
+    // P0 四档难度：读存档选择，标准档系数全 1.0（与现状逐字段等价，零回归）
+    this.difficultyCfg = getDifficulty(SaveManager.load().selectedDifficulty) || DIFFICULTIES[1];
 
     // 背景渐变（按关卡色调）
     const bg = this.add.graphics().setDepth(-200);
@@ -519,7 +523,8 @@ export default class GameScene extends Phaser.Scene {
   spawnEnemy(x, y, typeKey, moveMode, difficulty = 1, firePattern = 'straight') {
     const e = this.enemies.get();
     if (!e) return null;
-    e.spawn(x, y, typeKey, moveMode, difficulty, firePattern);
+    const cfg = this.difficultyCfg || { hpMul: 1, speedMul: 1 };
+    e.spawn(x, y, typeKey, moveMode, difficulty, firePattern, cfg.hpMul, cfg.speedMul);
     this.stats.spawned++;
     return e;
   }
@@ -559,9 +564,12 @@ export default class GameScene extends Phaser.Scene {
   spawnBoss(bossKey, overrides) {
     const base = (this.level && this.level.boss) || {};
     const cfg = Object.assign({}, base, overrides || {});
+    // 难度档 bossBulletMul 乘到 Boss.difficulty 上（Boss.js 弹速计算零改动；标准档 ×1.0）
+    const bossBulletMul = (this.difficultyCfg && this.difficultyCfg.bossBulletMul) || 1;
+    const baseDifficulty = (overrides && overrides.difficulty) || (this.level && this.level.difficulty) || 1;
     this.boss = new Boss(this, bossKey, {
       ...cfg,
-      difficulty: (overrides && overrides.difficulty) || (this.level && this.level.difficulty) || 1,
+      difficulty: baseDifficulty * bossBulletMul,
     });
     // P1-9 Boss 动态音乐 + UIScene 血条：boss 生成唯一入口统一 emit（原仅 rush 发，普通关 Boss 缺此事件）
     EventBus.emit(EVENTS.BOSS_SPAWNED, {
@@ -1023,11 +1031,22 @@ export default class GameScene extends Phaser.Scene {
     if (!victory) stars = Math.min(stars, 1);
 
     if (victory && this.mode !== 'bossrush') SaveManager.recordLevelStars(this.levelId, stars);
+
+    // P0 四档难度结算：得分 ×scoreMul，金币 ×coinMul（标准档全 1.0 = 现状零回归）。
+    // 金币在局中已按 1:1 入账；这里仅对正差额（困难/地狱档）补发，休闲/标准档不回退，避免"低难度倒扣金币"的诡异体验。
+    const scoreMul = (this.difficultyCfg && this.difficultyCfg.scoreMul) || 1;
+    const coinMul = (this.difficultyCfg && this.difficultyCfg.coinMul) || 1;
+    const scaledScore = Math.round(this.score * scoreMul);
+    const coinTarget = Math.round(this.stats.coins * coinMul);
+    const coinDelta = coinTarget - this.stats.coins;
+    if (coinDelta > 0) SaveManager.addCoins(coinDelta);
+    const finalCoins = coinDelta > 0 ? coinTarget : this.stats.coins;
+
     SaveManager.save(); // flush 每日任务进度（addDailyProgress 不立即存盘）
 
     const result = {
-      victory, stars, score: this.score,
-      kills: this.stats.kills, coins: this.stats.coins,
+      victory, stars, score: scaledScore,
+      kills: this.stats.kills, coins: finalCoins,
       levelId: this.levelId, composite,
     };
 

@@ -98,6 +98,7 @@ export class NeonButton {
     const textColor = opts.textColor ?? '#ffffff';
     this._bg = bgColor; this._stroke = stroke;
     this.glow = opts.glow ?? false;
+    this.selected = false;   // 选中高亮（四档难度按钮用）
     this.container = scene.add.container(x, y);
     // 外发光层（默认隐藏，hover 时淡入；向后兼容，仅 glow:true 生效）
     this.glowG = scene.add.graphics();
@@ -117,7 +118,7 @@ export class NeonButton {
       useHandCursor: true,
     });
     this.container.on('pointerover', () => { this._drawBg(0x1b5580, stroke, 1); if (this.glow) this.scene.tweens.add({ targets: this.glowG, alpha: 0.4, duration: 160 }); });
-    this.container.on('pointerout', () => { this._drawBg(this._bg, stroke, 1); if (this.glow) this.scene.tweens.add({ targets: this.glowG, alpha: 0, duration: 160 }); });
+    this.container.on('pointerout', () => { this._drawSelected(); if (this.glow) this.scene.tweens.add({ targets: this.glowG, alpha: this.selected ? 0.5 : 0, duration: 160 }); });
     this.container.on('pointerdown', () => {
       scene.tweens.add({ targets: this.container, scale: 0.96, duration: 80, yoyo: true });
     });
@@ -137,6 +138,18 @@ export class NeonButton {
   }
 
   setLabel(t) { this.text.setText(t); }
+
+  /** 设置选中态（四档难度按钮）：选中用高亮底 + 亮描边，未选中回默认底 */
+  setSelected(sel) {
+    this.selected = !!sel;
+    this._drawSelected();
+    if (this.glow) this.scene.tweens.add({ targets: this.glowG, alpha: this.selected ? 0.5 : 0, duration: 160 });
+  }
+
+  _drawSelected() {
+    if (this.selected) this._drawBg(0x2a7ab8, 0x7cf3ff, 1);
+    else this._drawBg(this._bg, this._stroke, 1);
+  }
 
   destroy() { this.container.destroy(); }
 }

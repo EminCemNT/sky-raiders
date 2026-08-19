@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, LEVELS } from '../config/GameConfig.js';
+import { SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, LEVELS, DIFFICULTIES } from '../config/GameConfig.js';
 import { SaveManager } from '../utils/SaveManager.js';
 import { AchievementManager } from '../systems/AchievementManager.js';
 import { createStarfield } from '../systems/Starfield.js';
@@ -162,11 +162,42 @@ export default class MenuScene extends Phaser.Scene {
     ov.add(dim);
     this.addPanel(ov, cx);
     this.addGlowTitle(ov, cx, 250, '设置 · 音量', '#7cf3ff');
-    this.makeSlider(ov, cx, 360, '主音量', 'master');
-    this.makeSlider(ov, cx, 450, '音效', 'sfx');
-    this.makeSlider(ov, cx, 540, '音乐', 'bgm');
-    ov.add(this.makeMenuBtn(cx, 660, '关闭', () => this.closeSettings()));
+
+    // 四档难度按钮（P0）：一排四档，当前档选中高亮；点击切换 → 持久化 + 刷新高亮
+    this._difficultyBtns = [];
+    const diffLabel = this.add.text(cx, 302, '难度', {
+      fontFamily: 'sans-serif', fontSize: '18px', color: '#cfe8ff',
+    }).setOrigin(0.5);
+    ov.add(diffLabel);
+    const btnW = 92, btnH = 46, gap = 8;
+    const totalW = DIFFICULTIES.length * btnW + (DIFFICULTIES.length - 1) * gap;
+    const startX = cx - totalW / 2 + btnW / 2;
+    DIFFICULTIES.forEach((d, i) => {
+      const x = startX + i * (btnW + gap);
+      const btn = new NeonButton(this, x, 342, d.name, {
+        w: btnW, h: btnH, fontSize: 16, glow: true,
+        onDown: () => {
+          audio.sfx('ui');
+          SaveManager.set('selectedDifficulty', d.id);
+          this.refreshDifficultySelect();
+        },
+      });
+      ov.add(btn.container);
+      this._difficultyBtns.push({ btn, id: d.id });
+    });
+    this.refreshDifficultySelect();
+
+    this.makeSlider(ov, cx, 430, '主音量', 'master');
+    this.makeSlider(ov, cx, 510, '音效', 'sfx');
+    this.makeSlider(ov, cx, 590, '音乐', 'bgm');
+    ov.add(this.makeMenuBtn(cx, 690, '关闭', () => this.closeSettings()));
     this.fadeInPanel(ov);
+  }
+
+  /** 刷新四档难度按钮选中态（当前档高亮） */
+  refreshDifficultySelect() {
+    const cur = SaveManager.load().selectedDifficulty || 'standard';
+    (this._difficultyBtns || []).forEach(({ btn, id }) => btn.setSelected(id === cur));
   }
 
   closeSettings() {

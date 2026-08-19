@@ -1,4 +1,4 @@
-import { SAVE_KEY, DAILY_QUEST_POOL } from '../config/GameConfig.js';
+import { SAVE_KEY, DAILY_QUEST_POOL, DIFFICULTIES } from '../config/GameConfig.js';
 
 /**
  * 存档管理（localStorage）
@@ -11,6 +11,7 @@ const DEFAULT_SAVE = {
   // wingmanFirepower：僚机火力（独立于 wingman 数量项），决定 WINGMAN.WEAPON_LV 档位
   upgrades: { firepower: 0, hull: 0, shield: 0, magnet: 0, wingman: 0, wingmanFirepower: 0 },
   selectedShip: 0, // C2 战机武器绑定：所选战机索引（对应 GameConfig.SHIPS）
+  selectedDifficulty: 'standard', // P0 四档难度：所选难度 id（对应 GameConfig.DIFFICULTIES）
   levelStars: {}, // { [levelId]: stars(1~3) }
   unlockedLevel: 1,
   totalKills: 0,
@@ -88,6 +89,10 @@ export const SaveManager = {
           progress: { ...((parsed.dailyQuest && parsed.dailyQuest.progress) || {}) },
         },
       };
+      // 合法性清洗：老存档/脏数据不在 DIFFICULTIES 内则回退 standard
+      if (!DIFFICULTIES.some((d) => d.id === cache.selectedDifficulty)) {
+        cache.selectedDifficulty = 'standard';
+      }
     } catch (e) {
       cache = freshSave();
     }

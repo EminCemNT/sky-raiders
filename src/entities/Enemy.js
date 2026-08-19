@@ -46,8 +46,8 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     return this.def.color;
   }
 
-  /** 从池中激活一个敌人。difficulty 为关卡难度系数（作用到 HP/速度） */
-  spawn(x, y, typeKey = 'small', moveMode = 'straight', difficulty = 1, firePattern = 'straight') {
+  /** 从池中激活一个敌人。difficulty 为关卡难度系数；hpMul/speedMul 为难度档系数（P0 四档，默认 1） */
+  spawn(x, y, typeKey = 'small', moveMode = 'straight', difficulty = 1, firePattern = 'straight', hpMul = 1, speedMul = 1) {
     const t = TYPES[typeKey] || TYPES.small;
     this.typeKey = typeKey;
     this.def = t;
@@ -56,15 +56,15 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.setPosition(x, y);
     this.setActive(true).setVisible(true);
     this.body.enable = true;
-    // 难度系数：HP 线性放大，速度略增
-    this.hp = Math.round(t.hp * difficulty);
+    // 难度：关卡系数（HP 线性、速度略增）再乘难度档系数（标准档全 1.0 = 现状）
+    this.hp = Math.round(t.hp * difficulty * hpMul);
     this.maxHp = this.hp;
     this.moveMode = moveMode;
     this.firePattern = firePattern || 'straight';
     this._t = 0;
     this._baseX = x;
     this._lastFire = this.scene.time.now;
-    this._baseVy = t.speed * (1 + (difficulty - 1) * 0.4);
+    this._baseVy = t.speed * (1 + (difficulty - 1) * 0.4) * speedMul;
     this.setVelocity(0, this._baseVy);
     // 重置元素状态（B6）
     this._elem = null;
