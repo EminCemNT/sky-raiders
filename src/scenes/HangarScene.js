@@ -46,7 +46,7 @@ export default class HangarScene extends Phaser.Scene {
     this.buildShipSelector(cx, 238);
 
     // 开局主武器选择（覆盖战机绑定武器；null=用战机默认）
-    this.buildStartWeaponSelector(cx, 292);
+    this.buildStartWeaponSelector(cx, 312);
 
     // 部件行（6 项：卡片高 84 / 行距 92，开局武器行占 292，起始 348 留出空间）
     this.rows = [];
@@ -107,14 +107,32 @@ export default class HangarScene extends Phaser.Scene {
   /** C2 战机武器绑定：左右切换所选战机（影响开局默认武器 + 元素属性） */
   buildShipSelector(cx, y) {
     const W = SHIPS || [];
-    const chipW = 460, chipH = 44;
+    const chipW = 480, chipH = 72;
+    const reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
     this.add.rectangle(cx, y, chipW, chipH, 0x102a44, 0.9).setStrokeStyle(2, 0x3a7fb0);
-    this.add.text(cx - chipW / 2 + 14, y, '战机', {
-      fontFamily: 'sans-serif', fontSize: '16px', color: '#7fb8e0',
+
+    // 战机皮肤预览：发光aura（随机型 tint）+ 机型纹理（带轻微浮动/呼吸）
+    const px = cx - chipW / 2 + 52;
+    this.shipAura = this.add.image(px, y, 'bg_nebula').setScale(0.42).setTint(0x66ccff)
+      .setAlpha(0.5).setBlendMode(Phaser.BlendModes.ADD).setDepth(1);
+    this.shipPreview = this.add.image(px, y, 'player').setScale(1.1).setDepth(2);
+
+    this.add.text(cx - chipW / 2 + 100, y - 16, '战机', {
+      fontFamily: 'sans-serif', fontSize: '15px', color: '#7fb8e0',
     }).setOrigin(0, 0.5);
-    this.shipLabel = this.add.text(cx, y, '', {
+    this.shipLabel = this.add.text(cx - chipW / 2 + 100, y + 6, '', {
       fontFamily: 'sans-serif', fontSize: '17px', fontStyle: '700', color: '#ffffff',
-    }).setOrigin(0.5);
+    }).setOrigin(0, 0.5);
+
+    // 入场 + 浮动/呼吸（reduced-motion 仅静态显示）
+    if (!reduceMotion) {
+      this.shipPreview.setAlpha(0); this.shipLabel.setAlpha(0); this.shipAura.setAlpha(0);
+      this.tweens.add({ targets: this.shipPreview, alpha: 1, duration: 380, ease: 'Back.easeOut' });
+      this.tweens.add({ targets: this.shipLabel, alpha: 1, duration: 380, delay: 120, ease: 'Back.easeOut' });
+      this.tweens.add({ targets: this.shipAura, alpha: 0.5, duration: 420, ease: 'Back.easeOut' });
+      this.tweens.add({ targets: this.shipPreview, y: y - 5, duration: 1600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+      this.tweens.add({ targets: this.shipAura, alpha: { from: 0.32, to: 0.58 }, duration: 1400, delay: 460, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    }
 
     const mkArrow = (sx, dir) => {
       const a = this.add.container(sx, y);
@@ -131,9 +149,10 @@ export default class HangarScene extends Phaser.Scene {
         SaveManager.save();
         this.refreshShip();
       });
+      return a;
     };
-    mkArrow(cx - chipW / 2 - 26, -1);
-    mkArrow(cx + chipW / 2 + 26, 1);
+    this.shipArrowL = mkArrow(cx - chipW / 2 - 26, -1);
+    this.shipArrowR = mkArrow(cx + chipW / 2 + 26, 1);
     this.refreshShip();
   }
 
@@ -147,6 +166,9 @@ export default class HangarScene extends Phaser.Scene {
     const elTxt = s.element ? (ELEMENTS[s.element] ? ELEMENTS[s.element].name : s.element) : '无';
     const wTxt = WEAPONS[s.weapon] ? WEAPONS[s.weapon].name : s.weapon;
     this.shipLabel.setText(`${s.name} · ${wTxt} · 元素:${elTxt}`);
+    // 同步机型皮肤预览 tint（苍鹰青 / 赤焰橙 / 寒霜冰蓝）
+    if (this.shipPreview) this.shipPreview.setTint(s.tint || 0xffffff);
+    if (this.shipAura) this.shipAura.setTint(s.tint || 0xffffff);
   }
 
   /** 开局主武器选择（覆盖战机绑定武器；null=用战机默认） */

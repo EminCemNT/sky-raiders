@@ -126,6 +126,8 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
 
     // P1-6 判定点跟随玩家 + 显隐同步（每帧读内存存档缓存，开销可忽略）
     if (this.hitboxDot) this.hitboxDot.setPosition(this.x, this.y).setVisible(SaveManager.load().showHitbox);
+    // 战机皮肤aura跟随（随无敌闪烁同步透明度，纯视觉）
+    if (this.aura) { this.aura.setPosition(this.x, this.y).setAlpha(this.alpha * 0.5); }
   }
 
   /** 按火力等级发射多路子弹 */
@@ -263,6 +265,18 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
   }
 
+  /** 战机皮肤发光aura：随所选机型 tint 生成柔光晕，强化三机辨识度（纯视觉） */
+  setShipTint(tint) {
+    this.shipTint = tint;
+    if (!this.aura) {
+      this.aura = this.scene.add.image(this.x, this.y, 'bg_nebula')
+        .setScale(0.42).setTint(tint).setAlpha(0.5)
+        .setBlendMode(Phaser.BlendModes.ADD).setDepth(19);
+    } else {
+      this.aura.setTint(tint);
+    }
+  }
+
   setFirepower(level) {
     this.firepower = Phaser.Math.Clamp(level, 0, 8);
     // 火力越高射速略快
@@ -304,6 +318,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     VFX.setEmitterActive(this.thruster, false);
     this.setActive(false).setVisible(false);
     if (this.body) this.body.enable = false;
+    if (this.aura) this.aura.setVisible(false);
     // 收束激光束
     if (this.laserBeam) {
       this.laserBeam.setActive(false).setVisible(false);
@@ -314,6 +329,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
   destroy(fromScene) {
     VFX.destroyEmitter(this.thruster);
     this.thruster = null;
+    if (this.aura) { this.aura.destroy(); this.aura = null; }
     super.destroy(fromScene);
   }
 }

@@ -108,7 +108,7 @@ export default class GameScene extends Phaser.Scene {
     const bound = this.mode === 'bossrush' ? 'pulse' : (startWeapon || ship.weapon || 'pulse');
       this.player.setWeapon(bound);
       AchievementManager.reportWeaponUsed(bound);
-      if (ship.tint) this.player.setTint(ship.tint);
+      if (ship.tint) { this.player.setTint(ship.tint); this.player.setShipTint(ship.tint); }
       // 0 = 常驻（绑定武器无倒计时）；delayedCall 确保 UIScene 已绑定监听
       if (bound !== 'pulse') this.time.delayedCall(0, () => EventBus.emit(EVENTS.WEAPON_CHANGED, bound, 0));
     }
