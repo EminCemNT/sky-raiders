@@ -20,6 +20,8 @@ export default class MenuScene extends Phaser.Scene {
     const cx = GAME_WIDTH / 2;
     // modal 标志位初始化（防御：避免上一次残留导致按钮被错误拦截）
     this.settingsOpen = this.levelSelectOpen = this.achievementsOpen = this.checkinOpen = this.dailyQuestOpen = false;
+    // reduced-motion 偏好（子面板动画降级）
+    this.reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
     // 背景滚动星空
     this.starfield = createStarfield(this);
@@ -157,16 +159,14 @@ export default class MenuScene extends Phaser.Scene {
     this.settingsOverlay = ov;
     const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.7)
       .setOrigin(0).setInteractive();
-    const title = this.add.text(cx, 250, '设置 · 音量', {
-      fontFamily: 'sans-serif', fontSize: '34px', fontStyle: '800', color: '#7cf3ff',
-    }).setOrigin(0.5);
     ov.add(dim);
     this.addPanel(ov, cx);
-    ov.add(title);
+    this.addGlowTitle(ov, cx, 250, '设置 · 音量', '#7cf3ff');
     this.makeSlider(ov, cx, 360, '主音量', 'master');
     this.makeSlider(ov, cx, 450, '音效', 'sfx');
     this.makeSlider(ov, cx, 540, '音乐', 'bgm');
     ov.add(this.makeMenuBtn(cx, 660, '关闭', () => this.closeSettings()));
+    this.fadeInPanel(ov);
   }
 
   closeSettings() {
@@ -182,12 +182,9 @@ export default class MenuScene extends Phaser.Scene {
     this.levelSelectOverlay = ov;
     const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.78)
       .setOrigin(0).setInteractive();
-    const title = this.add.text(cx, 110, '选择关卡', {
-      fontFamily: 'sans-serif', fontSize: '34px', fontStyle: '800', color: '#7cf3ff',
-    }).setOrigin(0.5);
     ov.add(dim);
     this.addPanel(ov, cx);
-    ov.add(title);
+    this.addGlowTitle(ov, cx, 110, '选择关卡', '#7cf3ff');
 
     const save = SaveManager.load();
     const cardW = 380, cardH = 132, gap = 16;
@@ -237,6 +234,7 @@ export default class MenuScene extends Phaser.Scene {
     });
 
     ov.add(this.makeMenuBtn(cx, startY + LEVELS.length * (cardH + gap) - 4, '关闭', () => this.closeLevelSelect()));
+    this.fadeInPanel(ov);
   }
 
   closeLevelSelect() {
@@ -252,12 +250,9 @@ export default class MenuScene extends Phaser.Scene {
     this.achievementsOverlay = ov;
     const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.82)
       .setOrigin(0).setInteractive();
-    const title = this.add.text(cx, 70, '成就勋章', {
-      fontFamily: 'sans-serif', fontSize: '34px', fontStyle: '800', color: '#ffd86b',
-    }).setOrigin(0.5);
     ov.add(dim);
     this.addPanel(ov, cx);
-    ov.add(title);
+    this.addGlowTitle(ov, cx, 70, '成就勋章', '#ffd86b');
 
     const list = AchievementManager.getAll();
     const cols = 2, cardW = 230, cardH = 96, gapX = 16, gapY = 14;
@@ -295,6 +290,7 @@ export default class MenuScene extends Phaser.Scene {
     }).setOrigin(0.5));
 
     ov.add(this.makeMenuBtn(cx, GAME_HEIGHT - 70, '关闭', () => this.closeAchievements()));
+    this.fadeInPanel(ov);
   }
 
   closeAchievements() {
@@ -310,12 +306,9 @@ export default class MenuScene extends Phaser.Scene {
     this.checkinOverlay = ov;
     const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.78)
       .setOrigin(0).setInteractive();
-    const title = this.add.text(cx, 300, '每日签到', {
-      fontFamily: 'sans-serif', fontSize: '34px', fontStyle: '800', color: '#ffd86b',
-    }).setOrigin(0.5);
     ov.add(dim);
     this.addPanel(ov, cx);
-    ov.add(title);
+    this.addGlowTitle(ov, cx, 300, '每日签到', '#ffd86b');
 
     const cur = SaveManager.load();
     const y = new Date(Date.now() - 86400000);
@@ -344,6 +337,7 @@ export default class MenuScene extends Phaser.Scene {
     });
     ov.add(claimBtn);
     ov.add(this.makeMenuBtn(cx, 540, '稍后再说', () => this.closeCheckIn()));
+    this.fadeInPanel(ov);
   }
 
   closeCheckIn() {
@@ -361,10 +355,7 @@ export default class MenuScene extends Phaser.Scene {
       .setOrigin(0).setInteractive();
     ov.add(dim);
     this.addPanel(ov, cx);
-    const title = this.add.text(cx, 250, '每日任务', {
-      fontFamily: 'sans-serif', fontSize: '34px', fontStyle: '800', color: '#7cf3ff',
-    }).setOrigin(0.5);
-    ov.add(title);
+    this.addGlowTitle(ov, cx, 250, '每日任务', '#7cf3ff');
 
     const quests = SaveManager.getDailyQuests();
     const claimed = SaveManager.dailyQuestsClaimed();
@@ -412,6 +403,7 @@ export default class MenuScene extends Phaser.Scene {
     if (claimed || !SaveManager.dailyQuestsReady()) claimBtn.setAlpha(0.45);
     ov.add(claimBtn);
     ov.add(this.makeMenuBtn(cx, cursor + 134, '稍后再说', () => this.closeDailyQuest()));
+    this.fadeInPanel(ov);
   }
 
   closeDailyQuest() {
@@ -447,12 +439,38 @@ export default class MenuScene extends Phaser.Scene {
   }
 
   makeMenuBtn(x, y, label, cb) {
-    return new NeonButton(this, x, y, label, { onDown: cb }).container;
+    return new NeonButton(this, x, y, label, { glow: true, onDown: cb }).container;
+  }
+
+  /** 辉光标题：副本层发光 + 本体，呼吸脉动（reduced-motion 下静态） */
+  addGlowTitle(ov, cx, y, text, colorHex) {
+    const glow = this.add.text(cx, y, text, {
+      fontFamily: 'sans-serif', fontSize: '34px', fontStyle: '800', color: colorHex,
+    }).setOrigin(0.5).setShadow(0, 0, colorHex, 30, true, true).setAlpha(0.3);
+    const title = this.add.text(cx, y, text, {
+      fontFamily: 'sans-serif', fontSize: '34px', fontStyle: '800', color: colorHex,
+    }).setOrigin(0.5).setShadow(0, 0, colorHex, 14, true, true);
+    ov.add(glow);
+    ov.add(title);
+    if (!this.reduceMotion) {
+      this.tweens.add({ targets: glow, alpha: { from: 0.22, to: 0.46 }, duration: 1700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    }
+    return { glow, title };
+  }
+
+  /** 面板入场：淡入 + 轻微上滑（reduced-motion 下静态直接显示） */
+  fadeInPanel(ov) {
+    if (this.reduceMotion) { ov.setAlpha(1); return; }
+    ov.setAlpha(0);
+    ov.y = 18;
+    this.tweens.add({ targets: ov, alpha: 1, y: 0, duration: 260, ease: 'Cubic.out' });
   }
 
   /** 统一的内嵌霓虹面板背景：圆角半透卡片 + 霓虹描边，套在 dim 之上、内容之下 */
   addPanel(ov, cx, top = 70, bottom = GAME_HEIGHT - 50, w = 460) {
     const g = this.add.graphics();
+    // 外发光描边层（让面板边缘发光，纯视觉）
+    g.lineStyle(10, THEME.panelStroke, 0.12).strokeRoundedRect(cx - w / 2 - 2, top - 2, w + 4, bottom - top + 4, THEME.panelRadius + 2);
     g.fillStyle(THEME.panelBg, THEME.panelBgAlpha);
     g.fillRoundedRect(cx - w / 2, top, w, bottom - top, THEME.panelRadius);
     g.lineStyle(2, THEME.panelStroke, THEME.panelStrokeAlpha);
