@@ -127,9 +127,9 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
       }
     }
 
-    // 无敌闪烁
+    // 无敌闪烁（reduced-motion 下保持常量不闪）
     if (time < this.invulnUntil) {
-      this.setAlpha(0.4 + 0.4 * Math.sin(time * 0.03));
+      this.setAlpha(prefersReduced ? 0.7 : (0.4 + 0.4 * Math.sin(time * 0.03)));
     } else {
       this.setAlpha(1);
     }
@@ -332,8 +332,10 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
 
     VFX.shake(this.scene, 'medium');
     if (this.hp <= 0) {
-      EventBus.emit(EVENTS.PLAYER_DIED);
+      // 先 kill 再 emit：命数复活（GameScene._onPlayerDied）可能在事件里原地复活玩家，
+      // 若 emit 在 kill 之前，事件回调先 revive、随后 kill 又把玩家打回 inactive，导致复活失败。
       this.kill();
+      EventBus.emit(EVENTS.PLAYER_DIED);
     }
   }
 
@@ -352,6 +354,17 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
       if (this.laserBeam.body) this.laserBeam.body.enable = false;
       if (this.laserBeam._glow) this.laserBeam._glow.setVisible(false);
     }
+  }
+
+  /** 原地复活（命数复活用）：恢复可见/碰撞/推进器/光环，回满血并设置无敌时长 */
+  revive(x, y, invulnUntil) {
+    this.setActive(true).setVisible(true);
+    if (this.body) this.body.enable = true;
+    this.setPosition(x, y);
+    this.hp = this.maxHp;
+    this.invulnUntil = invulnUntil;
+    VFX.setEmitterActive(this.thruster, true);
+    if (this.aura) this.aura.setVisible(true);
   }
 
   destroy(fromScene) {

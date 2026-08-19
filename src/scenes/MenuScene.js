@@ -118,10 +118,9 @@ export default class MenuScene extends Phaser.Scene {
       audio.sfx('ui'); this.openDailyQuest();
     } });
 
-    // 存档信息
-    const save = SaveManager.load();
+    // 存档信息（含全局最高分）
     this.saveInfoText = this.add.text(cx, GAME_HEIGHT - 44,
-      `金币 ${save.coins}   ·   已解锁第 ${save.unlockedLevel} 关`, {
+      this._saveInfoLabel(), {
       fontFamily: 'sans-serif', fontSize: '16px', color: '#88bbdd',
     }).setOrigin(0.5).setAlpha(0.8);
 
@@ -149,6 +148,12 @@ export default class MenuScene extends Phaser.Scene {
     const unlocked = SaveManager.load().unlockedLevel || 1;
     const lvl = Math.min(unlocked, LEVELS.length);
     this.scene.start(SCENES.GAME, { levelId: lvl });
+  }
+
+  /** 底部存档信息文案（金币 / 最高分 / 已解锁关卡），三处共用保持一致 */
+  _saveInfoLabel() {
+    const sv = SaveManager.load();
+    return `金币 ${sv.coins}   ·   最高分 ${sv.bestScore || 0}   ·   已解锁第 ${sv.unlockedLevel} 关`;
   }
 
   // ---- 设置面板（P0 音量设置）----
@@ -358,8 +363,7 @@ export default class MenuScene extends Phaser.Scene {
         info.setText(`已领取！\n+${res.reward} 金币 · 连续 ${res.streak} 天`);
         claimBtn.destroy();
         if (this.saveInfoText) {
-          const sv = SaveManager.load();
-          this.saveInfoText.setText(`金币 ${sv.coins}   ·   已解锁第 ${sv.unlockedLevel} 关`);
+          this.saveInfoText.setText(this._saveInfoLabel());
         }
         ov.add(this.makeMenuBtn(cx, 470, '好的', () => this.closeCheckIn()));
       } else {
@@ -423,8 +427,7 @@ export default class MenuScene extends Phaser.Scene {
         statusText.setText(`已领取！\n+${res.reward} 金币 · ${res.count} 项任务`);
         claimBtn.destroy();
         if (this.saveInfoText) {
-          const sv = SaveManager.load();
-          this.saveInfoText.setText(`金币 ${sv.coins}   ·   已解锁第 ${sv.unlockedLevel} 关`);
+          this.saveInfoText.setText(this._saveInfoLabel());
         }
         ov.add(this.makeMenuBtn(cx, cursor + 70, '好的', () => this.closeDailyQuest()));
       } else if (res.notReady) {

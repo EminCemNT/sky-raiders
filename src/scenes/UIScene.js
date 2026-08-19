@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, LEVELS, WEAPONS, SHIPS, WINGMAN } from '../config/GameConfig.js';
+import { SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, LEVELS, WEAPONS, SHIPS, WINGMAN, PLAYER } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
 import { audio } from '../systems/AudioSystem.js';
@@ -46,6 +46,11 @@ export default class UIScene extends Phaser.Scene {
     // 波次提示
     this.waveText = this.add.text(GAME_WIDTH - 16, 42, '', {
       fontFamily: 'sans-serif', fontSize: '13px', color: '#88bbdd',
+    }).setOrigin(1, 0).setDepth(100);
+
+    // 剩余命数（P1 命数复活：数字指示，右上角）
+    this.livesText = this.add.text(GAME_WIDTH - 16, 64, `命 ×${d.lives != null ? d.lives : PLAYER.START_LIVES}`, {
+      fontFamily: 'sans-serif', fontSize: '15px', fontStyle: '700', color: '#7cffa0',
     }).setOrigin(1, 0).setDepth(100);
 
     // HP 条（圆角发光）
@@ -316,6 +321,11 @@ export default class UIScene extends Phaser.Scene {
     };
     EventBus.on('__hud_bombs', this._onBombs);
 
+    this._onLives = (n) => {
+      if (this.livesText) this.livesText.setText(`命 ×${n}`);
+    };
+    EventBus.on(EVENTS.LIVES_CHANGED, this._onLives);
+
     this._onWave = ({ wave, total }) => {
       if (this.waveText) this.waveText.setText(`第 ${wave}/${total} 波`);
       this.flashCenter(`第 ${wave} 波`);
@@ -563,6 +573,7 @@ export default class UIScene extends Phaser.Scene {
     EventBus.off('__hud_score', this._onScore);
     EventBus.off(EVENTS.HP_CHANGED, this._onHp);
     EventBus.off('__hud_bombs', this._onBombs);
+    EventBus.off(EVENTS.LIVES_CHANGED, this._onLives);
     EventBus.off(EVENTS.WAVE_STARTED, this._onWave);
     EventBus.off(EVENTS.BOSS_SPAWNED, this._onBossSpawn);
     EventBus.off(EVENTS.BOSS_HP_CHANGED, this._onBossHp);

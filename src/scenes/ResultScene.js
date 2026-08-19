@@ -63,15 +63,18 @@ export default class ResultScene extends Phaser.Scene {
       }).setOrigin(0.5).setWordWrapWidth(GAME_WIDTH - 60);
     }
 
-    // 数据
+    // 数据（含最高分；破纪录时得分行高亮并加「新纪录」标识）
     const lines = [
-      `得分   ${r.score || 0}`,
-      `击杀   ${r.kills || 0}`,
-      `金币   ${r.coins || 0}`,
+      { label: '得分', value: r.score || 0, newBest: !!r.isNewBest },
+      { label: '击杀', value: r.kills || 0 },
+      { label: '金币', value: r.coins || 0 },
+      { label: '最高分', value: r.bestScore ?? 0 },
     ];
-    lines.forEach((line, i) => {
-      this.add.text(cx, 400 + i * 40, line, {
-        fontFamily: 'sans-serif', fontSize: '22px', color: '#cfe8ff',
+    lines.forEach((l, i) => {
+      this.add.text(cx, 400 + i * 40, `${l.label}   ${l.value}${l.newBest ? '  ★新纪录' : ''}`, {
+        fontFamily: 'sans-serif', fontSize: '22px',
+        color: l.newBest ? '#ffd86b' : '#cfe8ff',
+        fontStyle: l.newBest ? '800' : 'normal',
       }).setOrigin(0.5);
     });
 

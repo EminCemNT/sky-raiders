@@ -8,6 +8,7 @@ import { SAVE_KEY, DAILY_QUEST_POOL, DIFFICULTIES } from '../config/GameConfig.j
  */
 const DEFAULT_SAVE = {
   coins: 0,
+  bestScore: 0, // 全局最高分（P1 最高分存档，默认 0）
   // wingmanFirepower：僚机火力（独立于 wingman 数量项），决定 WINGMAN.WEAPON_LV 档位
   upgrades: { firepower: 0, hull: 0, shield: 0, magnet: 0, wingman: 0, wingmanFirepower: 0 },
   selectedShip: 0, // C2 战机武器绑定：所选战机索引（对应 GameConfig.SHIPS）
@@ -130,6 +131,23 @@ export const SaveManager = {
     s.coins = Math.max(0, s.coins - n);
     this.save();
     return s.coins;
+  },
+
+  /** 读取全局最高分（无记录返回 0） */
+  getBestScore() {
+    return this.load().bestScore || 0;
+  },
+
+  /** 更新全局最高分；破纪录返回 true，否则 false（不降分） */
+  recordBestScore(score) {
+    const s = this.load();
+    const v = Math.max(0, Math.floor(Number(score) || 0));
+    if (v > s.bestScore) {
+      s.bestScore = v;
+      this.save();
+      return true;
+    }
+    return false;
   },
 
   recordLevelStars(levelId, stars) {

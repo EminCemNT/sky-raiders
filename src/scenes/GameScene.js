@@ -95,7 +95,11 @@ export default class GameScene extends Phaser.Scene {
 
     // 玩家（读存档火力等级）
     const save = SaveManager.load();
-    this.player = new Player(this, GAME_WIDTH / 2, GAME_HEIGHT - 140, this.playerBullets);
+    // 命数复活：每局命数重置为 START_LIVES；spawn 位置供原地复活复用
+    this.lives = PLAYER.START_LIVES;
+    this.playerSpawnX = GAME_WIDTH / 2;
+    this.playerSpawnY = GAME_HEIGHT - 140;
+    this.player = new Player(this, this.playerSpawnX, this.playerSpawnY, this.playerBullets);
     this.player.setFirepower(save.upgrades.firepower || 0);
     this.player.maxHp = PLAYER.MAX_HP + (save.upgrades.hull || 0) * 20;
     this.player.hp = this.player.maxHp;
@@ -168,12 +172,14 @@ export default class GameScene extends Phaser.Scene {
       mode: this.mode,
       hp: this.player.hp, maxHp: this.player.maxHp,
       bombs: PLAYER.START_BOMBS,
+      lives: this.lives,
     });
 
     // 初始 HUD 同步
     EventBus.emit(EVENTS.HP_CHANGED, this.player.hp, this.player.maxHp);
     EventBus.emit(EVENTS.SCORE_CHANGED, 0);
     EventBus.emit(EVENTS.ENERGY_CHANGED, this.energy, ENERGY_MAX);
+    EventBus.emit(EVENTS.LIVES_CHANGED, this.lives);
 
     this.bombs = PLAYER.START_BOMBS;
 
@@ -308,7 +314,17 @@ export default class GameScene extends Phaser.Scene {
     this._onScore = (v) => { this.score += v; EventBus.emit('__hud_score', this.score); };
     EventBus.on(EVENTS.SCORE_CHANGED, this._onScore);
 
-    this._onPlayerDied = () => this.endGame(false);
+    this._onPlayerDied = () => {
+      // 命数复活：优先消耗一命原地复活；命尽才结算失败。
+      // 注意：不重置 stats.damageTaken —— 无伤/不动如山类成就仍按全局受击判定，复活不影响成就链路。
+      this.lives = Math.max(0, (this.lives || 0) - 1);
+      EventBus.emit(EVENTS.LIVES_CHANGED, this.lives);
+      if (this.lives > 0) {
+        this.respawnPlayer();
+      } else {
+        this.endGame(false);
+      }
+    };
     EventBus.on(EVENTS.PLAYER_DIED, this._onPlayerDied);
 
     this._onBossDefeated = () => {
@@ -882,6 +898,21 @@ export default class GameScene extends Phaser.Scene {
   }
 
 
+  /** 命数复活：原地回满血复活 + 清屏救场（清除敌弹），不重置 damageTaken */
+  respawnPlayer() {
+    const p = this.player;
+    p.revive(this.playerSpawnX, this.playerSpawnY, this.time.now + PLAYER.RESPAWN_INVULN);
+
+    // 清屏救场：清掉所有敌弹，给玩家安全空间
+    this.enemyBullets.children.each((b) => {
+      if (b.active) this.killBullet(b);
+    });
+
+    // 复活闪光 + 震屏（reduced-motion 由 VFX 内部降级）
+    VFX.shake(this, 'medium');
+    EventBus.emit(EVENTS.HP_CHANGED, p.hp, p.maxHp);
+  }
+
   playerHit(dmg) {
     // 护盾激活时吸收全部伤害
     if (this.time.now < (this.buffs.shieldUntil || 0)) return;
@@ -1042,10 +1073,15 @@ export default class GameScene extends Phaser.Scene {
     if (coinDelta > 0) SaveManager.addCoins(coinDelta);
     const finalCoins = coinDelta > 0 ? coinTarget : this.stats.coins;
 
+    // 最高分存档：比较 scaledScore 与全局 bestScore，破纪录则写回（胜负都记）
+    const isNewBest = SaveManager.recordBestScore(scaledScore);
+    const bestScore = SaveManager.getBestScore();
+
     SaveManager.save(); // flush 每日任务进度（addDailyProgress 不立即存盘）
 
     const result = {
       victory, stars, score: scaledScore,
+      bestScore, isNewBest,
       kills: this.stats.kills, coins: finalCoins,
       levelId: this.levelId, composite,
     };

@@ -40,6 +40,7 @@ export const EVENTS = {
   // 生命周期
   PLAYER_HIT: 'player-hit',
   PLAYER_DIED: 'player-died',
+  LIVES_CHANGED: 'lives-changed', // 命数变化（P1 命数复活：payload = 剩余命数）
   GAME_OVER: 'game-over',
   // 玩家技能
   USE_BOMB: 'use-bomb',
