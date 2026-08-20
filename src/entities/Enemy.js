@@ -240,6 +240,8 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     // 增强爆炸
     VFX.explosion(this.scene, this.x, this.y, this.getColor(), this.typeKey === 'mid' ? 1.3 : 1);
     if (this.scene.maybeDropItem) this.scene.maybeDropItem(this.x, this.y);
+    // 局内火力(P)掉落（P1）：独立于普通道具的概率掉落
+    if (this.scene.maybeDropPower) this.scene.maybeDropPower(this.x, this.y);
     // 死亡演出（P1-7）：先停用碰撞体避免死敌仍挡子弹/被重复 overlap，再短命中定格 + 弹性缩放消失
     if (this.body) this.body.enable = false;
     if (this.scene.requestHitStop) this.scene.requestHitStop(60);

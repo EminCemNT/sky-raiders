@@ -57,6 +57,7 @@ export function generateAll(scene) {
   drawItemWeapon(g); g.generateTexture('item_weapon', 26, 26);
   drawItemWeaponLaser(g); g.generateTexture('item_weapon_laser', 26, 26);
   drawItemWeaponBomb(g); g.generateTexture('item_weapon_bomb', 26, 26);
+  drawItemPower(g); g.generateTexture('item_power', 26, 26);
   drawBulletPlayer(g); g.generateTexture('bullet_player', 12, 24); // 安全回退（保留）
   drawBulletPulse(g); g.generateTexture('bullet_pulse', 10, 28);
   drawBulletScatter(g); g.generateTexture('bullet_scatter', 14, 14);
@@ -450,6 +451,25 @@ function drawBulletEnemy(g) {
   // 白色高光点
   g.fillStyle(0xffffff, 0.95);
   g.fillCircle(6.5, 6.5, 2.2);
+}
+
+// ─── 道具：火力(P)（橙金圆盘 + 闪电符号） ───────────────────────
+function drawItemPower(g) {
+  g.clear();
+  // 外发光
+  g.fillStyle(0xffb84a, 0.3);
+  g.fillCircle(13, 13, 13);
+  // 橙金圆盘底盘
+  g.fillGradientStyle(0xffe9a0, 0xffc04a, 0xff9a3a, 0xd96620, 1);
+  g.fillCircle(13, 13, 11);
+  g.lineStyle(2, 0xffe9c0, 0.95);
+  g.strokeCircle(13, 13, 11);
+  // 闪电符号（火力）
+  g.fillStyle(0x3a1a06, 1);
+  g.fillPoints([
+    { x: 15, y: 3 }, { x: 7, y: 14 }, { x: 12, y: 14 },
+    { x: 10, y: 24 }, { x: 19, y: 11 }, { x: 13, y: 11 },
+  ], true);
 }
 
 // ─── 通用道具箱（保留兼容） ─────────────────────────────────────

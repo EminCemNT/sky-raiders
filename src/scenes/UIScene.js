@@ -53,6 +53,11 @@ export default class UIScene extends Phaser.Scene {
       fontFamily: 'sans-serif', fontSize: '15px', fontStyle: '700', color: '#7cffa0',
     }).setOrigin(1, 0).setDepth(100);
 
+    // 局内火力(P)等级指示（P1：拾取 P +1 / 受击 -1，右上角，金色）
+    this.powerText = this.add.text(GAME_WIDTH - 16, 84, '火力 Lv0', {
+      fontFamily: 'sans-serif', fontSize: '15px', fontStyle: '700', color: '#ffd54a',
+    }).setOrigin(1, 0).setDepth(100);
+
     // HP 条（圆角发光）
     this.hpBar = new NeonBar(this, 16, 64, 180, 14, { color: 0x33dd88 });
     this.hpText = this.add.text(204, 64, '', {
@@ -326,8 +331,13 @@ export default class UIScene extends Phaser.Scene {
     };
     EventBus.on(EVENTS.LIVES_CHANGED, this._onLives);
 
-    this._onWave = ({ wave, total }) => {
-      if (this.waveText) this.waveText.setText(`第 ${wave}/${total} 波`);
+    this._onPower = (n) => {
+      if (this.powerText) this.powerText.setText(`火力 Lv${n}`);
+    };
+    EventBus.on(EVENTS.POWER_CHANGED, this._onPower);
+
+    this._onWave = ({ wave, total, endless }) => {
+      if (this.waveText) this.waveText.setText(endless ? `第 ${wave} 波 · 无尽` : `第 ${wave}/${total} 波`);
       this.flashCenter(`第 ${wave} 波`);
     };
     EventBus.on(EVENTS.WAVE_STARTED, this._onWave);
@@ -574,6 +584,7 @@ export default class UIScene extends Phaser.Scene {
     EventBus.off(EVENTS.HP_CHANGED, this._onHp);
     EventBus.off('__hud_bombs', this._onBombs);
     EventBus.off(EVENTS.LIVES_CHANGED, this._onLives);
+    EventBus.off(EVENTS.POWER_CHANGED, this._onPower);
     EventBus.off(EVENTS.WAVE_STARTED, this._onWave);
     EventBus.off(EVENTS.BOSS_SPAWNED, this._onBossSpawn);
     EventBus.off(EVENTS.BOSS_HP_CHANGED, this._onBossHp);

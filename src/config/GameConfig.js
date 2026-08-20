@@ -41,6 +41,7 @@ export const EVENTS = {
   PLAYER_HIT: 'player-hit',
   PLAYER_DIED: 'player-died',
   LIVES_CHANGED: 'lives-changed', // 命数变化（P1 命数复活：payload = 剩余命数）
+  POWER_CHANGED: 'power-changed', // 局内火力(P)等级变化（P1：payload = 当前等级 0~4）
   GAME_OVER: 'game-over',
   // 玩家技能
   USE_BOMB: 'use-bomb',
@@ -86,6 +87,16 @@ export const BULLET = {
   BOMB_DMG: 50,         // 炸弹 AOE 单发伤害
   BOMB_RADIUS: 120,     // 爆炸半径
   ENEMY_BULLET_TRACK_TURN: 0.045, // 敌弹 tracking 每帧最大转角（弧度，C3）
+};
+
+// 局内火力(P)拾取成长（P1）：P 掉落拾取 +1（封顶 MAX_LEVEL），受击 -1（下限 0）。
+//   MAX_LEVEL      局内火力上限（0~4）
+//   FIRE_RATE_GAIN 每级射速减免(ms)，叠加在机库火力之上
+//   DROP_CHANCE    敌人死亡独立掉落 P 的概率（约 15%）
+export const POWERUP = {
+  MAX_LEVEL: 4,
+  FIRE_RATE_GAIN: 8,
+  DROP_CHANCE: 0.15,
 };
 
 // 关卡制（Sky Force 风格：分关，每关有波次 + Boss）

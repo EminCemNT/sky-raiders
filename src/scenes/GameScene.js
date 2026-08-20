@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import {
   SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, COLORS, PLAYER, BULLET, LEVELS, BOSS_RUSH, SHIPS, ELEMENTS, WINGMAN,
-  DIFFICULTIES, getDifficulty,
+  DIFFICULTIES, getDifficulty, POWERUP,
 } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
@@ -39,7 +39,7 @@ export default class GameScene extends Phaser.Scene {
   }
 
   init(data) {
-    this.mode = (data && data.mode) || 'normal'; // 'normal' | 'bossrush'
+    this.mode = (data && data.mode) || 'normal'; // 'normal' | 'bossrush' | 'endless'
     this.levelId = data.levelId || 1;
     this.forceTutorial = !!(data && data.forceTutorial); // 菜单"教程"按钮强制重看
     this.stats = { kills: 0, coins: 0, damageTaken: 0, spawned: 0 };
@@ -48,6 +48,8 @@ export default class GameScene extends Phaser.Scene {
     // 连击系统（P0）
     this.combo = 0;
     this._comboExpire = 0;
+    // 局内火力(P)成长（P1）：独立于机库升级，拾取 P +1 / 受击 -1，0~4
+    this.powerLevel = 0;
     // 成就统计
     this.maxCombo = 0;
     this.usedSuperCount = 0;
@@ -101,6 +103,7 @@ export default class GameScene extends Phaser.Scene {
     this.playerSpawnY = GAME_HEIGHT - 140;
     this.player = new Player(this, this.playerSpawnX, this.playerSpawnY, this.playerBullets);
     this.player.setFirepower(save.upgrades.firepower || 0);
+    this.player.setPowerLevel(this.powerLevel); // 局内火力(P)从 0 起步
     this.player.maxHp = PLAYER.MAX_HP + (save.upgrades.hull || 0) * 20;
     this.player.hp = this.player.maxHp;
 
@@ -133,10 +136,11 @@ export default class GameScene extends Phaser.Scene {
     this.bombKey = this.input.keyboard.addKey('SPACE');
     this.focusKey = this.input.keyboard.addKey('F'); // 第三版③集火指令：切换僚机集火
 
-    // 波次系统（Boss Rush 模式不生成普通波次，改为纯 Boss 序列）
+    // 波次系统（Boss Rush 模式不生成普通波次，改为纯 Boss 序列；
+    // endless 复用同一 WaveSystem，开无尽循环 + 难度递增）
     this.bossRushIndex = 0;
     if (this.mode !== 'bossrush') {
-      this.waves = new WaveSystem(this, this.levelId);
+      this.waves = new WaveSystem(this, this.levelId, { endless: this.mode === 'endless' });
     }
     this.boss = null;
 
@@ -180,6 +184,7 @@ export default class GameScene extends Phaser.Scene {
     EventBus.emit(EVENTS.SCORE_CHANGED, 0);
     EventBus.emit(EVENTS.ENERGY_CHANGED, this.energy, ENERGY_MAX);
     EventBus.emit(EVENTS.LIVES_CHANGED, this.lives);
+    EventBus.emit(EVENTS.POWER_CHANGED, this.powerLevel);
 
     this.bombs = PLAYER.START_BOMBS;
 
@@ -190,8 +195,8 @@ export default class GameScene extends Phaser.Scene {
     // 那时 wingmanSystem 还是 null，拿不到 getGroup()）
     this.setupWingmanCollider();
 
-    // 首玩教程：首次进入游戏显示操作引导（Boss Rush 跳过，避免阻塞）；forceTutorial 供菜单"教程"按钮重看
-    if (this.mode !== 'bossrush' && (!SaveManager.get('tutorialDone') || this.forceTutorial)) this.showTutorial();
+    // 首玩教程：首次进入游戏显示操作引导（Boss Rush / 无尽模式跳过，避免阻塞）；forceTutorial 供菜单"教程"按钮重看
+    if (this.mode !== 'bossrush' && this.mode !== 'endless' && (!SaveManager.get('tutorialDone') || this.forceTutorial)) this.showTutorial();
 
     // Boss Rush：直接进入 Boss 序列
     if (this.mode === 'bossrush') this.startBossRush();
@@ -647,6 +652,12 @@ export default class GameScene extends Phaser.Scene {
     if (key) this.spawnItem(x, y, key);
   }
 
+  /** 局内火力(P)掉落（P1）：敌人死亡独立概率掉落，与普通道具互不影响 */
+  maybeDropPower(x, y) {
+    if (Math.random() > POWERUP.DROP_CHANCE) return;
+    this.spawnItem(x, y, 'power');
+  }
+
   /** Boss 必掉：按 BOSS_DROP_TABLE 撒一圈高价值道具 */
   spawnBossDrops(x, y) {
     BOSS_DROP_TABLE.forEach((key, i) => {
@@ -691,6 +702,9 @@ export default class GameScene extends Phaser.Scene {
           break;
         case 'permanent':
           if (key === 'wingman' && this.wingmanSystem) this.wingmanSystem.addWingman();
+          break;
+        case 'power':
+          this.addPower();
           break;
         case 'weapon':
           if (this.player.setWeapon) this.player.setWeapon(def.weapon);
@@ -743,6 +757,19 @@ export default class GameScene extends Phaser.Scene {
   addEnergy(amount) {
     this.energy = Phaser.Math.Clamp((this.energy || 0) + amount, 0, ENERGY_MAX);
     EventBus.emit(EVENTS.ENERGY_CHANGED, this.energy, ENERGY_MAX);
+  }
+
+  /** 局内火力(P)：拾取 P +1（封顶 POWERUP.MAX_LEVEL） */
+  addPower() {
+    this.powerLevel = this.player.setPowerLevel(this.powerLevel + 1);
+    EventBus.emit(EVENTS.POWER_CHANGED, this.powerLevel);
+  }
+
+  /** 局内火力(P)：受击 -1（下限 0），仅在实际受伤（非无敌/非护盾吸收）时调用 */
+  losePower() {
+    if (this.powerLevel <= 0) return;
+    this.powerLevel = this.player.setPowerLevel(this.powerLevel - 1);
+    EventBus.emit(EVENTS.POWER_CHANGED, this.powerLevel);
   }
 
   /** 命中定格（hitStop）：冻结物理世界（子弹/敌机/敌弹）强化打击感；指针拖动玩家不受影响。
@@ -916,9 +943,12 @@ export default class GameScene extends Phaser.Scene {
   playerHit(dmg) {
     // 护盾激活时吸收全部伤害
     if (this.time.now < (this.buffs.shieldUntil || 0)) return;
+    // 是否真正"落地"：无敌期内敌弹穿过不视为受击（不扣火力，避免 1.5s 内连掉多级）
+    const landed = this.time.now >= (this.player.invulnUntil || 0);
     this.stats.damageTaken += dmg;
     this.player.takeDamage(dmg);
     this.breakCombo(); // 受击断连
+    if (landed) this.losePower(); // 受击火力 -1（下限 0）
   }
 
   useBomb() {
@@ -1084,6 +1114,7 @@ export default class GameScene extends Phaser.Scene {
       bestScore, isNewBest,
       kills: this.stats.kills, coins: finalCoins,
       levelId: this.levelId, composite,
+      mode: this.mode, wave: this.waves ? this.waves.currentWave : 0,
     };
 
     // 成就评估（#成就）：事件已实时上报，这里做局末兜底评估（无伤/通关/BossRush 等）

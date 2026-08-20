@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { PLAYER, BULLET, GAME_WIDTH, GAME_HEIGHT, EVENTS } from '../config/GameConfig.js';
+import { PLAYER, BULLET, GAME_WIDTH, GAME_HEIGHT, EVENTS, POWERUP } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
 import { audio } from '../systems/AudioSystem.js';
@@ -50,6 +50,9 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     // 火力等级（GameScene 也会调用 setFirepower，这里保证默认值一致）
     this.firepower = up.firepower || 0;
     this.setFirepower(this.firepower);
+
+    // 局内火力(P)拾取成长（P1）：独立于机库升级，拾取 +1 / 受击 -1，0~4
+    this.powerLevel = 0;
 
     // 当前武器（B/C 武器系统）：'pulse'(默认主炮) | 'missile'(追踪导弹) | 'laser' | 'bomb'
     this.weapon = 'pulse';
@@ -157,46 +160,58 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
 
     audio.sfx('shoot');
     const patterns = this.getFirePattern(this.firepower);
-    for (const p of patterns) {
-      // 中央脉冲弹按战斗机元素替换元素纹理 key（苍鹰 thunder→bullet_thunder 等）；
-      // 其余弹型保持原 key。逻辑 key 不变，伤害/body/命中判定零改动。
-      const baseKey = p.bulletKey || 'bullet_pulse';
-      const ELEMENT_BOLT = { fire: 'bullet_fire', ice: 'bullet_ice', thunder: 'bullet_thunder' };
-      const drawKey = (baseKey === 'bullet_pulse' && this.shipElement && ELEMENT_BOLT[this.shipElement])
-        ? ELEMENT_BOLT[this.shipElement] : baseKey;
-      const key = baseKey;
-      const b = this.bullets.get(this.x + p.dx, this.y - 20, key);
-      if (!b) continue;
-      // P1-2 池贴图不变量：复用的子弹可能残留旧贴图键，先统一成本次请求的贴图，
-      // 用 drawKey（元素弹时与 key 不同）重设，再读 bw/bh 计算 body。
-      if (b.texture && b.texture.key !== drawKey) b.setTexture(drawKey);
-      b.setActive(true).setVisible(true);
-      b.body.enable = true;
-      b.homing = false;
-      b.isBomb = false;
-      b.element = this.shipElement;          // B6：子弹携带战斗机元素属性
-      const bw = b.width, bh = b.height;
-      if (key === 'bullet_missile') {
-        b.damage = BULLET.MISSILE_DMG;
-        b.homing = true;
-        b.body.setSize(bw * 0.6, bh * 0.6);
-        b.setVelocity(p.vx, -BULLET.MISSILE_SPEED);
-      } else if (key === 'bullet_bomb') {
-        // B5 元素炸弹：向上抛，命中/到达屏顶后 AOE 爆炸（逻辑在 GameScene）
-        b.damage = BULLET.BOMB_DMG;
-        b.isBomb = true;
-        b.explodeRadius = BULLET.BOMB_RADIUS;
-        b.element = this.shipElement;
-        b.body.setSize(bw, bh);
-        b.setVelocity(p.vx || 0, -BULLET.BOMB_SPEED);
-      } else {
-        b.damage = BULLET.PLAYER_DMG;
-        b.setVelocity(p.vx, -BULLET.PLAYER_SPEED);
-        if (key === 'bullet_pulse') b.body.setSize(bw * 0.6, bh * 0.7);
-        else b.body.setSize(bw * 0.7, bh * 0.7);
+    for (const p of patterns) this._emitBullet(p);
+
+    // 局内火力(P)：脉冲主炮每级追加 1 发并列弹（对称排列，不影响导弹/炸弹/激光弹道）
+    if (this.weapon === 'pulse' && this.powerLevel > 0) {
+      const spread = 16;
+      for (let i = 0; i < this.powerLevel; i++) {
+        const side = (i % 2 === 0) ? (i / 2 + 1) : -Math.ceil(i / 2);
+        this._emitBullet({ dx: side * spread, vx: 0, bulletKey: 'bullet_pulse' });
       }
-      if (p.angle) b.setRotation(p.angle);
     }
+  }
+
+  /** 发射单发子弹（按 pattern 描述配置贴图/速度/伤害/body） */
+  _emitBullet(p) {
+    // 中央脉冲弹按战斗机元素替换元素纹理 key（苍鹰 thunder→bullet_thunder 等）；
+    // 其余弹型保持原 key。逻辑 key 不变，伤害/body/命中判定零改动。
+    const baseKey = p.bulletKey || 'bullet_pulse';
+    const ELEMENT_BOLT = { fire: 'bullet_fire', ice: 'bullet_ice', thunder: 'bullet_thunder' };
+    const drawKey = (baseKey === 'bullet_pulse' && this.shipElement && ELEMENT_BOLT[this.shipElement])
+      ? ELEMENT_BOLT[this.shipElement] : baseKey;
+    const key = baseKey;
+    const b = this.bullets.get(this.x + p.dx, this.y - 20, key);
+    if (!b) return;
+    // P1-2 池贴图不变量：复用的子弹可能残留旧贴图键，先统一成本次请求的贴图，
+    // 用 drawKey（元素弹时与 key 不同）重设，再读 bw/bh 计算 body。
+    if (b.texture && b.texture.key !== drawKey) b.setTexture(drawKey);
+    b.setActive(true).setVisible(true);
+    b.body.enable = true;
+    b.homing = false;
+    b.isBomb = false;
+    b.element = this.shipElement;          // B6：子弹携带战斗机元素属性
+    const bw = b.width, bh = b.height;
+    if (key === 'bullet_missile') {
+      b.damage = BULLET.MISSILE_DMG;
+      b.homing = true;
+      b.body.setSize(bw * 0.6, bh * 0.6);
+      b.setVelocity(p.vx, -BULLET.MISSILE_SPEED);
+    } else if (key === 'bullet_bomb') {
+      // B5 元素炸弹：向上抛，命中/到达屏顶后 AOE 爆炸（逻辑在 GameScene）
+      b.damage = BULLET.BOMB_DMG;
+      b.isBomb = true;
+      b.explodeRadius = BULLET.BOMB_RADIUS;
+      b.element = this.shipElement;
+      b.body.setSize(bw, bh);
+      b.setVelocity(p.vx || 0, -BULLET.BOMB_SPEED);
+    } else {
+      b.damage = BULLET.PLAYER_DMG;
+      b.setVelocity(p.vx, -BULLET.PLAYER_SPEED);
+      if (key === 'bullet_pulse') b.body.setSize(bw * 0.6, bh * 0.7);
+      else b.body.setSize(bw * 0.7, bh * 0.7);
+    }
+    if (p.angle) b.setRotation(p.angle);
   }
 
   /** 确保激光束对象存在（首次使用 laser 武器时懒创建） */
@@ -306,8 +321,20 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
 
   setFirepower(level) {
     this.firepower = Phaser.Math.Clamp(level, 0, 8);
-    // 火力越高射速略快
-    this.fireInterval = Math.max(70, PLAYER.FIRE_INTERVAL - this.firepower * 8);
+    this._recalcFireInterval();
+  }
+
+  /** 局内火力(P)：0~4，拾取 +1 / 受击 -1，影响射速与并列弹数量 */
+  setPowerLevel(level) {
+    this.powerLevel = Phaser.Math.Clamp(level || 0, 0, POWERUP.MAX_LEVEL);
+    this._recalcFireInterval();
+    return this.powerLevel;
+  }
+
+  /** 射速 = 机库火力减免 + 局内火力(P)减免（叠加，下限 55ms 防失控） */
+  _recalcFireInterval() {
+    const base = Math.max(70, PLAYER.FIRE_INTERVAL - (this.firepower || 0) * 8);
+    this.fireInterval = Math.max(55, base - (this.powerLevel || 0) * POWERUP.FIRE_RATE_GAIN);
   }
 
   takeDamage(n) {

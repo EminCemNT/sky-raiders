@@ -64,12 +64,20 @@ export default class MenuScene extends Phaser.Scene {
       },
     });
 
-    // 开始按钮
-    new NeonButton(this, cx, 480, '开始游戏', {
-      fontSize: 26, glow: true,
+    // 主入口：开始游戏（主线进度） + 无尽模式（Score Attack），并排两个主按钮
+    new NeonButton(this, cx - 116, 480, '开始游戏', {
+      w: 220, fontSize: 24, glow: true,
       onDown: () => {
         if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen) return;
         audio.resume(); audio.startBgm(); audio.sfx('ui'); this.startGame();
+      },
+    });
+
+    new NeonButton(this, cx + 116, 480, '无尽模式', {
+      w: 220, fontSize: 24, stroke: 0xff8a3d, glow: true,
+      onDown: () => {
+        if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen) return;
+        audio.resume(); audio.startBgm(); audio.sfx('ui'); this.startEndless();
       },
     });
 
@@ -148,6 +156,11 @@ export default class MenuScene extends Phaser.Scene {
     const unlocked = SaveManager.load().unlockedLevel || 1;
     const lvl = Math.min(unlocked, LEVELS.length);
     this.scene.start(SCENES.GAME, { levelId: lvl });
+  }
+
+  /** 无尽模式（Score Attack）：无限波次 + 难度递增，直到命尽 */
+  startEndless() {
+    this.scene.start(SCENES.GAME, { mode: 'endless', levelId: 1 });
   }
 
   /** 底部存档信息文案（金币 / 最高分 / 已解锁关卡），三处共用保持一致 */

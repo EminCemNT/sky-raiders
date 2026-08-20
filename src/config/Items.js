@@ -12,6 +12,8 @@ export const ITEMS = {
   weapon_missile: { tex: 'item_weapon',       label: '导弹', kind: 'weapon', weapon: 'missile', duration: 15000, desc: '切换追踪导弹 15 秒' },
   weapon_laser:   { tex: 'item_weapon_laser', label: '激光', kind: 'weapon', weapon: 'laser',   duration: 15000, desc: '切换激光束 15 秒' },
   weapon_bomb:    { tex: 'item_weapon_bomb',  label: '炸弹', kind: 'weapon', weapon: 'bomb',    duration: 15000, desc: '切换元素炸弹 15 秒' },
+  // 局内火力(P)成长（P1）：独立掉落，拾取后火力 +1，受击 -1
+  power:          { tex: 'item_power',        label: '火力P', kind: 'power', desc: '局内火力 +1（最多 4 级）' },
 };
 
 // 普通敌人掉"非金币道具"的基础概率

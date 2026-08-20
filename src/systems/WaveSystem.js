@@ -14,8 +14,9 @@ import { EventBus } from '../utils/EventBus.js';
  *   // 监听 EVENTS.LEVEL_CLEARED / BOSS_SPAWNED 做后续
  */
 export default class WaveSystem {
-  constructor(scene, levelId = 1) {
+  constructor(scene, levelId = 1, opts = {}) {
     this.scene = scene;
+    this.endless = !!opts.endless; // P1 无尽 Score Attack：无限循环 + 难度递增，永不进 Boss
     this.level = LEVELS.find((l) => l.id === levelId) || LEVELS[0];
     this.totalWaves = this.level.waves;
     this.currentWave = 0;
@@ -32,7 +33,8 @@ export default class WaveSystem {
 
   startNextWave() {
     this.currentWave++;
-    if (this.currentWave > this.totalWaves) {
+    // 无尽模式：无限循环，永不触发 Boss；普通模式走原有关卡 Boss 收尾
+    if (!this.endless && this.currentWave > this.totalWaves) {
       // 所有波次完成 -> Boss
       this.state = 'boss';
       if (!this.bossSpawned) {
@@ -47,20 +49,33 @@ export default class WaveSystem {
       }
       return;
     }
-    // 数据表驱动：优先读取本关 wavePlan，缺失则程序化兜底
-    const plan = this.level.wavePlan;
+    // 数据表驱动：优先读取本关 wavePlan（无尽模式不用，走程序化兜底）；缺失则程序化兜底
+    const plan = this.endless ? null : this.level.wavePlan;
     const waveDef = plan && plan[this.currentWave - 1];
     if (waveDef) {
       this._toSpawn = waveDef.count;
       this._comp = waveDef.comp;
     } else {
+      // 无尽模式：敌人数量随波次线性增长，形成持续压力
       this._toSpawn = 4 + this.currentWave * 2;
       this._comp = null;
     }
-    this._spawnGap = Math.max(260, 620 - this.currentWave * 25);
+    // 无尽模式出生间隔压得更低，后期更密集
+    this._spawnGap = Math.max(this.endless ? 200 : 260, 620 - this.currentWave * 25);
     this._spawnTimer = 0;
     this.state = 'spawning';
-    EventBus.emit(EVENTS.WAVE_STARTED, { wave: this.currentWave, total: this.totalWaves });
+    EventBus.emit(EVENTS.WAVE_STARTED, {
+      wave: this.currentWave,
+      total: this.endless ? null : this.totalWaves,
+      endless: this.endless,
+    });
+  }
+
+  /** 当前波次难度系数：无尽模式每 5 波 +10%（相对关卡基础难度递增） */
+  getDifficulty() {
+    const base = this.level.difficulty || 1;
+    if (!this.endless) return base;
+    return base * (1 + Math.floor((this.currentWave - 1) / 5) * 0.1);
   }
 
   update(time, dt) {
@@ -106,8 +121,9 @@ export default class WaveSystem {
         if ((r -= w) <= 0) { typeKey = t; moveMode = m; break; }
       }
     } else {
-      // 兜底：程序化随机（波次越高越难）
-      const midChance = Math.min(0.5, 0.1 + this.currentWave * 0.06);
+      // 兜底：程序化随机（波次越高越难）；无尽模式 mid 占比上限略高
+      const cap = this.endless ? 0.6 : 0.5;
+      const midChance = Math.min(cap, 0.1 + this.currentWave * 0.06);
       typeKey = Math.random() < midChance ? 'mid' : 'small';
       const modes = ['straight', 'straight', 'sine', 'dive'];
       moveMode = modes[Phaser.Math.Between(0, modes.length - 1)];
@@ -121,6 +137,6 @@ export default class WaveSystem {
     } else if (typeKey === 'diver') {
       firePattern = Math.random() < 0.5 ? 'tracking' : 'straight';
     }
-    this.scene.spawnEnemy(x, -40, typeKey, moveMode, this.level.difficulty || 1, firePattern);
+    this.scene.spawnEnemy(x, -40, typeKey, moveMode, this.getDifficulty(), firePattern);
   }
 }

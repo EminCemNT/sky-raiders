@@ -37,8 +37,8 @@ export default class ResultScene extends Phaser.Scene {
     this.add.rectangle(cx, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.55);
 
     // 标题
-    const title = r.victory ? '关卡通过' : '任务失败';
-    const titleColor = r.victory ? '#7cf3ff' : '#ff5566';
+    const title = r.mode === 'endless' ? '无尽挑战结束' : (r.victory ? '关卡通过' : '任务失败');
+    const titleColor = r.mode === 'endless' ? '#7cf3ff' : (r.victory ? '#7cf3ff' : '#ff5566');
     this.add.text(cx, 200, title, {
       fontFamily: 'sans-serif', fontSize: '48px', fontStyle: '800', color: titleColor,
     }).setOrigin(0.5).setShadow(0, 0, titleColor, 20, true, true);
@@ -68,8 +68,9 @@ export default class ResultScene extends Phaser.Scene {
       { label: '得分', value: r.score || 0, newBest: !!r.isNewBest },
       { label: '击杀', value: r.kills || 0 },
       { label: '金币', value: r.coins || 0 },
-      { label: '最高分', value: r.bestScore ?? 0 },
     ];
+    if (r.mode === 'endless') lines.push({ label: '波次', value: `第 ${r.wave || 0} 波` });
+    lines.push({ label: '最高分', value: r.bestScore ?? 0 });
     lines.forEach((l, i) => {
       this.add.text(cx, 400 + i * 40, `${l.label}   ${l.value}${l.newBest ? '  ★新纪录' : ''}`, {
         fontFamily: 'sans-serif', fontSize: '22px',
@@ -78,8 +79,15 @@ export default class ResultScene extends Phaser.Scene {
       }).setOrigin(0.5);
     });
 
-    // 按钮：胜利且有关卡解锁时显示「下一关」
-    if (r.victory && (r.levelId || 1) < LEVELS.length) {
+    // 按钮：无尽模式 -> 再来一局（仍进无尽）；胜利且可解锁 -> 下一关；其余 -> 重来/菜单
+    if (r.mode === 'endless') {
+      this.makeButton(cx, 580, '再来一局', () => {
+        this.scene.start(SCENES.GAME, { mode: 'endless', levelId: 1 });
+      });
+      this.makeButton(cx, 660, '返回菜单', () => {
+        this.scene.start(SCENES.MENU);
+      });
+    } else if (r.victory && (r.levelId || 1) < LEVELS.length) {
       this.makeButton(cx, 540, '下一关', () => {
         this.scene.start(SCENES.GAME, { levelId: (r.levelId || 1) + 1 });
       });
