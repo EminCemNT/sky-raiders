@@ -276,7 +276,8 @@ export default class MenuScene extends Phaser.Scene {
           this.scene.start(SCENES.GAME, { levelId: lvl.id });
         });
       } else {
-        c.add(this.add.text(cardW / 2 - 26, 0, '🔒', { fontSize: '30px' }).setOrigin(0.5));
+        // 锁定图标：矢量锁纹理（取代 emoji 🔒，跨端字形一致）
+        c.add(this.add.image(cardW / 2 - 26, 0, 'icon_lock').setScale(0.95));
         c.setAlpha(0.6);
       }
       ov.add(c);
@@ -316,7 +317,9 @@ export default class MenuScene extends Phaser.Scene {
       const bg = this.add.rectangle(0, 0, cardW, cardH, bgColor, 0.96)
         .setStrokeStyle(2, a.unlocked ? COLORS.coin : 0x445566);
       c.add(bg);
-      c.add(this.add.text(-cardW / 2 + 14, -cardH / 2 + 12, a.icon + '  ' + a.name, {
+      // 矢量图标：已解锁勋章 / 未解锁锁（取代 a.icon emoji，跨端字形一致）
+      c.add(this.add.image(-cardW / 2 + 18, -cardH / 2 + 20, a.unlocked ? 'icon_medal' : 'icon_lock').setScale(0.62));
+      c.add(this.add.text(-cardW / 2 + 36, -cardH / 2 + 12, a.name, {
         fontFamily: 'sans-serif', fontSize: '18px', fontStyle: '700',
         color: a.unlocked ? '#ffffff' : '#8899aa',
       }).setOrigin(0, 0));
@@ -325,9 +328,6 @@ export default class MenuScene extends Phaser.Scene {
         color: a.unlocked ? '#cfe8c0' : '#667788',
         wordWrap: { width: cardW - 28 },
       }).setOrigin(0, 0));
-      if (!a.unlocked) {
-        c.add(this.add.text(cardW / 2 - 18, cardH / 2 - 18, '🔒', { fontSize: '18px' }).setOrigin(0.5));
-      }
       ov.add(c);
     });
 
@@ -427,7 +427,7 @@ export default class MenuScene extends Phaser.Scene {
       ov.add([label, prog, track, fill]);
     });
 
-    const statusText = this.add.text(cx, cursor + 6, claimed ? '今日任务已领取 ✅'
+    const statusText = this.add.text(cx, cursor + 6, claimed ? '今日任务已领取'
       : (SaveManager.dailyQuestsReady() ? '全部完成，可领取奖励！' : '完成上方目标即可领取金币'), {
       fontFamily: 'sans-serif', fontSize: '18px', color: claimed ? '#7cffa0' : '#cfe8ff',
       align: 'center', wordWrap: { width: 400 },

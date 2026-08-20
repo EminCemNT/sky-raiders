@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, LEVELS } from '../config/GameConfig.js';
 import { createStarfield } from '../systems/Starfield.js';
-import { THEME } from '../utils/UIWidgets.js';
+import { NeonButton } from '../utils/UIWidgets.js';
 
 /**
  * ResultScene：关卡结算。显示胜负、星级、分数、金币，提供重来/返回。
@@ -54,10 +54,13 @@ export default class ResultScene extends Phaser.Scene {
 
     // 本局新解锁成就（来自 GameScene.evaluate）
     if (r.newAchievements && r.newAchievements.length) {
-      const names = r.newAchievements.map((a) => `${a.icon}${a.name}`).join('   ');
-      this.add.text(cx, 345, '🏅 本局解锁成就', {
+      const names = r.newAchievements.map((a) => a.name).join('   ');
+      // 标题行：勋章矢量图标 + 文本（取代 emoji 🏅，跨端字形一致）
+      const achTitle = this.add.text(0, 0, '本局解锁成就', {
         fontFamily: 'sans-serif', fontSize: '18px', color: '#ffd86b', fontStyle: '800',
       }).setOrigin(0.5);
+      const achMedal = this.add.image(-achTitle.width / 2 - 16, 0, 'icon_medal').setScale(0.75);
+      this.add.container(cx, 345, [achMedal, achTitle]);
       this.add.text(cx, 375, names, {
         fontFamily: 'sans-serif', fontSize: '16px', color: COLORS.coin, fontStyle: '700',
       }).setOrigin(0.5).setWordWrapWidth(GAME_WIDTH - 60);
@@ -130,21 +133,8 @@ export default class ResultScene extends Phaser.Scene {
   }
 
   makeButton(x, y, label, cb) {
-    const c = this.add.container(x, y);
-    const bg = this.add.rectangle(0, 0, 220, 58, THEME.btnBg, 0.95).setStrokeStyle(2, THEME.btnStroke);
-    const t = this.add.text(0, 0, label, {
-      fontFamily: 'sans-serif', fontSize: '22px', fontStyle: '700', color: '#ffffff',
-    }).setOrigin(0.5);
-    c.add([bg, t]);
-    c.setSize(220, 58).setInteractive({
-      hitArea: new Phaser.Geom.Rectangle(-110, -29, 220, 58),
-      hitAreaCallback: (rect, x, y) => rect.contains(x, y),
-      useHandCursor: true,
-    });
-    c.on('pointerover', () => bg.setFillStyle(THEME.btnBgHover, 1));
-    c.on('pointerout', () => bg.setFillStyle(THEME.btnBg, 0.95));
-    c.on('pointerdown', cb);
-    return c;
+    // P1 UI：统一复用 NeonButton（辉光 + hover + 按压缩放），与 MenuScene 风格一致
+    return new NeonButton(this, x, y, label, { glow: true, onDown: cb }).container;
   }
 
   update(_, dt) {

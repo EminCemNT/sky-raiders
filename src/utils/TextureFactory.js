@@ -58,6 +58,9 @@ export function generateAll(scene) {
   drawItemWeaponLaser(g); g.generateTexture('item_weapon_laser', 26, 26);
   drawItemWeaponBomb(g); g.generateTexture('item_weapon_bomb', 26, 26);
   drawItemPower(g); g.generateTexture('item_power', 26, 26);
+  // UI 矢量图标（取代跨端字形不一致的 emoji：🏅/🔒，append-only 新增 key）
+  drawIconMedal(g); g.generateTexture('icon_medal', 26, 26);
+  drawIconLock(g); g.generateTexture('icon_lock', 26, 26);
   drawBulletPlayer(g); g.generateTexture('bullet_player', 12, 24); // 安全回退（保留）
   drawBulletPulse(g); g.generateTexture('bullet_pulse', 10, 28);
   drawBulletScatter(g); g.generateTexture('bullet_scatter', 14, 14);
@@ -470,6 +473,56 @@ function drawItemPower(g) {
     { x: 15, y: 3 }, { x: 7, y: 14 }, { x: 12, y: 14 },
     { x: 10, y: 24 }, { x: 19, y: 11 }, { x: 13, y: 11 },
   ], true);
+}
+
+// ─── UI 图标：成就勋章（金牌 + 五角星，霓虹描边） ─────────────
+function drawIconMedal(g) {
+  g.clear();
+  // 外发光
+  g.fillStyle(0xffd54a, 0.3);
+  g.fillCircle(13, 16, 12);
+  // 左右绶带（红）
+  g.fillStyle(0xff5566, 1);
+  g.fillTriangle(5, 2, 12, 12, 10, 2);
+  g.fillTriangle(21, 2, 14, 12, 16, 2);
+  // 金牌圆盘
+  g.fillGradientStyle(0xfff3b0, 0xffe27a, 0xe0a91f, 0xb8860b, 1);
+  g.fillCircle(13, 16, 10);
+  g.lineStyle(1.5, 0xfff3b0, 0.95);
+  g.strokeCircle(13, 16, 10);
+  // 五角星（白，中心高光）
+  const cx = 13, cy = 16, R = 5.6, r = 2.4;
+  const pts = [];
+  for (let i = 0; i < 10; i++) {
+    const rad = i % 2 === 0 ? R : r;
+    const a = -Math.PI / 2 + i * Math.PI / 5;
+    pts.push({ x: cx + Math.cos(a) * rad, y: cy + Math.sin(a) * rad });
+  }
+  g.fillStyle(0xffffff, 0.95);
+  g.fillPoints(pts, true);
+}
+
+// ─── UI 图标：锁定（灰蓝挂锁 + 亮色锁梁） ─────────────────────
+function drawIconLock(g) {
+  g.clear();
+  // 外发光
+  g.fillStyle(0x9fb8cc, 0.25);
+  g.fillRoundedRect(2, 9, 22, 15, 4);
+  // 锁体（竖向渐变）
+  g.fillGradientStyle(0xeaf3fb, 0xc7d9e8, 0x9fb8cc, 0x5f7a92, 1);
+  g.fillRoundedRect(3, 10, 20, 14, 4);
+  g.lineStyle(1, 0xffffff, 0.4);
+  g.strokeRoundedRect(3, 10, 20, 14, 4);
+  // 锁梁（U 形亮环）
+  g.lineStyle(4, 0xd9e8f2, 1);
+  g.beginPath();
+  g.arc(13, 10, 6, Math.PI, 0);
+  g.strokePath();
+  // 锁孔
+  g.fillStyle(0x2a3a4a, 1);
+  g.fillCircle(13, 17, 2.6);
+  g.fillStyle(0xffffff, 0.7);
+  g.fillRect(12.6, 17, 0.9, 4);
 }
 
 // ─── 通用道具箱（保留兼容） ─────────────────────────────────────

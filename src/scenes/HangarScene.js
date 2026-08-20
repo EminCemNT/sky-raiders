@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, UPGRADE_TREE, SHIPS, WEAPONS, ELEMENTS } from '../config/GameConfig.js';
 import { SaveManager } from '../utils/SaveManager.js';
 import { createStarfield } from '../systems/Starfield.js';
-import { THEME } from '../utils/UIWidgets.js';
+import { NeonButton } from '../utils/UIWidgets.js';
 
 /**
  * HangarScene：机库 / 部件升级界面（Sky Force 风格金币升级树）
@@ -75,9 +75,10 @@ export default class HangarScene extends Phaser.Scene {
     // 卡片入场错峰弹入（reduced-motion 静态）
     if (!reduceMotion) {
       this.rows.forEach((row, i) => {
-        const fade = [row.card, row.cardGlow, row.nameText, row.levelText, row.btn].filter(Boolean);
+        const btnCont = row.btn ? row.btn.container : null;
+        const fade = [row.card, row.cardGlow, row.nameText, row.levelText, btnCont].filter(Boolean);
         fade.forEach((o) => o.setAlpha(0));
-        this.tweens.add({ targets: [row.card, row.btn].filter(Boolean), alpha: 1, scale: { from: 0.94, to: 1 }, duration: 340, delay: i * 70, ease: 'Back.easeOut' });
+        this.tweens.add({ targets: [row.card, btnCont].filter(Boolean), alpha: 1, scale: { from: 0.94, to: 1 }, duration: 340, delay: i * 70, ease: 'Back.easeOut' });
         this.tweens.add({ targets: [row.cardGlow, row.nameText, row.levelText].filter(Boolean), alpha: 1, duration: 340, delay: i * 70, ease: 'Back.easeOut' });
       });
     }
@@ -103,24 +104,12 @@ export default class HangarScene extends Phaser.Scene {
       fontFamily: 'sans-serif', fontSize: '15px', color: '#88bbdd',
     }).setOrigin(0, 0.5);
 
-    // 升级按钮
-    const btn = this.add.container(cx + 168, y);
-    const btnBg = this.add.rectangle(0, 0, 120, 56, 0x1b6b4a, 1).setStrokeStyle(2, COLORS.accent);
-    const btnLabel = this.add.text(0, 0, '', {
-      fontFamily: 'sans-serif', fontSize: '20px', fontStyle: '700', color: '#ffffff',
-    }).setOrigin(0.5);
-    btn.add([btnBg, btnLabel]);
-    btn.setSize(120, 56);
-    btn.on('pointerover', () => {
-      if (btn.input && btn.input.enabled) btnBg.setFillStyle(0x22996a, 1);
+    // 升级按钮（NeonButton：辉光 + hover + 按压缩放；动态底色保留可升级/不可升级/满级三态）
+    row.btn = new NeonButton(this, cx + 168, y, '', {
+      w: 120, h: 56, fontSize: 20,
+      bgColor: 0x1b6b4a, stroke: COLORS.accent, hoverColor: 0x22996a,
+      onDown: () => this.tryUpgrade(row),
     });
-    btn.on('pointerout', () => {
-      if (btn.input && btn.input.enabled) btnBg.setFillStyle(0x1b6b4a, 1);
-    });
-    btn.on('pointerdown', () => this.tryUpgrade(row));
-    row.btn = btn;
-    row.btnBg = btnBg;
-    row.btnLabel = btnLabel;
     row.card = card;
     row.cardGlow = cardGlow;
     row.nameText = nameText;
@@ -256,19 +245,15 @@ export default class HangarScene extends Phaser.Scene {
       row.levelText.setText(`等级  ${lvl} / ${row.max}`);
 
       if (maxed) {
-        row.btnLabel.setText('MAX');
-        row.btnBg.setFillStyle(0x2a3a48, 1);
-        row.btn.disableInteractive();
+        row.btn.setLabel('MAX');
+        row.btn.setBgColor(0x2a3a48);
+        row.btn.setEnabled(false);
       } else {
         const cost = this.upgradeCost(row.key, lvl);
         const affordable = save.coins >= cost;
-        row.btnLabel.setText(`${cost}`);
-        row.btnBg.setFillStyle(affordable ? 0x1b6b4a : 0x3a3a3a, 1);
-        if (affordable) {
-          row.btn.setInteractive({ useHandCursor: true });
-        } else {
-          row.btn.disableInteractive();
-        }
+        row.btn.setLabel(`${cost}`);
+        row.btn.setBgColor(affordable ? 0x1b6b4a : 0x3a3a3a);
+        row.btn.setEnabled(affordable);
       }
     }
   }
@@ -291,28 +276,9 @@ export default class HangarScene extends Phaser.Scene {
     this.refresh();
   }
 
-  /** 通用霓虹按钮（辉光 + 描边，hover 外发光脉冲），参考 MenuScene NeonButton */
+  /** 通用霓虹按钮（P1 UI：统一复用 NeonButton） */
   makeButton(x, y, label, cb) {
-    const c = this.add.container(x, y);
-    const w = 240, h = 60;
-    const glowG = this.add.graphics();
-    glowG.fillStyle(THEME.btnStroke, 0.4).fillRoundedRect(-w / 2 - 10, -h / 2 - 10, w + 20, h + 20, 16);
-    glowG.fillStyle(THEME.btnStroke, 0.7).fillRoundedRect(-w / 2 - 5, -h / 2 - 5, w + 10, h + 10, 13);
-    glowG.setAlpha(0);
-    const bg = this.add.rectangle(0, 0, w, h, THEME.btnBg, 0.95).setStrokeStyle(2, THEME.btnStroke);
-    const t = this.add.text(0, 0, label, {
-      fontFamily: 'sans-serif', fontSize: '24px', fontStyle: '700', color: '#ffffff',
-    }).setOrigin(0.5);
-    c.add([glowG, bg, t]);
-    c.setSize(w, h).setInteractive({
-      hitArea: new Phaser.Geom.Rectangle(-w / 2, -h / 2, w, h),
-      hitAreaCallback: (rect, x, y) => rect.contains(x, y),
-      useHandCursor: true,
-    });
-    c.on('pointerover', () => { bg.setFillStyle(THEME.btnBgHover, 1); this.tweens.add({ targets: glowG, alpha: 0.45, duration: 160 }); });
-    c.on('pointerout', () => { bg.setFillStyle(THEME.btnBg, 0.95); this.tweens.add({ targets: glowG, alpha: 0, duration: 160 }); });
-    c.on('pointerdown', () => { this.tweens.add({ targets: c, scale: 0.96, duration: 80, yoyo: true }); cb(); });
-    return c;
+    return new NeonButton(this, x, y, label, { w: 240, h: 60, fontSize: 24, glow: true, onDown: cb }).container;
   }
 
   update(_, dt) {

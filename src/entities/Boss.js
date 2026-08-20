@@ -3,6 +3,10 @@ import { GAME_WIDTH, BULLET, EVENTS, COLORS } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import * as VFX from '../systems/VFX.js';
 
+// reduced-motion 偏好：三阶段视觉脉动降级为静态
+const PREFERS_REDUCED = (typeof window !== 'undefined' && window.matchMedia
+  && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
 /**
  * Boss（多阶段，配置化弹幕）。
  * ---------------------------------------------------------------------------
@@ -31,6 +35,12 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
     this.body.enable = true;
     this.setTint(this.color);
 
+    // P1 UI：三阶段机身差异化（纯视觉叠加层：能量环强度 / 裂纹 / 相位 tint / 描边换色）
+    // 不改弹幕/伤害/命中判定，只读 phase 做视觉表现。
+    this.fxG = scene.add.graphics().setDepth(this.depth + 1);
+    this._crackPaths = [];
+    this._syncPhaseVisuals();
+
     this._entering = true;
     this._t = 0;
     this._lastFire = 0;
@@ -45,9 +55,95 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
     EventBus.emit(EVENTS.BOSS_HP_CHANGED, this.hp, this.maxHp);
   }
 
+  /** 相位 tint：P1 狂暴形态可视化（纯视觉，不影响弹幕/伤害） */
+  _getPhaseTint() {
+    const base = Phaser.Display.Color.IntegerToColor(this.color);
+    if (this.phase <= 1) return this.color;
+    if (this.phase === 2) {
+      // 二阶段：向白提亮，机体更「充能」
+      const c = Phaser.Display.Color.Interpolate.ColorWithColor(
+        base, Phaser.Display.Color.IntegerToColor(0xffffff), 100, 26,
+      );
+      return Phaser.Display.Color.GetColor(c.r, c.g, c.b);
+    }
+    // 三阶段（狂暴）：向红偏移，呈现愤怒形态
+    const c = Phaser.Display.Color.Interpolate.ColorWithColor(
+      base, Phaser.Display.Color.IntegerToColor(0xff3344), 100, 60,
+    );
+    return Phaser.Display.Color.GetColor(c.r, c.g, c.b);
+  }
+
+  /** 生成确定性裂纹路径（相位越高裂纹越多），避免每帧随机闪烁 */
+  _genCrackPaths() {
+    this._crackPaths = [];
+    const n = this.phase === 1 ? 0 : this.phase === 2 ? 5 : 10;
+    for (let i = 0; i < n; i++) {
+      const a0 = (Math.PI * 2 / n) * i + (i % 3) * 0.35;
+      const pts = [];
+      let r = 14 + (i % 4) * 5;
+      for (let s = 0; s < 4; s++) {
+        const ang = a0 + (s % 2 === 0 ? 0.18 : -0.14) * s;
+        r += 11 + (i % 3) * 3;
+        pts.push({ x: Math.cos(ang) * r, y: Math.sin(ang) * r * 0.82 });
+      }
+      this._crackPaths.push(pts);
+    }
+  }
+
+  /** 重绘相位视觉：机身 tint + 能量环 + 描边换色 + 裂纹（纯视觉） */
+  _drawPhaseFx() {
+    const g = this.fxG;
+    if (!g) return;
+    g.clear();
+    const col = this.phase >= 3 ? 0xff4455 : this.phase === 2 ? 0xffb066 : 0xffffff;
+    const ringAlpha = this.phase === 1 ? 0.20 : this.phase === 2 ? 0.45 : 0.85;
+    const ringW = this.phase === 1 ? 2 : this.phase === 2 ? 3 : 5;
+    const R = this.phase === 1 ? 76 : this.phase === 2 ? 82 : 88;
+    // 能量环（内圈 + 外圈，强度随相位递增）
+    g.lineStyle(ringW, col, ringAlpha);
+    g.strokeCircle(0, 0, R);
+    g.lineStyle(1, col, ringAlpha * 0.5);
+    g.strokeCircle(0, 0, R - 7);
+    // 机身描边（换色）：六边形轮廓，相位越高越亮
+    g.lineStyle(this.phase >= 2 ? 2 : 1, col, this.phase >= 2 ? 0.8 : 0.35);
+    const pts = [];
+    for (let i = 0; i < 6; i++) {
+      const a = (Math.PI / 3) * i - Math.PI / 2;
+      pts.push({ x: Math.cos(a) * 64, y: Math.sin(a) * 64 * 0.82 });
+    }
+    g.strokePoints(pts, true);
+    // 裂纹（二阶段起步，三阶段更密更亮）
+    if (this._crackPaths.length) {
+      g.lineStyle(this.phase >= 3 ? 2 : 1.5, col, this.phase >= 3 ? 0.9 : 0.55);
+      for (const path of this._crackPaths) {
+        g.beginPath();
+        g.moveTo(0, 0);
+        for (const p of path) g.lineTo(p.x, p.y);
+        g.strokePath();
+      }
+    }
+  }
+
+  /** 同步相位视觉（init / 阶段切换时调用） */
+  _syncPhaseVisuals() {
+    this.setTint(this._getPhaseTint());
+    this._genCrackPaths();
+    this._drawPhaseFx();
+  }
+
   update(time, dt) {
     if (!this.active) return;
     this._t += dt;
+
+    // 纯视觉：能量环/裂纹跟随 Boss 移动；相位 2/3 轻微脉动（reduced-motion 静态）
+    if (this.fxG) {
+      this.fxG.setPosition(this.x, this.y);
+      if (!PREFERS_REDUCED && this.phase >= 2) {
+        this.fxG.setAlpha(0.75 + 0.25 * Math.sin(this._t * 0.006));
+      } else {
+        this.fxG.setAlpha(1);
+      }
+    }
 
     if (!this._entering) {
       // 左右横移
@@ -170,7 +266,7 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
     if (element) this.applyElement(element);
     EventBus.emit(EVENTS.BOSS_HP_CHANGED, this.hp, this.maxHp);
     this.setTintFill(0xffffff);
-    this.scene.time.delayedCall(40, () => { if (this.active) this.setTint(this.color); });
+    this.scene.time.delayedCall(40, () => { if (this.active) this.setTint(this._getPhaseTint()); });
     VFX.hitSpark(this.scene, this.x, this.y + 20);
 
     // 阶段切换
@@ -178,11 +274,13 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
     const newPhase = ratio > 0.66 ? 1 : ratio > 0.33 ? 2 : 3;
     if (newPhase !== this.phase) {
       this.phase = newPhase;
+      this._syncPhaseVisuals();                                       // 同步三阶段机身差异化视觉
       this.scene.cameras.main.flash(200, 80, 20, 40);
       if (this.scene.requestHitStop) this.scene.requestHitStop(180); // 阶段切换：中强定格
       EventBus.emit(EVENTS.BOSS_PHASE, newPhase);                    // 阶段演出：UIScene 提示文字
-      // 变身脉冲：短暂放大+白闪，强化「进场变身」感
+      // 变身脉冲：短暂放大+白闪，强化「进场变身」感（能量环叠加层同步放大）
       this.scene.tweens.add({ targets: this, scaleX: 1.18, scaleY: 1.18, duration: 220, yoyo: true, ease: 'Quad.easeOut' });
+      if (this.fxG) this.scene.tweens.add({ targets: this.fxG, scaleX: 1.18, scaleY: 1.18, duration: 220, yoyo: true, ease: 'Quad.easeOut' });
     }
 
     if (this.hp <= 0) {
@@ -199,13 +297,16 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
     const c = map[key];
     if (!c) return;
     this.setTint(c);
-    this.scene.time.delayedCall(260, () => { if (this.active) this.setTint(this.color); });
+    this.scene.time.delayedCall(260, () => { if (this.active) this.setTint(this._getPhaseTint()); });
   }
 
   die() {
     EventBus.emit(EVENTS.BOSS_DEFEATED);
     VFX.bossDeathExplosion(this.scene, this, this.color);
     this.setActive(false);
-    this.scene.time.delayedCall(800, () => this.destroy());
+    this.scene.time.delayedCall(800, () => {
+      if (this.fxG) { this.fxG.destroy(); this.fxG = null; }
+      this.destroy();
+    });
   }
 }

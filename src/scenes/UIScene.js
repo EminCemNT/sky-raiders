@@ -36,25 +36,26 @@ export default class UIScene extends Phaser.Scene {
       fontFamily: 'Consolas, "Courier New", monospace', fontSize: '26px', fontStyle: '800', color: '#aef6ff',
     }).setDepth(100).setShadow(0, 0, '#2a86c0', 12, true, true);
 
-    // 关卡名 / Boss Rush 标签
+    // 关卡名 / Boss Rush 标签（右侧信息列整体右对齐留白 70px，避让右上角暂停键，避免小屏重叠）
+    const HUD_RIGHT = GAME_WIDTH - 70;
     const lvl = LEVELS.find((l) => l.id === d.levelId) || LEVELS[0];
     const levelLabel = this.mode === 'bossrush' ? 'BOSS RUSH' : `第 ${lvl.id} 关 · ${lvl.name}`;
-    this.add.text(GAME_WIDTH - 16, 18, levelLabel, {
+    this.levelLabel = this.add.text(HUD_RIGHT, 18, levelLabel, {
       fontFamily: 'sans-serif', fontSize: '15px', fontStyle: '700', color: '#7cf3ff',
     }).setOrigin(1, 0).setDepth(100);
 
     // 波次提示
-    this.waveText = this.add.text(GAME_WIDTH - 16, 42, '', {
+    this.waveText = this.add.text(HUD_RIGHT, 42, '', {
       fontFamily: 'sans-serif', fontSize: '13px', color: '#88bbdd',
     }).setOrigin(1, 0).setDepth(100);
 
     // 剩余命数（P1 命数复活：数字指示，右上角）
-    this.livesText = this.add.text(GAME_WIDTH - 16, 64, `命 ×${d.lives != null ? d.lives : PLAYER.START_LIVES}`, {
+    this.livesText = this.add.text(HUD_RIGHT, 64, `命 ×${d.lives != null ? d.lives : PLAYER.START_LIVES}`, {
       fontFamily: 'sans-serif', fontSize: '15px', fontStyle: '700', color: '#7cffa0',
     }).setOrigin(1, 0).setDepth(100);
 
     // 局内火力(P)等级指示（P1：拾取 P +1 / 受击 -1，右上角，金色）
-    this.powerText = this.add.text(GAME_WIDTH - 16, 84, '火力 Lv0', {
+    this.powerText = this.add.text(HUD_RIGHT, 84, '火力 Lv0', {
       fontFamily: 'sans-serif', fontSize: '15px', fontStyle: '700', color: '#ffd54a',
     }).setOrigin(1, 0).setDepth(100);
 
@@ -76,8 +77,8 @@ export default class UIScene extends Phaser.Scene {
       { color: 0xff3355, bgColor: 0x330011, borderColor: 0xcc4466 },
     );
     this.bossBar.setVisible(false);
-    // Boss 名字（常驻，血条上方居中，霓虹辉光描边）
-    this.bossNameText = this.add.text(GAME_WIDTH / 2, 66, '', {
+    // Boss 名字（常驻，血条上方居中，霓虹辉光描边；错层到 y=52 避让左侧 HP 条与右侧命数）
+    this.bossNameText = this.add.text(GAME_WIDTH / 2, 52, '', {
       fontFamily: 'sans-serif', fontSize: '15px', fontStyle: '800', color: '#ff8aa0', align: 'center',
     }).setOrigin(0.5).setDepth(100).setShadow(0, 0, '#ff3355', 14, true, true).setVisible(false);
 
@@ -101,13 +102,15 @@ export default class UIScene extends Phaser.Scene {
     this.skill.container.setAlpha(0.45);
     this.skillReady = false;
 
-    // 增益徽标（护盾/磁力）
-    this.shieldBadge = this.add.text(16, 104, '', {
+    // 增益徽标（护盾/磁力）：矢量纹理图标 + 文本，取代 emoji 🛡/🧲（跨端字形一致）
+    this.shieldIcon = this.add.image(16, 104, 'item_shield').setScale(0.5).setDepth(101).setVisible(false);
+    this.shieldBadge = this.add.text(26, 104, '护盾', {
       fontFamily: 'sans-serif', fontSize: '12px', color: '#3ad1ff',
-    }).setDepth(101);
-    this.magnetBadge = this.add.text(96, 104, '', {
+    }).setOrigin(0, 0.5).setDepth(101).setVisible(false);
+    this.magnetIcon = this.add.image(96, 104, 'item_magnet').setScale(0.5).setDepth(101).setVisible(false);
+    this.magnetBadge = this.add.text(106, 104, '磁力', {
       fontFamily: 'sans-serif', fontSize: '12px', color: '#ff4d6d',
-    }).setDepth(101);
+    }).setOrigin(0, 0.5).setDepth(101).setVisible(false);
 
     // 武器指示器（B/C 武器系统）
     this._weaponName = 'pulse';
@@ -180,8 +183,8 @@ export default class UIScene extends Phaser.Scene {
     this._lowHpBorderBase = 0;
 
     // 连击 HUD（常驻，复用不重建）：击杀连击计数，脉冲缩放 + 档位变色（D）
-    // y≈150 顶部区域，不挡玩家判定区（约 y≈860）；初始隐藏，COMBO_CHANGED 触发显隐
-    this.comboText = this.add.text(GAME_WIDTH / 2, 150, '', {
+    // y≈170 顶部区域（错层到 Boss 血条之下），不挡玩家判定区（约 y≈860）；初始隐藏，COMBO_CHANGED 触发显隐
+    this.comboText = this.add.text(GAME_WIDTH / 2, 170, '', {
       fontFamily: 'sans-serif', fontSize: '42px', fontStyle: '800', color: '#7cf3ff', align: 'center',
     }).setOrigin(0.5).setDepth(120).setShadow(0, 0, '#000000', 8, true, true).setVisible(false);
     this._lastComboPulse = 0;     // 连击脉冲频控（120ms）
@@ -346,7 +349,7 @@ export default class UIScene extends Phaser.Scene {
       this.bossBar.setVisible(true);
       const name = (info && info.name) ? info.name : 'BOSS';
       if (this.bossNameText) this.bossNameText.setText(name).setVisible(true);
-      this.flashCenter(`⚠ ${name} 来袭`, '#ff5566');
+      this.flashCenter(`${name} 来袭`, '#ff5566');
       if (this.waveText) this.waveText.setText('BOSS 战');
     };
     EventBus.on(EVENTS.BOSS_SPAWNED, this._onBossSpawn);
@@ -369,12 +372,14 @@ export default class UIScene extends Phaser.Scene {
     EventBus.on(EVENTS.ENERGY_CHANGED, this._onEnergy);
 
     this._onShield = (active) => {
-      if (this.shieldBadge) this.shieldBadge.setText(active ? '🛡护盾' : '');
+      if (this.shieldIcon) this.shieldIcon.setVisible(!!active);
+      if (this.shieldBadge) this.shieldBadge.setVisible(!!active);
     };
     EventBus.on(EVENTS.SHIELD_CHANGED, this._onShield);
 
     this._onMagnet = (active) => {
-      if (this.magnetBadge) this.magnetBadge.setText(active ? '🧲磁力' : '');
+      if (this.magnetIcon) this.magnetIcon.setVisible(!!active);
+      if (this.magnetBadge) this.magnetBadge.setVisible(!!active);
     };
     EventBus.on(EVENTS.MAGNET_CHANGED, this._onMagnet);
 
@@ -555,13 +560,14 @@ export default class UIScene extends Phaser.Scene {
     const hiddenLocked = def.hidden && !SaveManager.hasAchievement(def.id);
     const label = hiddenLocked ? '???' : def.name;
     const desc = hiddenLocked ? '？？？' : def.desc;
-    const icon = def.icon || '🏅';
+    // 成就图标：矢量勋章 / 锁（取代 emoji def.icon/🏅，跨端字形一致）
+    const iconKey = hiddenLocked ? 'icon_lock' : 'icon_medal';
     const c = this.add.container(GAME_WIDTH / 2, -60).setDepth(150);
     const w = 300, h = 64;
     const bg = this.add.graphics();
     bg.fillStyle(0x0d2840, 0.96); bg.fillRoundedRect(-w / 2, -h / 2, w, h, 12);
     bg.lineStyle(2, 0x7cf3ff, 1); bg.strokeRoundedRect(-w / 2, -h / 2, w, h, 12);
-    const ico = this.add.text(-w / 2 + 16, 0, icon, { fontSize: '30px' }).setOrigin(0, 0.5);
+    const ico = this.add.image(-w / 2 + 18, 0, iconKey).setScale(0.85);
     const tag = this.add.text(-w / 2 + 54, -16, '成就解锁', { fontFamily: 'sans-serif', fontSize: '12px', color: '#ffd86b', fontStyle: '800' }).setOrigin(0, 0.5);
     const nm = this.add.text(-w / 2 + 54, 2, label, { fontFamily: 'sans-serif', fontSize: '17px', color: '#ffffff', fontStyle: '800' }).setOrigin(0, 0.5);
     const ds = this.add.text(-w / 2 + 54, 20, desc, { fontFamily: 'sans-serif', fontSize: '11px', color: '#aaccdd' }).setOrigin(0, 0.5);

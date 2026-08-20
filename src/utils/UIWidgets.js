@@ -97,9 +97,11 @@ export class NeonButton {
     const stroke = opts.stroke ?? THEME.btnStroke;
     const textColor = opts.textColor ?? '#ffffff';
     this._bg = bgColor; this._stroke = stroke;
+    this._hover = opts.hoverColor ?? THEME.btnBgHover;
     this.glow = opts.glow ?? false;
     this.selected = false;   // 选中高亮（四档难度按钮用）
     this.container = scene.add.container(x, y);
+    this.container.name = 'neon-button';   // QA 探针识别标记（纯标记，不影响渲染）
     // 外发光层（默认隐藏，hover 时淡入；向后兼容，仅 glow:true 生效）
     this.glowG = scene.add.graphics();
     this.glowG.fillStyle(stroke, 0.5).fillRoundedRect(-this.w / 2 - 10, -this.h / 2 - 10, this.w + 20, this.h + 20, 16);
@@ -112,12 +114,13 @@ export class NeonButton {
       fontStyle: '700', color: textColor,
     }).setOrigin(0.5);
     this.container.add([this.glowG, this.g, this.text]);
-    this.container.setSize(this.w, this.h).setDepth(opts.depth ?? 10).setInteractive({
+    this._hitConfig = {
       hitArea: new Phaser.Geom.Rectangle(-this.w / 2, -this.h / 2, this.w, this.h),
       hitAreaCallback: (rect, x, y) => rect.contains(x, y),
       useHandCursor: true,
-    });
-    this.container.on('pointerover', () => { this._drawBg(0x1b5580, stroke, 1); if (this.glow) this.scene.tweens.add({ targets: this.glowG, alpha: 0.4, duration: 160 }); });
+    };
+    this.container.setSize(this.w, this.h).setDepth(opts.depth ?? 10).setInteractive(this._hitConfig);
+    this.container.on('pointerover', () => { this._drawBg(this._hover, stroke, 1); if (this.glow) this.scene.tweens.add({ targets: this.glowG, alpha: 0.4, duration: 160 }); });
     this.container.on('pointerout', () => { this._drawSelected(); if (this.glow) this.scene.tweens.add({ targets: this.glowG, alpha: this.selected ? 0.5 : 0, duration: 160 }); });
     this.container.on('pointerdown', () => {
       scene.tweens.add({ targets: this.container, scale: 0.96, duration: 80, yoyo: true });
@@ -138,6 +141,22 @@ export class NeonButton {
   }
 
   setLabel(t) { this.text.setText(t); }
+
+  /** 动态改底色（机库升级按钮：可升级 / 金币不足 / 满级 三态） */
+  setBgColor(color) {
+    this._bg = color;
+    this._drawBg(color, this._stroke, 1);
+  }
+
+  /** 启用/禁用交互（禁用后 hover/press 不响应，视觉回退当前底色） */
+  setEnabled(on) {
+    if (on) {
+      this.container.setInteractive(this._hitConfig);
+    } else {
+      this.container.disableInteractive();
+      this._drawBg(this._bg, this._stroke, 1);
+    }
+  }
 
   /** 设置选中态（四档难度按钮）：选中用高亮底 + 亮描边，未选中回默认底 */
   setSelected(sel) {
