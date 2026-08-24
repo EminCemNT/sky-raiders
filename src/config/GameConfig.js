@@ -62,6 +62,12 @@ export const EVENTS = {
   // 元素连锁反应（二段反应）append-only
   ELEMENT_REACTION: 'element-reaction',     // payload = { name, element, count, x, y }
   ELEMENT_CHANGED: 'element-changed',       // payload = 当前战机元素（fire/ice/thunder/null）
+  // 擦弹 Graze（P2）：敌弹擦过判定圈外/擦弹环内计分回能，payload = { count, chain }
+  GRAZE_CHANGED: 'graze-changed',
+  // 第二主动技能「过载」（P2）：技能统一派发/切换/状态广播（append-only，保留 USE_SUPER 兼容）
+  USE_SKILL: 'use-skill',                   // 按当前 activeSkill 派发（starstorm 走 useSuper，overdrive 走 useOverdrive）
+  SKILL_SWITCHED: 'skill-switched',         // 星风暴 ↔ 过载 轮换，payload = 新技能 id
+  OVERDRIVE_STATE: 'overdrive-state',       // 过载激活状态，payload = { active, until, duration }
 };
 
 // 玩家基础属性
@@ -101,6 +107,34 @@ export const POWERUP = {
   FIRE_RATE_GAIN: 8,
   DROP_CHANCE: 0.15,
 };
+
+// 擦弹 Graze（弹幕核心玩法，P2）：敌弹进入「擦弹环」（判定圈外 ~ 判定圈+RING_EXTRA）
+// 且速度达标时计一次擦弹。独立距离环判断，不消弹、不结算命中、零改动既有受击/连击逻辑。
+//   RING_EXTRA    擦弹环相对判定圈的额外半径（判定圈 r=6 → 擦弹环 r=24）
+//   MIN_SPEED     敌弹速度下限（静止/极慢弹不计擦弹）
+//   SCORE         单次擦弹基础得分
+//   CHAIN_SCORE   2s 链式窗口内连续擦弹每段额外分
+//   CHAIN_MAX     链式加分封顶（总加成不超过该值，即 +15）
+//   CHAIN_WINDOW  链式窗口时长（ms）
+//   ENERGY_GAIN   每次擦弹回能量
+//   RE_GRAZE_MS   同一颗弹的擦弹冷却（ms，避免贴弹期间连帧计多次）
+//   CHECK_EVERY   每 N 帧遍历一次敌弹（降低每帧开销）
+export const GRAZE = {
+  RING_EXTRA: 18,
+  MIN_SPEED: 80,
+  SCORE: 5,
+  CHAIN_SCORE: 2,
+  CHAIN_MAX: 15,
+  CHAIN_WINDOW: 2000,
+  ENERGY_GAIN: 1,
+  RE_GRAZE_MS: 400,
+  CHECK_EVERY: 2,
+};
+
+// 过载 Overdrive（第二主动技能，P2）：短时射速翻倍
+//   DURATION  持续时间（ms）
+//   FIRE_MUL  射速倍率（0.5 = 射速间隔减半，即射速翻倍）
+export const OVERDRIVE = { DURATION: 6000, FIRE_MUL: 0.5 };
 
 // 关卡制（Sky Force 风格：分关，每关有波次 + Boss）
 // 每关字段说明：
@@ -210,6 +244,22 @@ export const BOSS_RUSH = [
   { bossKey: 'boss_overlord',  name: '霸主 Overlord',  color: 0x66ff99, pattern: 'cross',  maxHp: 4200, hpMult: 1.3 },
   { bossKey: 'boss_annihilator', name: '湮灭者 Annihilator', color: 0xff6a3d, pattern: 'nova', maxHp: 5600, hpMult: 1.5 },
 ];
+
+// Boss Rush 差异化（P2）：按机库等级缩放 Boss Rush 数值，回馈长期养成。
+// hangarLv = 六项升级之和（0..30）。hangarLv=0 时全系数 1.0 / rareChance=0.05，与现状零回归。
+//   hpMul        Boss HP 倍率（封顶 +60%）
+//   bulletMul    Boss 弹速倍率（封顶 +24%）
+//   coinMul      结算金币倍率（封顶 +150%）
+//   rareChance   稀有掉落（element_core/power/energy）追加概率（封顶 35%）
+export function bossRushScale(hangarLv) {
+  const lv = Math.max(0, Number(hangarLv) || 0);
+  return {
+    hpMul: 1 + Math.min(lv * 0.03, 0.6),
+    bulletMul: 1 + Math.min(lv * 0.012, 0.24),
+    coinMul: 1 + Math.min(lv * 0.05, 1.5),
+    rareChance: Math.min(0.05 + lv * 0.02, 0.35),
+  };
+}
 
 // ───────────────────────────────────────────────────────────────
 // 四档难度系统（P0）：休闲 / 标准 / 困难 / 地狱

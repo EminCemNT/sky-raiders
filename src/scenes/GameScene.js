@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import {
   SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, COLORS, PLAYER, BULLET, LEVELS, BOSS_RUSH, SHIPS, ELEMENTS, WINGMAN,
-  DIFFICULTIES, getDifficulty, POWERUP,
+  DIFFICULTIES, getDifficulty, POWERUP, GRAZE, OVERDRIVE, bossRushScale,
 } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
@@ -54,6 +54,17 @@ export default class GameScene extends Phaser.Scene {
     // 成就统计
     this.maxCombo = 0;
     this.usedSuperCount = 0;
+    // 第二主动技能（P2）：当前技能槽（星风暴 ↔ 过载），由 SKILL_SWITCHED 轮换
+    this.activeSkill = DEFAULT_SKILL;
+    this._overdriveUntil = 0;
+    // 擦弹 Graze（P2）状态
+    this.grazeCount = 0;
+    this.grazeChain = 0;
+    this._grazeChainUntil = 0;
+    this._grazeTick = 0;
+    // Boss Rush 差异化（P2）
+    this._rushScale = null;
+    this._rushRareDrops = 0;
     // 成就系统：本局开始，重置会话态并预载累计数据
     AchievementManager.startRun(this.mode, this.levelId);
   }
@@ -187,6 +198,9 @@ export default class GameScene extends Phaser.Scene {
     EventBus.emit(EVENTS.ENERGY_CHANGED, this.energy, ENERGY_MAX);
     EventBus.emit(EVENTS.LIVES_CHANGED, this.lives);
     EventBus.emit(EVENTS.POWER_CHANGED, this.powerLevel);
+    EventBus.emit(EVENTS.GRAZE_CHANGED, { count: this.grazeCount, chain: this.grazeChain });
+    // P2 技能：开局广播当前技能槽，UIScene 按钮标签随之初始化
+    EventBus.emit(EVENTS.SKILL_SWITCHED, this.activeSkill);
 
     this.bombs = PLAYER.START_BOMBS;
 
@@ -339,7 +353,10 @@ export default class GameScene extends Phaser.Scene {
     this._onBossDefeated = () => {
       this.requestHitStop(350);     // Boss 击破：强命中定格，打击感爆发
       if (this.boss && this.boss.active) {
-        this.spawnBossDrops(this.boss.x, this.boss.y);
+        // P2 Boss Rush 差异化：按机库稀有概率追加掉落并累计（普通模式 extraRare=0，行为不变）
+        const rareChance = (this.mode === 'bossrush' && this._rushScale) ? this._rushScale.rareChance : 0;
+        const rare = this.spawnBossDrops(this.boss.x, this.boss.y, rareChance);
+        if (rare > 0) this._rushRareDrops = (this._rushRareDrops || 0) + rare;
         EventBus.emit(EVENTS.FLOAT_SCORE, { x: this.boss.x, y: this.boss.y, special: true, label: 'BOSS 击破' });
       }
       // 成就系统：Boss 击败实时上报（bossKey 对应各克星/屠龙者成就）
@@ -363,6 +380,20 @@ export default class GameScene extends Phaser.Scene {
 
     this._onUseSuper = () => this.useSuper();
     EventBus.on(EVENTS.USE_SUPER, this._onUseSuper);
+
+    // P2 第二主动技能：统一派发（USE_SKILL 按 activeSkill 分发）+ 切换
+    this._onUseSkill = () => this.useSkill();
+    EventBus.on(EVENTS.USE_SKILL, this._onUseSkill);
+    this._onSkillSwitched = (id) => {
+      // 带 payload = 状态广播（幂等设置，来自 _switchSkill 自身发射，防循环）；
+      // 无 payload = 用户切换指令（Q / 切换箭头），执行轮换。
+      if (id && SKILLS[id]) {
+        this.activeSkill = id;
+      } else {
+        this._switchSkill();
+      }
+    };
+    EventBus.on(EVENTS.SKILL_SWITCHED, this._onSkillSwitched);
 
     // 元素协同 combo 触发 -> 成就统计（combo_element_5 / combo_element_50）
     this._onWingmanCombo = (e) => { AchievementManager.reportElementCombo(e && e.element); SaveManager.addDailyProgress('combos', 1); }; // #每日任务：元素协同进度
@@ -413,6 +444,12 @@ export default class GameScene extends Phaser.Scene {
     this.updateMagnet();
     this.checkBuffs();
     if (this.combo > 0 && this.time.now > this._comboExpire) this.breakCombo();
+
+    // P2 过载：到期恢复射速
+    this._updateOverdrive(time);
+    // P2 擦弹：每 CHECK_EVERY 帧遍历敌弹（玩家存活守卫在 _updateGraze 内）
+    this._grazeTick = (this._grazeTick || 0) + 1;
+    if (this._grazeTick % GRAZE.CHECK_EVERY === 0) this._updateGraze(time);
 
     // 回收出屏子弹
     this.recycleBullets();
@@ -607,16 +644,28 @@ export default class GameScene extends Phaser.Scene {
   // ---- Boss Rush 模式：连打 BOSS_RUSH 序列，血量随轮次递增 ----
   startBossRush() {
     this.bossRushIndex = 0;
+    // P2 差异化：开局锁定机库缩放（hangarLv=0 时全 1.0 = 现状零回归）
+    this._rushScale = bossRushScale(this._hangarLv());
+    this._rushRareDrops = 0;
     this.spawnBossRush();
+  }
+
+  /** 机库等级：六项升级之和（0..30），Boss Rush 差异化输入 */
+  _hangarLv() {
+    const up = (SaveManager.load().upgrades) || {};
+    return (up.firepower || 0) + (up.hull || 0) + (up.shield || 0)
+      + (up.magnet || 0) + (up.wingman || 0) + (up.wingmanFirepower || 0);
   }
 
   spawnBossRush() {
     const seq = BOSS_RUSH[this.bossRushIndex];
     if (!seq) { this.endGame(true); return; }
+    if (!this._rushScale) this._rushScale = bossRushScale(this._hangarLv());
     this.spawnBoss(seq.bossKey, {
       name: `BOSS RUSH ${this.bossRushIndex + 1}/${BOSS_RUSH.length} · ${seq.name}`,
       color: seq.color, pattern: seq.pattern,
-      maxHp: Math.round(seq.maxHp * seq.hpMult), difficulty: 1.2,
+      maxHp: Math.round(seq.maxHp * seq.hpMult * this._rushScale.hpMul),
+      difficulty: 1.2 * this._rushScale.bulletMul,
     });
   }
 
@@ -662,8 +711,10 @@ export default class GameScene extends Phaser.Scene {
     this.spawnItem(x, y, 'power');
   }
 
-  /** Boss 必掉：按 BOSS_DROP_TABLE 撒一圈高价值道具 */
-  spawnBossDrops(x, y) {
+  /** Boss 必掉：按 BOSS_DROP_TABLE 撒一圈高价值道具。
+   *  @param {number} [extraRare=0] Boss Rush 差异化：按该概率追加稀有掉落
+   *         （element_core / power / energy），返回本批稀有掉落数 */
+  spawnBossDrops(x, y, extraRare = 0) {
     BOSS_DROP_TABLE.forEach((key, i) => {
       const ox = x + (i - (BOSS_DROP_TABLE.length - 1) / 2) * 46;
       const oy = y + Phaser.Math.Between(-20, 20);
@@ -673,6 +724,23 @@ export default class GameScene extends Phaser.Scene {
         key,
       );
     });
+    // P2 差异化：按 rareChance 独立追加稀有掉落（hangarLv=0 → rareChance 仅 0.05，概率性追加）
+    if (extraRare > 0) {
+      const RARE = ['element_core', 'power', 'energy'];
+      let rareCount = 0;
+      for (let i = 0; i < RARE.length; i++) {
+        if (Math.random() < extraRare) {
+          rareCount++;
+          this.spawnItem(
+            Phaser.Math.Clamp(x + Phaser.Math.Between(-40, 40), 30, GAME_WIDTH - 30),
+            Phaser.Math.Clamp(y + Phaser.Math.Between(-10, 40), 30, GAME_HEIGHT - 200),
+            RARE[i],
+          );
+        }
+      }
+      return rareCount;
+    }
+    return 0;
   }
 
   /** 按权重对象抽一个 key */
@@ -882,6 +950,46 @@ export default class GameScene extends Phaser.Scene {
     this.combo = 0;
   }
 
+  // ---- 擦弹 Graze（P2）----
+  // 独立距离环判断：d²∈(判定圈², 擦弹环²) 且弹速达标才计一次擦弹。
+  // 红线：不消弹、不结算命中、零改动既有 overlap/playerHit/invuln/registerKill/combo 逻辑。
+  _updateGraze(time) {
+    if (!this.player || !this.player.active) return;
+    const gc = this.player.getGrazeCircle();
+    const inner = PLAYER.HITBOX_RADIUS * PLAYER.HITBOX_RADIUS;   // 6² = 36（判定圈外）
+    const outer = gc.r * gc.r;                                    // 24² = 576（擦弹环内）
+    this.enemyBullets.children.each((b) => {
+      if (!b.active) return;
+      const dx = b.x - gc.x, dy = b.y - gc.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 <= inner || d2 >= outer) return;                     // 判定圈内 / 环外都不算
+      const spd = (b.body && b.body.velocity) ? b.body.velocity.length() : 0;
+      if (spd < GRAZE.MIN_SPEED) return;                          // 静止/极慢弹不计
+      if (b._grazedAt != null && (time - b._grazedAt) < GRAZE.RE_GRAZE_MS) return; // 同弹冷却
+      b._grazedAt = time;
+      this._grantGraze(b.x, b.y);
+    });
+  }
+
+  /** 结算一次擦弹：回能 + 得分（2s 链式加分封顶 +15）+ 飘字 + 广播 GRAZE_CHANGED */
+  _grantGraze(x, y) {
+    const now = this.time.now;
+    // 链式窗口：2s 内连续擦弹每段 +2，总加成封顶 CHAIN_MAX(+15)
+    if (now <= (this._grazeChainUntil || 0)) {
+      this.grazeChain = Math.min((this.grazeChain || 0) + 1, GRAZE.CHAIN_MAX);
+    } else {
+      this.grazeChain = 0;
+    }
+    this._grazeChainUntil = now + GRAZE.CHAIN_WINDOW;
+    this.grazeCount = (this.grazeCount || 0) + 1;
+    const chainBonus = Math.min(this.grazeChain * GRAZE.CHAIN_SCORE, GRAZE.CHAIN_MAX);
+    const total = GRAZE.SCORE + chainBonus;
+    this.addEnergy(GRAZE.ENERGY_GAIN);
+    EventBus.emit(EVENTS.SCORE_CHANGED, total);
+    EventBus.emit(EVENTS.FLOAT_SCORE, { x, y, amount: total, special: true, label: '擦弹' });
+    EventBus.emit(EVENTS.GRAZE_CHANGED, { count: this.grazeCount, chain: this.grazeChain });
+  }
+
   // ---- 僚机子弹工厂（僚机 AI 进阶）----
   /**
    * 发射一发僚机子弹。复用 playerBullets 现有池，不新建组。
@@ -1054,6 +1162,53 @@ export default class GameScene extends Phaser.Scene {
     EventBus.emit(EVENTS.FLOAT_SCORE, { x: this.player.x, y: this.player.y - 44, amount: 50, special: true });
   }
 
+  /** 第二主动技能（P2）统一派发：按当前 activeSkill 分发 starstorm / overdrive（能量满才生效） */
+  useSkill() {
+    if (this.gameEnded) return;
+    if ((this.energy || 0) < ENERGY_MAX) return;
+    const key = this.activeSkill || DEFAULT_SKILL;
+    const skill = SKILLS[key] || SKILLS.starstorm;
+    if (skill.kind === 'buff') {
+      this.useOverdrive();
+    } else {
+      this.useSuper();   // screen_clear（星风暴）：复用既有实现，消耗能量 + 清屏重创
+    }
+  }
+
+  /** 过载：短时射速翻倍（buff）。不消弹、不结算命中，到期由 _updateOverdrive 恢复 */
+  useOverdrive() {
+    if (this.gameEnded) return;
+    if ((this.energy || 0) < ENERGY_MAX) return;
+    this.energy = 0;
+    EventBus.emit(EVENTS.ENERGY_CHANGED, 0, ENERGY_MAX);
+    this.player.setFireRateMul(OVERDRIVE.FIRE_MUL);
+    this._overdriveUntil = this.time.now + OVERDRIVE.DURATION;
+    EventBus.emit(EVENTS.OVERDRIVE_STATE, { active: true, until: this._overdriveUntil, duration: OVERDRIVE.DURATION });
+    // 轻量视觉反馈：闪光 + 轻震 + 飘字（reduced-motion 由 VFX/tween 内部降级）
+    this.cameras.main.flash(280, 120, 200, 255);
+    VFX.shake(this, 'light');
+    EventBus.emit(EVENTS.FLOAT_SCORE, { x: this.player.x, y: this.player.y - 44, special: true, label: '过载' });
+  }
+
+  /** 技能切换：星风暴 ↔ 过载 轮换。激活中的过载 buff 不中断（fireMul 独立于技能槽） */
+  _switchSkill() {
+    const order = ['starstorm', 'overdrive'];
+    const cur = this.activeSkill || DEFAULT_SKILL;
+    const idx = order.indexOf(cur);
+    this.activeSkill = order[(idx + 1) % order.length];
+    EventBus.emit(EVENTS.SKILL_SWITCHED, this.activeSkill);
+    audio.sfx('ui');
+  }
+
+  /** 每帧：过载到期恢复射速（mul=1 → 零 diff） */
+  _updateOverdrive(time) {
+    if (this._overdriveUntil && time > this._overdriveUntil) {
+      this._overdriveUntil = 0;
+      this.player.setFireRateMul(1);
+      EventBus.emit(EVENTS.OVERDRIVE_STATE, { active: false, until: 0, duration: 0 });
+    }
+  }
+
   /** 星风暴视觉：多发星弹横扫 + 粒子爆发 */
   spawnStarstormVisual() {
     const p = this.add.particles(this.player.x, this.player.y, 'particle_dot', {
@@ -1146,9 +1301,17 @@ export default class GameScene extends Phaser.Scene {
     const coinMul = (this.difficultyCfg && this.difficultyCfg.coinMul) || 1;
     const scaledScore = Math.round(this.score * scoreMul);
     const coinTarget = Math.round(this.stats.coins * coinMul);
-    const coinDelta = coinTarget - this.stats.coins;
+    let coinDelta = coinTarget - this.stats.coins;
+    // P2 Boss Rush 差异化：机库等级金币倍率补发（hangarLv=0 → coinMul=1 → 零 diff）。
+    // rushReward 透传给 ResultScene 展示「Boss Rush 奖励」行。
+    const rushReward = (victory && this.mode === 'bossrush') ? {
+      hangarLv: this._hangarLv(),
+      coinMul: (this._rushScale && this._rushScale.coinMul) || 1,
+      rareDrops: this._rushRareDrops || 0,
+    } : null;
+    if (rushReward) coinDelta += Math.round(this.stats.coins * (rushReward.coinMul - 1));
     if (coinDelta > 0) SaveManager.addCoins(coinDelta);
-    const finalCoins = coinDelta > 0 ? coinTarget : this.stats.coins;
+    const finalCoins = coinDelta > 0 ? this.stats.coins + coinDelta : this.stats.coins;
 
     // 最高分存档：比较 scaledScore 与全局 bestScore，破纪录则写回（胜负都记）
     const isNewBest = SaveManager.recordBestScore(scaledScore);
@@ -1163,6 +1326,7 @@ export default class GameScene extends Phaser.Scene {
       levelId: this.levelId, composite,
       mode: this.mode, wave: this.waves ? this.waves.currentWave : 0,
       maxCombo: this.maxCombo || 0,   // UI P2：结算页连击峰值面板（纯展示数据透传）
+      rushReward,                     // P2 Boss Rush 差异化：{ hangarLv, coinMul, rareDrops }
     };
 
     // 成就评估（#成就）：事件已实时上报，这里做局末兜底评估（无伤/通关/BossRush 等）
@@ -1243,6 +1407,8 @@ export default class GameScene extends Phaser.Scene {
     EventBus.off(EVENTS.BOSS_DEFEATED, this._onBossDefeated);
     EventBus.off(EVENTS.USE_BOMB, this._onUseBomb);
     EventBus.off(EVENTS.USE_SUPER, this._onUseSuper);
+    EventBus.off(EVENTS.USE_SKILL, this._onUseSkill);
+    EventBus.off(EVENTS.SKILL_SWITCHED, this._onSkillSwitched);
     EventBus.off(EVENTS.WINGMAN_COMBO, this._onWingmanCombo);
     audio.unbindGameEvents();
     if (this.wingmanSystem) { this.wingmanSystem.destroy(); this.wingmanSystem = null; }

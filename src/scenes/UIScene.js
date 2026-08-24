@@ -4,6 +4,7 @@ import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
 import { audio } from '../systems/AudioSystem.js';
 import { NeonBar, NeonButton, makeIconButton, THEME } from '../utils/UIWidgets.js';
+import { SKILLS, DEFAULT_SKILL } from '../config/Skills.js';
 
 const PREFERS_REDUCED = (typeof window !== 'undefined' && window.matchMedia
   && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
@@ -65,6 +66,11 @@ export default class UIScene extends Phaser.Scene {
       fontFamily: THEME.fontFamily, fontSize: '14px', fontStyle: '700', color: THEME.textCyan,
     }).setOrigin(1, 0).setDepth(100).setVisible(false);
 
+    // 擦弹计数（P2）：右侧信息列追加一行，监听 GRAZE_CHANGED
+    this.grazeText = this.add.text(HUD_RIGHT, 124, '擦弹 0', {
+      fontFamily: THEME.fontFamily, fontSize: '14px', fontStyle: '700', color: THEME.textCyan,
+    }).setOrigin(1, 0).setDepth(100);
+
     // HP 条（圆角发光）
     this.hpBar = new NeonBar(this, 16, 64, 180, 14, { color: 0x33dd88 });
     this.hpText = this.add.text(204, 64, '', {
@@ -100,13 +106,30 @@ export default class UIScene extends Phaser.Scene {
       duration: 1100, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
     });
 
-    // 技能按钮（右下角图标化，能量满时发光脉冲）
+    // 技能按钮（右下角图标化，能量满时发光脉冲）。
+    // P2 第二主动技能：tap 发 USE_SKILL（由 GameScene 按 activeSkill 派发星风暴/过载；USE_SUPER 事件保留兼容）
     this.skill = makeIconButton(this, GAME_WIDTH - 156, GAME_HEIGHT - 72, 'item_energy', {
-      radius: 40, ringAlpha: 0,
-      onDown: () => { audio.sfx('ui'); EventBus.emit(EVENTS.USE_SUPER); },
+      radius: 40, ringAlpha: 0, label: '星风暴',
+      onDown: () => { audio.sfx('ui'); EventBus.emit(EVENTS.USE_SKILL); },
     });
     this.skill.container.setAlpha(0.45);
     this.skillReady = false;
+    this._skillName = DEFAULT_SKILL;
+    this._overdriveUntil = 0;
+
+    // P2 技能切换箭头（星风暴 ↔ 过载 轮换）：技能按钮左侧小圆钮，发 SKILL_SWITCHED
+    this.skillSwitch = this.add.container(GAME_WIDTH - 224, GAME_HEIGHT - 72).setDepth(105);
+    const swBg = this.add.circle(0, 0, 17, THEME.btnBg, 0.85).setStrokeStyle(2, THEME.btnStroke, 0.9);
+    const swTxt = this.add.text(0, 0, '⇄', {
+      fontFamily: THEME.fontFamily, fontSize: '18px', fontStyle: '700', color: THEME.textCyan,
+    }).setOrigin(0.5);
+    this.skillSwitch.add([swBg, swTxt]);
+    this.skillSwitch.setSize(34, 34).setInteractive({
+      hitArea: new Phaser.Geom.Rectangle(-17, -17, 34, 34),
+      hitAreaCallback: (rect, x, y) => rect.contains(x, y),
+      useHandCursor: true,
+    });
+    this.skillSwitch.on('pointerdown', () => { audio.sfx('ui'); EventBus.emit(EVENTS.SKILL_SWITCHED); });
 
     // 增益徽标（护盾/磁力）：矢量纹理图标 + 文本，取代 emoji 🛡/🧲（跨端字形一致）
     this.shieldIcon = this.add.image(16, 104, 'item_shield').setScale(0.5).setDepth(101).setVisible(false);
@@ -129,6 +152,7 @@ export default class UIScene extends Phaser.Scene {
     this._buildWingmanHud();
 
     this.skillKey = this.input.keyboard.addKey('F');
+    this.skillSwitchKey = this.input.keyboard.addKey('Q');   // P2：Q 切换星风暴 ↔ 过载
 
     // 暂停按钮（右上角：放大发光 + 轻微 alpha 脉冲，A5）
     const ps = THEME.pauseBtn.size;   // 48
@@ -447,6 +471,50 @@ export default class UIScene extends Phaser.Scene {
     };
     EventBus.on(EVENTS.WEAPON_CHANGED, this._onWeapon);
 
+    // P2 擦弹计数：右上角「擦弹 N」（payload = { count, chain }）
+    this._onGraze = (p) => {
+      if (this.grazeText) this.grazeText.setText(`擦弹 ${(p && p.count) || 0}`);
+    };
+    EventBus.on(EVENTS.GRAZE_CHANGED, this._onGraze);
+
+    // P2 技能切换：按钮标签显示当前技能名（星风暴/过载）。
+    // 仅响应带 payload 的状态广播（无 payload 的 Q/箭头指令由 GameScene 轮换后再广播）。
+    this._onSkillSwitched = (id) => {
+      if (!id || !SKILLS[id]) return;
+      this._skillName = id;
+      const def = SKILLS[id];
+      if (this.skill && this.skill.label) {
+        this.skill.label.setText(def ? def.name : id).setColor(THEME.white).setFontStyle('normal');
+      }
+    };
+    EventBus.on(EVENTS.SKILL_SWITCHED, this._onSkillSwitched);
+
+    // P2 过载状态：激活期按钮高亮 + 倒计时（reduced-motion 静态高亮无脉动）
+    this._onOverdriveState = (s) => {
+      this._overdriveUntil = (s && s.active) ? s.until : 0;
+      if (!this.skill) return;
+      if (s && s.active) {
+        this.skill.icon.setTint(THEME.energy.full);
+        this.skill.container.setAlpha(1);
+        if (PREFERS_REDUCED) {
+          this.skill.ring.setAlpha(0.7);
+        } else {
+          this.tweens.killTweensOf(this.skill.ring);
+          this.tweens.add({
+            targets: this.skill.ring, alpha: { from: 0.4, to: 0.95 },
+            duration: 500, yoyo: true, repeat: -1,
+          });
+        }
+      } else {
+        this.skill.icon.clearTint();
+        this.tweens.killTweensOf(this.skill.ring);
+        this.skill.ring.setAlpha(0);
+        // 非激活且能量未满时恢复暗态
+        if (!this.skillReady) this.skill.container.setAlpha(0.45);
+      }
+    };
+    EventBus.on(EVENTS.OVERDRIVE_STATE, this._onOverdriveState);
+
     // 成就系统：监听成就解锁事件，入队后顺序播放顶部横幅
     this._onAchUnlock = (def) => {
       if (!this._achQueue) this._achQueue = [];
@@ -460,8 +528,22 @@ export default class UIScene extends Phaser.Scene {
   }
 
   update() {
+    // P2 技能键：F 发 USE_SKILL（按 activeSkill 派发）；Q 发 SKILL_SWITCHED（轮换技能槽）
     if (this.skillKey && Phaser.Input.Keyboard.JustDown(this.skillKey)) {
-      EventBus.emit(EVENTS.USE_SUPER);
+      EventBus.emit(EVENTS.USE_SKILL);
+    }
+    if (this.skillSwitchKey && Phaser.Input.Keyboard.JustDown(this.skillSwitchKey)) {
+      EventBus.emit(EVENTS.SKILL_SWITCHED);
+    }
+    // P2 过载激活倒计时：按钮标签显示「过载 Ns」，到期回技能名
+    if (this.skill && this.skill.label) {
+      if (this._overdriveUntil && this._overdriveUntil > 0) {
+        const left = Math.max(0, Math.ceil((this._overdriveUntil - this.time.now) / 1000));
+        this.skill.label.setText(`过载 ${left}s`).setColor(THEME.textGold).setFontStyle('700');
+      } else if (this._skillName) {
+        const def = SKILLS[this._skillName] || SKILLS[DEFAULT_SKILL];
+        this.skill.label.setText(def ? def.name : this._skillName).setColor(THEME.white).setFontStyle('normal');
+      }
     }
     if (this._weaponName && this._weaponName !== 'pulse' && this.weaponText && this._weaponUntilTime > 0) {
       const short = (WEAPONS[this._weaponName] && WEAPONS[this._weaponName].short) || '武器';
@@ -622,6 +704,9 @@ export default class UIScene extends Phaser.Scene {
     EventBus.off(EVENTS.COMBO_CHANGED, this._onCombo);
     EventBus.off(EVENTS.ELEMENT_CHANGED, this._onElementChanged);
     EventBus.off(EVENTS.WEAPON_CHANGED, this._onWeapon);
+    EventBus.off(EVENTS.GRAZE_CHANGED, this._onGraze);
+    EventBus.off(EVENTS.SKILL_SWITCHED, this._onSkillSwitched);
+    EventBus.off(EVENTS.OVERDRIVE_STATE, this._onOverdriveState);
     EventBus.off(EVENTS.ACHIEVEMENT_UNLOCKED, this._onAchUnlock);
     EventBus.off(EVENTS.WINGMAN_STATUS, this._onWmStatus);
   }

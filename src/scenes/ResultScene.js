@@ -75,6 +75,15 @@ export default class ResultScene extends Phaser.Scene {
       { label: '金币', value: r.coins || 0 },
     ];
     if (r.mode === 'endless') lines.push({ label: '波次', value: `第 ${r.wave || 0} 波` });
+    // P2 Boss Rush 差异化：胜利结算新增「Boss Rush 奖励」行（机库等级 / 金币倍率 / 稀有掉落数）
+    if (r.mode === 'bossrush' && r.victory && r.rushReward) {
+      const rr = r.rushReward;
+      const coinMulTxt = Number.isInteger(rr.coinMul) ? String(rr.coinMul) : Number(rr.coinMul).toFixed(1);
+      lines.push({
+        label: 'Boss Rush 奖励',
+        value: `机库 Lv${rr.hangarLv} · 金币×${coinMulTxt} · 稀有${rr.rareDrops || 0}`,
+      });
+    }
     lines.push({ label: '最高分', value: r.bestScore ?? 0 });
     const dataStartY = 400;
     lines.forEach((l, i) => {

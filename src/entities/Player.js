@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { PLAYER, BULLET, GAME_WIDTH, GAME_HEIGHT, EVENTS, POWERUP } from '../config/GameConfig.js';
+import { PLAYER, BULLET, GAME_WIDTH, GAME_HEIGHT, EVENTS, POWERUP, GRAZE } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
 import { audio } from '../systems/AudioSystem.js';
@@ -88,6 +88,12 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     this.hitboxDot = scene.add.circle(this.x, this.y, PLAYER.HITBOX_RADIUS, 0xff3344, 0.3)
       .setStrokeStyle(2, 0xff6677, 0.95).setDepth(22)
       .setVisible(SaveManager.load().showHitbox);
+
+    // P2 擦弹环：判定圈外的半透明青环（半径 = 判定圈 + GRAZE.RING_EXTRA）。
+    // 纯视觉调试层，与 hitboxDot 同步显隐；不参与任何碰撞/擦弹判定。
+    this.grazeRing = scene.add.circle(this.x, this.y, PLAYER.HITBOX_RADIUS + GRAZE.RING_EXTRA, 0x33ffff, 0.10)
+      .setStrokeStyle(1, 0x33ffff, 0.35).setDepth(21)
+      .setVisible(SaveManager.load().showHitbox);
   }
 
   /** 每帧：移动 + 开火 */
@@ -139,6 +145,8 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
 
     // P1-6 判定点跟随玩家 + 显隐同步（每帧读内存存档缓存，开销可忽略）
     if (this.hitboxDot) this.hitboxDot.setPosition(this.x, this.y).setVisible(SaveManager.load().showHitbox);
+    // P2 擦弹环：与判定点同位置同显隐（reduced-motion 下本就静态，无额外动效）
+    if (this.grazeRing) this.grazeRing.setPosition(this.x, this.y).setVisible(SaveManager.load().showHitbox);
     // 战机皮肤 aura 跟随 + alpha 呼吸（待机微动，纯视觉；reduced-motion 下常量）
     if (this.aura) {
       this.aura.setPosition(this.x, this.y);
@@ -347,6 +355,18 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
   _recalcFireInterval() {
     const base = Math.max(70, PLAYER.FIRE_INTERVAL - (this.firepower || 0) * 8);
     this.fireInterval = Math.max(55, base - (this.powerLevel || 0) * POWERUP.FIRE_RATE_GAIN);
+    // 过载（P2）：射速倍率作用在最终间隔上（0.5 = 翻倍），下限 45ms 防失控。
+    // mul 为 null/1 时零 diff，与历史行为完全一致。
+    if (this.fireMul && this.fireMul !== 1) {
+      this.fireInterval = Math.max(45, Math.round(this.fireInterval * this.fireMul));
+    }
+  }
+
+  /** 过载射速倍率：mul<1 表示更快（0.5=翻倍）；mul=1/null 恢复基础射速（零 diff） */
+  setFireRateMul(mul) {
+    this.fireMul = (mul && mul !== 1) ? mul : null;
+    this._recalcFireInterval();
+    return this.fireInterval;
   }
 
   takeDamage(n) {
@@ -382,6 +402,11 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     return { x: this.x, y: this.y, r: PLAYER.HITBOX_RADIUS };
   }
 
+  /** 擦弹环（P2）：判定圈外的擦弹判定半径（r = 判定圈 + RING_EXTRA = 24） */
+  getGrazeCircle() {
+    return { x: this.x, y: this.y, r: PLAYER.HITBOX_RADIUS + GRAZE.RING_EXTRA };
+  }
+
   kill() {
     VFX.setEmitterActive(this.thruster, false);
     this.setActive(false).setVisible(false);
@@ -410,6 +435,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     VFX.destroyEmitter(this.thruster);
     this.thruster = null;
     if (this.aura) { this.aura.destroy(); this.aura = null; }
+    if (this.grazeRing) { this.grazeRing.destroy(); this.grazeRing = null; }
     super.destroy(fromScene);
   }
 }

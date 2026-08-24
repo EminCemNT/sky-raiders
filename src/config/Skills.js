@@ -12,8 +12,15 @@ export const SKILLS = {
     kind: 'screen_clear',
     desc: '全屏星弹横扫，清除敌弹并重创所有敌机与 Boss',
   },
-  // 预留扩展：
-  // overdrive: { id: 'overdrive', name: '过载', cost: 100, kind: 'buff', desc: '短时射速翻倍' },
+  // 第二主动技能（P2）：过载——短时射速翻倍（buff，不消弹）
+  overdrive: {
+    id: 'overdrive',
+    name: '过载',
+    icon: 'item_energy',
+    cost: 100,
+    kind: 'buff',
+    desc: '短时射速翻倍',
+  },
 };
 
 export const DEFAULT_SKILL = 'starstorm';
