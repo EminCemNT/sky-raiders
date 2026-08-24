@@ -58,6 +58,7 @@ export function generateAll(scene) {
   drawItemWeaponLaser(g); g.generateTexture('item_weapon_laser', 26, 26);
   drawItemWeaponBomb(g); g.generateTexture('item_weapon_bomb', 26, 26);
   drawItemPower(g); g.generateTexture('item_power', 26, 26);
+  drawItemElement(g); g.generateTexture('item_element', 26, 26);
   // UI 矢量图标（取代跨端字形不一致的 emoji：🏅/🔒，append-only 新增 key）
   drawIconMedal(g); g.generateTexture('icon_medal', 26, 26);
   drawIconLock(g); g.generateTexture('icon_lock', 26, 26);
@@ -473,6 +474,28 @@ function drawItemPower(g) {
     { x: 15, y: 3 }, { x: 7, y: 14 }, { x: 12, y: 14 },
     { x: 10, y: 24 }, { x: 19, y: 11 }, { x: 13, y: 11 },
   ], true);
+}
+
+// ─── 道具：元素核心（三色元素球：火橙 / 冰青 / 雷黄） ──────────
+function drawItemElement(g) {
+  g.clear();
+  const cx = 13, cy = 13, R = 11;
+  const deg = Phaser.Math.DegToRad;
+  // 三色弧形扇区拼成球体
+  g.fillStyle(0xff7a3a, 1);
+  g.slice(cx, cy, R, deg(-90), deg(30), false);
+  g.fillPath();
+  g.fillStyle(0x6fd6ff, 1);
+  g.slice(cx, cy, R, deg(30), deg(150), false);
+  g.fillPath();
+  g.fillStyle(0xffe14a, 1);
+  g.slice(cx, cy, R, deg(150), deg(270), false);
+  g.fillPath();
+  // 白芯 + 描边
+  g.fillStyle(0xffffff, 0.95);
+  g.fillCircle(cx, cy, 4);
+  g.lineStyle(1.5, 0xffffff, 0.65);
+  g.strokeCircle(cx, cy, R);
 }
 
 // ─── UI 图标：成就勋章（金牌 + 五角星，霓虹描边） ─────────────

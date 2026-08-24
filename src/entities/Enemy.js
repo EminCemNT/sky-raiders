@@ -40,6 +40,8 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     this._stunUntil = 0;
     this._dotUntil = 0;
     this._dotTick = 0;
+    // 元素连锁反应（二段反应）冷却截止时刻
+    this._reactUntil = 0;
   }
 
   getColor() {
@@ -72,6 +74,7 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     this._stunUntil = 0;
     this._dotUntil = 0;
     this._dotTick = 0;
+    this._reactUntil = 0;   // 元素连锁反应冷却复位
     this.clearTint();
 
     if (!this.thruster) {
@@ -173,6 +176,9 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
   /** 受伤，返回是否死亡 */
   hit(dmg, element) {
     if (this._dying) return false;            // 死亡演出进行中，忽略后续命中（防对象池复用前的重复结算）
+    // 元素连锁反应（二段反应）：在 applyElement 之前触发（此时 _elem 仍是上次命中残留的元素）。
+    // 不读写 combo、不进 overlap 回调，由 ElementReaction 纯逻辑判同元素 + 冷却后派发。
+    if (element && this.scene.elementReaction) this.scene.elementReaction.onHit(this, element, this.scene.time.now);
     if (element) this.applyElement(element);   // B6 命中附加元素状态
     const willDie = this.hp - dmg <= 0;        // 致命一击交给 die() 的爆炸音，避免双重音
     this.hp -= dmg;
@@ -226,6 +232,21 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
         this.clearTint();
       }
     });
+  }
+
+  /**
+   * 反应伤害结算（元素连锁反应专用）：不触发二次反应、不飘字。
+   * 区别于 hit()：无受击音/闪白/flinch，仅施加元素状态 + 扣血 + 致死判定。
+   * @param {number} dmg 伤害
+   * @param {?string} element 要附加的元素状态（fire/ice/thunder/null）
+   * @returns {boolean} 是否致死
+   */
+  applyReaction(dmg, element) {
+    if (this._dying) return false;
+    if (element) this.applyElement(element);
+    this.hp -= dmg;
+    if (this.hp <= 0) { this.die(); return true; }
+    return false;
   }
 
   die() {

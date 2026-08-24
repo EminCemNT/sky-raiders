@@ -23,6 +23,7 @@ export default class UIScene extends Phaser.Scene {
   init(data) {
     this.hudData = data || {};
     this.mode = (data && data.mode) || 'normal';
+    this._element = (data && data.element) || null;   // 开局战机元素（元素核心轮换指示初始值）
   }
 
   create() {
@@ -58,6 +59,11 @@ export default class UIScene extends Phaser.Scene {
     this.powerText = this.add.text(HUD_RIGHT, 84, '火力 Lv0', {
       fontFamily: 'sans-serif', fontSize: '15px', fontStyle: '700', color: '#ffd54a',
     }).setOrigin(1, 0).setDepth(100);
+
+    // 玩家元素指示（元素核心轮换用，最小指示：右上角一行彩色文字，无元素时隐藏）
+    this.elementText = this.add.text(HUD_RIGHT, 104, '', {
+      fontFamily: 'sans-serif', fontSize: '14px', fontStyle: '700', color: '#9ff0ff',
+    }).setOrigin(1, 0).setDepth(100).setVisible(false);
 
     // HP 条（圆角发光）
     this.hpBar = new NeonBar(this, 16, 64, 180, 14, { color: 0x33dd88 });
@@ -195,6 +201,7 @@ export default class UIScene extends Phaser.Scene {
     // 初始化状态
     this.updateHp(d.hp || 100, d.maxHp || 100);
     this.updateEnergy(d.energy || 0, 100);
+    this._renderElement(this._element);   // 开局元素指示（元素核心轮换初始值）
 
     // Phase C：关卡开场大字 banner（Stage Banner，Back.easeOut 弹入 + 辉光 + 淡出）
     const stageName = this.mode === 'bossrush' ? 'BOSS RUSH' : lvl.name;
@@ -289,6 +296,17 @@ export default class UIScene extends Phaser.Scene {
       if (s.focus && s.focus.active) txt += ' · 集火';
       this.wmCountText.setText(txt);
     };
+  }
+
+  /** 渲染玩家元素指示（元素核心轮换用）：无元素隐藏，有元素显示彩色「元素 · X」 */
+  _renderElement(el) {
+    if (!this.elementText) return;
+    const INFO = { fire: ['火', '#ff7a3a'], ice: ['冰', '#6fd6ff'], thunder: ['雷', '#ffe14a'] };
+    if (el && INFO[el]) {
+      this.elementText.setText(`元素 · ${INFO[el][0]}`).setColor(INFO[el][1]).setVisible(true);
+    } else {
+      this.elementText.setVisible(false);
+    }
   }
 
   togglePause() {
@@ -413,6 +431,9 @@ export default class UIScene extends Phaser.Scene {
       }
     };
     EventBus.on(EVENTS.COMBO_CHANGED, this._onCombo);
+
+    this._onElementChanged = (el) => this._renderElement(el);
+    EventBus.on(EVENTS.ELEMENT_CHANGED, this._onElementChanged);
 
     this._onWeapon = (w, dur) => {
       this._weaponName = w;
@@ -600,6 +621,7 @@ export default class UIScene extends Phaser.Scene {
     EventBus.off(EVENTS.SHIELD_CHANGED, this._onShield);
     EventBus.off(EVENTS.MAGNET_CHANGED, this._onMagnet);
     EventBus.off(EVENTS.COMBO_CHANGED, this._onCombo);
+    EventBus.off(EVENTS.ELEMENT_CHANGED, this._onElementChanged);
     EventBus.off(EVENTS.WEAPON_CHANGED, this._onWeapon);
     EventBus.off(EVENTS.ACHIEVEMENT_UNLOCKED, this._onAchUnlock);
     EventBus.off(EVENTS.WINGMAN_STATUS, this._onWmStatus);

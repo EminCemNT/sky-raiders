@@ -12,6 +12,7 @@ import Boss from '../entities/Boss.js';
 import Item from '../entities/Item.js';
 import WaveSystem from '../systems/WaveSystem.js';
 import WingmanSystem from '../systems/WingmanSystem.js';
+import ElementReaction from '../systems/ElementReaction.js';
 import { FloatingTextManager, warmFonts } from '../systems/FloatingText.js';
 import { AchievementManager } from '../systems/AchievementManager.js';
 import { audio } from '../systems/AudioSystem.js';
@@ -177,6 +178,7 @@ export default class GameScene extends Phaser.Scene {
       hp: this.player.hp, maxHp: this.player.maxHp,
       bombs: PLAYER.START_BOMBS,
       lives: this.lives,
+      element: this.player.shipElement,
     });
 
     // 初始 HUD 同步
@@ -191,6 +193,8 @@ export default class GameScene extends Phaser.Scene {
     // 僚机 AI 进阶：数量/编队/武器等级全部交给 WingmanSystem（读存档 upgrades）
     // 子弹复用 playerBullets 池，系统内不新建子弹组、不新建 Timer
     this.wingmanSystem = new WingmanSystem(this, this.playerBullets);
+    // 元素连锁反应（二段反应）：独立于 combo，由 Enemy.hit 经 scene.elementReaction 调用
+    this.elementReaction = new ElementReaction(this);
     // 僚机受击 overlap 必须在系统实例化之后注册（setupColliders 早于此处执行，
     // 那时 wingmanSystem 还是 null，拿不到 getGroup()）
     this.setupWingmanCollider();
@@ -202,7 +206,7 @@ export default class GameScene extends Phaser.Scene {
     if (this.mode === 'bossrush') this.startBossRush();
 
     // 调试钩子（供自动化真测驱动场景状态；不影响玩法）
-    if (typeof window !== 'undefined') { window.__SKY = this; window.__GAME = this.game; }
+    if (typeof window !== 'undefined') { window.__SKY = this; window.__GAME = this.game; window.__ELEMENT_REACTION = this.elementReaction; }
 
     // 场景关闭时清理事件
     this.events.once('shutdown', () => this.cleanup());
@@ -706,6 +710,9 @@ export default class GameScene extends Phaser.Scene {
         case 'power':
           this.addPower();
           break;
+        case 'element':
+          this.rotatePlayerElement();   // 元素核心：火→冰→雷→火 轮换
+          break;
         case 'weapon':
           if (this.player.setWeapon) this.player.setWeapon(def.weapon);
           AchievementManager.reportWeaponUsed(def.weapon);
@@ -770,6 +777,46 @@ export default class GameScene extends Phaser.Scene {
     if (this.powerLevel <= 0) return;
     this.powerLevel = this.player.setPowerLevel(this.powerLevel - 1);
     EventBus.emit(EVENTS.POWER_CHANGED, this.powerLevel);
+  }
+
+  // ---- 元素连锁反应（二段反应）----
+  /**
+   * 反应伤害落地（ElementReaction 回调）。applyReaction 不触发二次反应、不飘字。
+   * 致死走 registerKill，击杀来源 element 归反应归属元素（计入 element_* 成就）。
+   */
+  reactionHit(enemy, dmg, apply, attribute) {
+    if (!enemy || !enemy.active) return false;
+    const died = enemy.applyReaction(dmg, apply);
+    if (died) this.registerKill(enemy.x, enemy.y, { byWingman: false, element: attribute });
+    return died;
+  }
+
+  /** 反应演出反馈：EventBus 广播 + 飘分 + VFX + 音效 */
+  emitReactionFeedback(name, x, y, count, element) {
+    EventBus.emit(EVENTS.ELEMENT_REACTION, { name, element, count, x, y });
+    if (count > 0) {
+      EventBus.emit(EVENTS.FLOAT_SCORE, { x, y, amount: count * 10, special: true, label: `${name} ×${count}` });
+      VFX.reactionRing(this, x, y, element);
+      if (element === 'thunder') VFX.conductionArc(this, x, y);
+      audio.sfx('powerup');
+    }
+  }
+
+  /** 设置玩家元素（元素核心道具用）：同步 Player + 僚机 + EventBus */
+  setPlayerElement(element) {
+    const el = this.player.setElement(element);
+    if (this.wingmanSystem) this.wingmanSystem.onPlayerElementChanged(el);
+    EventBus.emit(EVENTS.ELEMENT_CHANGED, el);
+    return el;
+  }
+
+  /** 元素核心轮换：火→冰→雷→火（无元素时从火起步） */
+  rotatePlayerElement() {
+    const ORDER = ['fire', 'ice', 'thunder'];
+    const cur = this.player.shipElement;
+    const idx = ORDER.indexOf(cur);
+    const next = (idx < 0) ? ORDER[0] : ORDER[(idx + 1) % ORDER.length];
+    return this.setPlayerElement(next);
   }
 
   /** 命中定格（hitStop）：冻结物理世界（子弹/敌机/敌弹）强化打击感；指针拖动玩家不受影响。

@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { COLORS } from '../config/GameConfig.js';
+import { COLORS, ELEMENTS } from '../config/GameConfig.js';
 
 /**
  * VFX —— 视觉特效中心（粒子、闪光、尾焰、受击反馈）。
@@ -251,6 +251,44 @@ export function warmup(scene) {
     if (hs && hs.active) hs.destroy();
     if (ex && ex.active) ex.destroy();
   });
+}
+
+/**
+ * 元素反应爆发环：以反应源为中心扩散一圈元素色圆环。
+ * reduced-motion 下：静态圆环一闪（无 tween / 无粒子）。
+ */
+export function reactionRing(scene, x, y, element) {
+  const color = (ELEMENTS[element] && ELEMENTS[element].color) || 0x7cf3ff;
+  const ring = scene.add.circle(x, y, 8, color, 0.35).setStrokeStyle(2, color, 0.9).setDepth(52);
+  if (prefersReduced) {
+    scene.time.delayedCall(120, () => { if (ring && ring.active) ring.destroy(); });
+    return;
+  }
+  scene.tweens.add({
+    targets: ring, scale: 3.2, alpha: 0, duration: 360, ease: 'Cubic.out',
+    onComplete: () => { if (ring && ring.active) ring.destroy(); },
+  });
+}
+
+/** 雷·传导电弧：以反应源为中心发散的几条折线闪电。reduced-motion 下直接 return */
+export function conductionArc(scene, x, y) {
+  if (prefersReduced) return;
+  const g = scene.add.graphics().setDepth(51);
+  g.lineStyle(2, 0xffe14a, 0.9);
+  for (let k = 0; k < 4; k++) {
+    const ang = Phaser.Math.FloatBetween(0, Math.PI * 2);
+    const seg = Phaser.Math.Between(16, 22);
+    let px = x, py = y;
+    g.beginPath();
+    g.moveTo(px, py);
+    for (let s = 0; s < 3; s++) {
+      px += Math.cos(ang) * seg + Phaser.Math.Between(-8, 8);
+      py += Math.sin(ang) * seg + Phaser.Math.Between(-8, 8);
+      g.lineTo(px, py);
+    }
+    g.strokePath();
+  }
+  scene.time.delayedCall(140, () => { if (g && g.active) g.destroy(); });
 }
 
 /** 控制 emitter 启动/停止，用于对象池回收 */

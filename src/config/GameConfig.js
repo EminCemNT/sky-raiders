@@ -59,6 +59,9 @@ export const EVENTS = {
   WINGMAN_RESPAWNED: 'wingman-respawned',   // payload = { slot, x, y }
   WINGMAN_COMBO: 'wingman-combo',           // payload = { element, count }
   WINGMAN_STATUS: 'wingman-status',         // payload = { count, weaponLv, element, comboMul, members:[{alive,respawnRemainMs,element}] }（HUD 僚机指示，第三版起步）
+  // 元素连锁反应（二段反应）append-only
+  ELEMENT_REACTION: 'element-reaction',     // payload = { name, element, count, x, y }
+  ELEMENT_CHANGED: 'element-changed',       // payload = 当前战机元素（fire/ice/thunder/null）
 };
 
 // 玩家基础属性

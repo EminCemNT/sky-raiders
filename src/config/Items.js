@@ -14,6 +14,8 @@ export const ITEMS = {
   weapon_bomb:    { tex: 'item_weapon_bomb',  label: '炸弹', kind: 'weapon', weapon: 'bomb',    duration: 15000, desc: '切换元素炸弹 15 秒' },
   // 局内火力(P)成长（P1）：独立掉落，拾取后火力 +1，受击 -1
   power:          { tex: 'item_power',        label: '火力P', kind: 'power', desc: '局内火力 +1（最多 4 级）' },
+  // 元素核心（二段反应 enabler）：拾取后按 火→冰→雷→火 轮换战机元素
+  element_core:   { tex: 'item_element',      label: '元素核心', kind: 'element', desc: '轮换战机元素(火→冰→雷)' },
 };
 
 // 普通敌人掉"非金币道具"的基础概率
@@ -21,7 +23,7 @@ export const ITEM_DROP_CHANCE = 0.16;
 
 // 掉落权重（抽中"非金币道具"后按权重选一种）
 export const ITEM_DROP_WEIGHTS = {
-  shield: 8, magnet: 8, wingman: 4, energy: 12, heal: 6, bomb: 4, weapon_missile: 5, weapon_laser: 5, weapon_bomb: 5,
+  shield: 8, magnet: 8, wingman: 4, energy: 12, heal: 6, bomb: 4, weapon_missile: 5, weapon_laser: 5, weapon_bomb: 5, element_core: 5,
 };
 
 // Boss 必掉的高价值道具（按权重）

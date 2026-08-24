@@ -307,6 +307,18 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
   }
 
+  /**
+   * 切换战机元素（元素核心道具轮换用）。TINT 为元素对应的 aura 染色；
+   * 改 shipElement + aura 染色，返回最终元素（null = 无元素，恢复机体原色）。
+   */
+  setElement(el) {
+    const TINT = { fire: 0xff7a3a, ice: 0x6fd6ff, thunder: 0xffe14a };
+    this.shipElement = (el && TINT[el]) ? el : null;
+    const tint = TINT[this.shipElement] || this.shipTint || 0xffffff;
+    if (this.aura) this.aura.setTint(tint);
+    return this.shipElement;
+  }
+
   /** 战机皮肤发光aura：随所选机型 tint 生成柔光晕，强化三机辨识度（纯视觉） */
   setShipTint(tint) {
     this.shipTint = tint;
