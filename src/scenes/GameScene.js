@@ -1056,7 +1056,7 @@ export default class GameScene extends Phaser.Scene {
 
   /** 星风暴视觉：多发星弹横扫 + 粒子爆发 */
   spawnStarstormVisual() {
-    const p = this.add.particles(this.player.x, this.player.y, 'particle', {
+    const p = this.add.particles(this.player.x, this.player.y, 'particle_dot', {
       speed: { min: 200, max: 520 },
       lifespan: 700,
       scale: { start: 2.4, end: 0 },
@@ -1162,6 +1162,7 @@ export default class GameScene extends Phaser.Scene {
       kills: this.stats.kills, coins: finalCoins,
       levelId: this.levelId, composite,
       mode: this.mode, wave: this.waves ? this.waves.currentWave : 0,
+      maxCombo: this.maxCombo || 0,   // UI P2：结算页连击峰值面板（纯展示数据透传）
     };
 
     // 成就评估（#成就）：事件已实时上报，这里做局末兜底评估（无伤/通关/BossRush 等）

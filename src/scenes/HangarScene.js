@@ -1,8 +1,8 @@
 import Phaser from 'phaser';
 import { SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, UPGRADE_TREE, SHIPS, WEAPONS, ELEMENTS } from '../config/GameConfig.js';
 import { SaveManager } from '../utils/SaveManager.js';
-import { createStarfield } from '../systems/Starfield.js';
-import { NeonButton } from '../utils/UIWidgets.js';
+import { createStarfield, HANGAR_BG_THEME } from '../systems/Starfield.js';
+import { NeonButton, THEME } from '../utils/UIWidgets.js';
 
 /**
  * HangarScene：机库 / 部件升级界面（Sky Force 风格金币升级树）
@@ -26,19 +26,19 @@ export default class HangarScene extends Phaser.Scene {
     const cx = GAME_WIDTH / 2;
     const reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
-    // 背景滚动星空
-    this.starfield = createStarfield(this);
+    // 背景滚动星空（UI P2：淡星云 + 陨石剪影；星空色调随所选战机 tint 跟随）
+    this.starfield = createStarfield(this, { theme: HANGAR_BG_THEME });
 
     // 标题（辉光副本层 + 呼吸脉动，与 MenuScene Phase A 统一）
     this.titleGlow = this.add.text(cx, 92, '机  库', {
-      fontFamily: 'sans-serif', fontSize: '54px', fontStyle: '800', color: '#7cf3ff',
-    }).setOrigin(0.5).setShadow(0, 0, '#7cf3ff', 30, true, true).setAlpha(0.3).setDepth(1);
+      fontFamily: THEME.fontFamily, fontSize: '54px', fontStyle: '800', color: THEME.titleColor,
+    }).setOrigin(0.5).setShadow(0, 0, THEME.titleColor, 30, true, true).setAlpha(0.3).setDepth(1);
     this.add.text(cx, 92, '机  库', {
-      fontFamily: 'sans-serif', fontSize: '50px', fontStyle: '800', color: '#aef6ff',
-    }).setOrigin(0.5).setShadow(0, 0, '#2a86c0', 22, true, true).setDepth(2);
+      fontFamily: THEME.fontFamily, fontSize: '50px', fontStyle: '800', color: THEME.titleBright,
+    }).setOrigin(0.5).setShadow(0, 0, THEME.titleShadow, 22, true, true).setDepth(2);
 
     this.add.text(cx, 142, 'HANGAR', {
-      fontFamily: 'sans-serif', fontSize: '16px', color: '#4a90c0',
+      fontFamily: THEME.fontFamily, fontSize: '16px', color: THEME.subColor,
     }).setOrigin(0.5).setAlpha(0.8);
 
     if (!reduceMotion) {
@@ -48,7 +48,7 @@ export default class HangarScene extends Phaser.Scene {
 
     // 金币余额
     this.coinText = this.add.text(cx, 192, '', {
-      fontFamily: 'sans-serif', fontSize: '22px', fontStyle: '700', color: '#ffd54a',
+      fontFamily: THEME.fontFamily, fontSize: '22px', fontStyle: '700', color: THEME.textGold,
     }).setOrigin(0.5);
 
     // C2 战机武器绑定选择器（在机库里切战机 → 影响开局默认武器/元素）
@@ -90,18 +90,18 @@ export default class HangarScene extends Phaser.Scene {
     const row = { key, max: def.max };
 
     // 背景卡片 + 外发光描边（霓虹化）
-    const card = this.add.rectangle(cx, y, 480, 84, 0x0d2840, 0.9).setStrokeStyle(2, 0x2f6f96);
+    const card = this.add.rectangle(cx, y, 480, 84, THEME.cardBg, 0.9).setStrokeStyle(2, THEME.cardStroke);
     const cardGlow = this.add.graphics().setAlpha(0.9);
     cardGlow.lineStyle(6, COLORS.accent, 0.16).strokeRoundedRect(cx - 240, y - 42, 480, 84, 10);
 
     // 名称（部件中文名）
     const nameText = this.add.text(cx - 222, y - 20, def.name, {
-      fontFamily: 'sans-serif', fontSize: '24px', fontStyle: '700', color: '#cfe8ff',
+      fontFamily: THEME.fontFamily, fontSize: '24px', fontStyle: '700', color: THEME.textPrimary,
     }).setOrigin(0, 0.5);
 
     // 等级文本（刷新时填充）
     row.levelText = this.add.text(cx - 222, y + 16, '', {
-      fontFamily: 'sans-serif', fontSize: '15px', color: '#88bbdd',
+      fontFamily: THEME.fontFamily, fontSize: '15px', color: THEME.textSecondary,
     }).setOrigin(0, 0.5);
 
     // 升级按钮（NeonButton：辉光 + hover + 按压缩放；动态底色保留可升级/不可升级/满级三态）
@@ -122,19 +122,19 @@ export default class HangarScene extends Phaser.Scene {
     const W = SHIPS || [];
     const chipW = 480, chipH = 72;
     const reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-    this.add.rectangle(cx, y, chipW, chipH, 0x102a44, 0.9).setStrokeStyle(2, 0x3a7fb0);
+    this.add.rectangle(cx, y, chipW, chipH, THEME.chipBg, 0.9).setStrokeStyle(2, THEME.chipStroke);
 
     // 战机皮肤预览：发光aura（随机型 tint）+ 机型纹理（带轻微浮动/呼吸）
     const px = cx - chipW / 2 + 52;
-    this.shipAura = this.add.image(px, y, 'bg_nebula').setScale(0.42).setTint(0x66ccff)
+    this.shipAura = this.add.image(px, y, 'bg_nebula').setScale(0.42).setTint(COLORS.player)
       .setAlpha(0.5).setBlendMode(Phaser.BlendModes.ADD).setDepth(1);
     this.shipPreview = this.add.image(px, y, 'player').setScale(1.1).setDepth(2);
 
     this.add.text(cx - chipW / 2 + 100, y - 16, '战机', {
-      fontFamily: 'sans-serif', fontSize: '15px', color: '#7fb8e0',
+      fontFamily: THEME.fontFamily, fontSize: '15px', color: THEME.textSection,
     }).setOrigin(0, 0.5);
     this.shipLabel = this.add.text(cx - chipW / 2 + 100, y + 6, '', {
-      fontFamily: 'sans-serif', fontSize: '17px', fontStyle: '700', color: '#ffffff',
+      fontFamily: THEME.fontFamily, fontSize: '17px', fontStyle: '700', color: THEME.white,
     }).setOrigin(0, 0.5);
 
     // 入场 + 浮动/呼吸（reduced-motion 仅静态显示）
@@ -149,9 +149,9 @@ export default class HangarScene extends Phaser.Scene {
 
     const mkArrow = (sx, dir) => {
       const a = this.add.container(sx, y);
-      const bg = this.add.rectangle(0, 0, 40, 40, 0x1b4a6b, 1).setStrokeStyle(2, 0x3a7fb0);
+      const bg = this.add.rectangle(0, 0, 40, 40, THEME.arrowBg, 1).setStrokeStyle(2, THEME.chipStroke);
       const t = this.add.text(0, 0, dir < 0 ? '◀' : '▶', {
-        fontFamily: 'sans-serif', fontSize: '22px', color: '#cfe8ff',
+        fontFamily: THEME.fontFamily, fontSize: '22px', color: THEME.textPrimary,
       }).setOrigin(0.5);
       a.add([bg, t]);
       a.setSize(40, 40).setInteractive(new Phaser.Geom.Rectangle(-20, -20, 40, 40), Phaser.Geom.Rectangle.Contains);
@@ -182,24 +182,26 @@ export default class HangarScene extends Phaser.Scene {
     // 同步机型皮肤预览 tint（苍鹰青 / 赤焰橙 / 寒霜冰蓝）
     if (this.shipPreview) this.shipPreview.setTint(s.tint || 0xffffff);
     if (this.shipAura) this.shipAura.setTint(s.tint || 0xffffff);
+    // UI P2：机库背景星空/光晕色调跟随所选战机 tint
+    if (this.starfield) this.starfield.setTint(s.tint || 0);
   }
 
   /** 开局主武器选择（覆盖战机绑定武器；null=用战机默认） */
   buildStartWeaponSelector(cx, y) {
     const chipW = 460, chipH = 44;
-    this.add.rectangle(cx, y, chipW, chipH, 0x102a44, 0.9).setStrokeStyle(2, 0x3a7fb0);
+    this.add.rectangle(cx, y, chipW, chipH, THEME.chipBg, 0.9).setStrokeStyle(2, THEME.chipStroke);
     this.add.text(cx - chipW / 2 + 14, y, '开局武器', {
-      fontFamily: 'sans-serif', fontSize: '16px', color: '#7fb8e0',
+      fontFamily: THEME.fontFamily, fontSize: '16px', color: THEME.textSection,
     }).setOrigin(0, 0.5);
     this.weaponLabel = this.add.text(cx, y, '', {
-      fontFamily: 'sans-serif', fontSize: '17px', fontStyle: '700', color: '#ffffff',
+      fontFamily: THEME.fontFamily, fontSize: '17px', fontStyle: '700', color: THEME.white,
     }).setOrigin(0.5);
 
     const mkArrow = (sx, dir) => {
       const a = this.add.container(sx, y);
-      const bg = this.add.rectangle(0, 0, 40, 40, 0x1b4a6b, 1).setStrokeStyle(2, 0x3a7fb0);
+      const bg = this.add.rectangle(0, 0, 40, 40, THEME.arrowBg, 1).setStrokeStyle(2, THEME.chipStroke);
       const t = this.add.text(0, 0, dir < 0 ? '◀' : '▶', {
-        fontFamily: 'sans-serif', fontSize: '22px', color: '#cfe8ff',
+        fontFamily: THEME.fontFamily, fontSize: '22px', color: THEME.textPrimary,
       }).setOrigin(0.5);
       a.add([bg, t]);
       a.setSize(40, 40).setInteractive(new Phaser.Geom.Rectangle(-20, -20, 40, 40), Phaser.Geom.Rectangle.Contains);

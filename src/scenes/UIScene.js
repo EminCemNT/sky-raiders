@@ -31,50 +31,50 @@ export default class UIScene extends Phaser.Scene {
 
     // 分数（等宽数字防跳动 + 霓虹辉光 + SCORE 标签）
     this.add.text(16, 14, 'SCORE', {
-      fontFamily: 'sans-serif', fontSize: '11px', fontStyle: '700', color: '#5fb0e0',
+      fontFamily: THEME.fontFamily, fontSize: '11px', fontStyle: '700', color: THEME.hudLabel,
     }).setDepth(100).setAlpha(0.8);
     this.scoreText = this.add.text(16, 28, '000000', {
-      fontFamily: 'Consolas, "Courier New", monospace', fontSize: '26px', fontStyle: '800', color: '#aef6ff',
-    }).setDepth(100).setShadow(0, 0, '#2a86c0', 12, true, true);
+      fontFamily: THEME.scoreFont, fontSize: '26px', fontStyle: '800', color: THEME.titleBright,
+    }).setDepth(100).setShadow(0, 0, THEME.titleShadow, 12, true, true);
 
     // 关卡名 / Boss Rush 标签（右侧信息列整体右对齐留白 70px，避让右上角暂停键，避免小屏重叠）
     const HUD_RIGHT = GAME_WIDTH - 70;
     const lvl = LEVELS.find((l) => l.id === d.levelId) || LEVELS[0];
     const levelLabel = this.mode === 'bossrush' ? 'BOSS RUSH' : `第 ${lvl.id} 关 · ${lvl.name}`;
     this.levelLabel = this.add.text(HUD_RIGHT, 18, levelLabel, {
-      fontFamily: 'sans-serif', fontSize: '15px', fontStyle: '700', color: '#7cf3ff',
+      fontFamily: THEME.fontFamily, fontSize: '15px', fontStyle: '700', color: THEME.titleColor,
     }).setOrigin(1, 0).setDepth(100);
 
     // 波次提示
     this.waveText = this.add.text(HUD_RIGHT, 42, '', {
-      fontFamily: 'sans-serif', fontSize: '13px', color: '#88bbdd',
+      fontFamily: THEME.fontFamily, fontSize: '13px', color: THEME.textSecondary,
     }).setOrigin(1, 0).setDepth(100);
 
     // 剩余命数（P1 命数复活：数字指示，右上角）
     this.livesText = this.add.text(HUD_RIGHT, 64, `命 ×${d.lives != null ? d.lives : PLAYER.START_LIVES}`, {
-      fontFamily: 'sans-serif', fontSize: '15px', fontStyle: '700', color: '#7cffa0',
+      fontFamily: THEME.fontFamily, fontSize: '15px', fontStyle: '700', color: THEME.textSuccess,
     }).setOrigin(1, 0).setDepth(100);
 
     // 局内火力(P)等级指示（P1：拾取 P +1 / 受击 -1，右上角，金色）
     this.powerText = this.add.text(HUD_RIGHT, 84, '火力 Lv0', {
-      fontFamily: 'sans-serif', fontSize: '15px', fontStyle: '700', color: '#ffd54a',
+      fontFamily: THEME.fontFamily, fontSize: '15px', fontStyle: '700', color: THEME.textGold,
     }).setOrigin(1, 0).setDepth(100);
 
     // 玩家元素指示（元素核心轮换用，最小指示：右上角一行彩色文字，无元素时隐藏）
     this.elementText = this.add.text(HUD_RIGHT, 104, '', {
-      fontFamily: 'sans-serif', fontSize: '14px', fontStyle: '700', color: '#9ff0ff',
+      fontFamily: THEME.fontFamily, fontSize: '14px', fontStyle: '700', color: THEME.textCyan,
     }).setOrigin(1, 0).setDepth(100).setVisible(false);
 
     // HP 条（圆角发光）
     this.hpBar = new NeonBar(this, 16, 64, 180, 14, { color: 0x33dd88 });
     this.hpText = this.add.text(204, 64, '', {
-      fontFamily: 'sans-serif', fontSize: '13px', color: '#aaccdd',
+      fontFamily: THEME.fontFamily, fontSize: '13px', color: THEME.textMuted,
     }).setOrigin(0, 0.5).setDepth(101);
 
     // 能量槽（0~100%，充满高亮）
     this.energyBar = new NeonBar(this, 16, 86, 180, 12, { color: 0xb98bff });
     this.energyText = this.add.text(204, 86, '能量 0%', {
-      fontFamily: 'sans-serif', fontSize: '13px', color: '#c9a6ff',
+      fontFamily: THEME.fontFamily, fontSize: '13px', color: THEME.textMint,
     }).setOrigin(0, 0.5).setDepth(101);
 
     // Boss 血条（居中，默认隐藏）
@@ -85,8 +85,8 @@ export default class UIScene extends Phaser.Scene {
     this.bossBar.setVisible(false);
     // Boss 名字（常驻，血条上方居中，霓虹辉光描边；错层到 y=52 避让左侧 HP 条与右侧命数）
     this.bossNameText = this.add.text(GAME_WIDTH / 2, 52, '', {
-      fontFamily: 'sans-serif', fontSize: '15px', fontStyle: '800', color: '#ff8aa0', align: 'center',
-    }).setOrigin(0.5).setDepth(100).setShadow(0, 0, '#ff3355', 14, true, true).setVisible(false);
+      fontFamily: THEME.fontFamily, fontSize: '15px', fontStyle: '800', color: THEME.textPink, align: 'center',
+    }).setOrigin(0.5).setDepth(100).setShadow(0, 0, THEME.dangerDeep, 14, true, true).setVisible(false);
 
     // 炸弹按钮（右下角图标化）
     this.bombs = d.bombs || 0;
@@ -111,18 +111,18 @@ export default class UIScene extends Phaser.Scene {
     // 增益徽标（护盾/磁力）：矢量纹理图标 + 文本，取代 emoji 🛡/🧲（跨端字形一致）
     this.shieldIcon = this.add.image(16, 104, 'item_shield').setScale(0.5).setDepth(101).setVisible(false);
     this.shieldBadge = this.add.text(26, 104, '护盾', {
-      fontFamily: 'sans-serif', fontSize: '12px', color: '#3ad1ff',
+      fontFamily: THEME.fontFamily, fontSize: '12px', color: THEME.shield,
     }).setOrigin(0, 0.5).setDepth(101).setVisible(false);
     this.magnetIcon = this.add.image(96, 104, 'item_magnet').setScale(0.5).setDepth(101).setVisible(false);
     this.magnetBadge = this.add.text(106, 104, '磁力', {
-      fontFamily: 'sans-serif', fontSize: '12px', color: '#ff4d6d',
+      fontFamily: THEME.fontFamily, fontSize: '12px', color: THEME.magnet,
     }).setOrigin(0, 0.5).setDepth(101).setVisible(false);
 
     // 武器指示器（B/C 武器系统）
     this._weaponName = 'pulse';
     this._weaponUntilTime = 0;
     this.weaponText = this.add.text(16, 124, '主炮 · 脉冲', {
-      fontFamily: 'sans-serif', fontSize: '12px', color: '#9ff0ff',
+      fontFamily: THEME.fontFamily, fontSize: '12px', color: THEME.textCyan,
     }).setDepth(101);
 
     // 僚机状态指示（第三版起步）：数量 / 元素 / 武器等级 / 重生倒计时
@@ -141,10 +141,10 @@ export default class UIScene extends Phaser.Scene {
     });
     const pg = this.add.graphics();
     pg.fillStyle(THEME.pauseBtn.glow, 0.18); pg.fillRoundedRect(-ph - 3, -ph - 3, ps + 6, ps + 6, 10);
-    pg.fillStyle(0x123a5a, 0.9); pg.fillRoundedRect(-ph, -ph, ps, ps, 8);
+    pg.fillStyle(THEME.btnBg, 0.9); pg.fillRoundedRect(-ph, -ph, ps, ps, 8);
     pg.lineStyle(2, THEME.pauseBtn.glow, 0.9); pg.strokeRoundedRect(-ph, -ph, ps, ps, 8);
     const barW = Math.max(4, ps * 0.16), barH = ps * 0.42, off = ps * 0.13;
-    pg.fillStyle(0xffffff, 1);
+    pg.fillStyle(THEME.whiteHex, 1);
     pg.fillRoundedRect(-off - barW / 2, -barH / 2, barW, barH, barW / 2);
     pg.fillRoundedRect(off - barW / 2, -barH / 2, barW, barH, barW / 2);
     this.pauseBtn.add(pg);
@@ -160,8 +160,8 @@ export default class UIScene extends Phaser.Scene {
     this.pauseOverlay = this.add.container(0, 0).setDepth(200).setVisible(false);
     const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.62).setOrigin(0);
     const pTitle = this.add.text(GAME_WIDTH / 2, 300, '已暂停', {
-      fontFamily: 'sans-serif', fontSize: '46px', fontStyle: '800', color: '#7cf3ff',
-    }).setOrigin(0.5).setShadow(0, 0, '#2a86c0', 16, true, true);
+      fontFamily: THEME.fontFamily, fontSize: '46px', fontStyle: '800', color: THEME.titleColor,
+    }).setOrigin(0.5).setShadow(0, 0, THEME.titleShadow, 16, true, true);
     const resumeBtn = this.makePauseButton(GAME_WIDTH / 2, 440, '继续', () => this.togglePause());
     const quitBtn = this.makePauseButton(GAME_WIDTH / 2, 530, '退出到菜单', () => this.quitToMenu());
     // P1-6 可见判定点开关（斑鸠/虫姬同款）：暂停面板内一键切换存档 showHitbox
@@ -184,14 +184,14 @@ export default class UIScene extends Phaser.Scene {
     // Phase B：低血屏幕红色告警边框（与 vignette 暗角互补：亮红框强调危险）
     const bw = 6;
     this._lowHpBorder = this.add.graphics().setDepth(95).setVisible(false);
-    this._lowHpBorder.lineStyle(bw, 0xff2a44, 1);
+    this._lowHpBorder.lineStyle(bw, THEME.dangerBorder, 1);
     this._lowHpBorder.strokeRect(bw / 2, bw / 2, GAME_WIDTH - bw, GAME_HEIGHT - bw);
     this._lowHpBorderBase = 0;
 
     // 连击 HUD（常驻，复用不重建）：击杀连击计数，脉冲缩放 + 档位变色（D）
     // y≈170 顶部区域（错层到 Boss 血条之下），不挡玩家判定区（约 y≈860）；初始隐藏，COMBO_CHANGED 触发显隐
     this.comboText = this.add.text(GAME_WIDTH / 2, 170, '', {
-      fontFamily: 'sans-serif', fontSize: '42px', fontStyle: '800', color: '#7cf3ff', align: 'center',
+      fontFamily: THEME.fontFamily, fontSize: '42px', fontStyle: '800', color: THEME.titleColor, align: 'center',
     }).setOrigin(0.5).setDepth(120).setShadow(0, 0, '#000000', 8, true, true).setVisible(false);
     this._lastComboPulse = 0;     // 连击脉冲频控（120ms）
 
@@ -215,10 +215,10 @@ export default class UIScene extends Phaser.Scene {
     const cy = GAME_HEIGHT * 0.4;
     const cont = this.add.container(cx, cy).setDepth(130);
     const title = this.add.text(0, 0, name, {
-      fontFamily: 'sans-serif', fontSize: '46px', fontStyle: '800', color: '#aef6ff',
-    }).setOrigin(0.5).setShadow(0, 0, '#2a86c0', 22, true, true);
+      fontFamily: THEME.fontFamily, fontSize: '46px', fontStyle: '800', color: THEME.titleBright,
+    }).setOrigin(0.5).setShadow(0, 0, THEME.titleShadow, 22, true, true);
     const subT = this.add.text(0, 46, sub, {
-      fontFamily: 'sans-serif', fontSize: '16px', color: '#7cf3ff', fontStyle: '700',
+      fontFamily: THEME.fontFamily, fontSize: '16px', color: THEME.titleColor, fontStyle: '700',
     }).setOrigin(0.5).setAlpha(0.9).setLetterSpacing(6);
     cont.add([title, subT]);
     if (PREFERS_REDUCED) {
@@ -241,17 +241,17 @@ export default class UIScene extends Phaser.Scene {
     const WM_COLORS = { fire: 0xff6633, ice: 0x33ccff, thunder: 0xffe14a };
     this._wmColors = WM_COLORS;
     this.wmTitle = this.add.text(16, 146, '僚机', {
-      fontFamily: 'sans-serif', fontSize: '12px', color: '#9ff0ff',
+      fontFamily: THEME.fontFamily, fontSize: '12px', color: THEME.textCyan,
     }).setDepth(101).setVisible(false);
     this.wmCountText = this.add.text(16, 164, '', {
-      fontFamily: 'sans-serif', fontSize: '11px', color: '#aaccdd',
+      fontFamily: THEME.fontFamily, fontSize: '11px', color: THEME.textMuted,
     }).setDepth(101).setVisible(false);
     this.wmDots = [];
     for (let i = 0; i < WINGMAN.MAX; i++) {
       const x = 58 + i * 22, y = 152;
       const g = this.add.graphics().setDepth(101).setVisible(false);
       const cd = this.add.text(x, y, '', {
-        fontFamily: 'sans-serif', fontSize: '10px', color: '#ff8888',
+        fontFamily: THEME.fontFamily, fontSize: '10px', color: THEME.textWmCd,
       }).setOrigin(0.5).setDepth(102).setVisible(false);
       this.wmDots.push({ g, cd, x, y });
     }
@@ -280,9 +280,9 @@ export default class UIScene extends Phaser.Scene {
       if (s.focus && s.focus.active) {
         const fx = s.focus.x, fy = s.focus.y;
         this.wmFocus.setVisible(true).clear();
-        this.wmFocus.lineStyle(2, 0xffd54a, 0.95);
+        this.wmFocus.lineStyle(2, THEME.coinHex, 0.95);
         this.wmFocus.strokeCircle(fx, fy, 26);
-        this.wmFocus.lineStyle(2, 0xffd54a, 0.7);
+        this.wmFocus.lineStyle(2, THEME.coinHex, 0.7);
         this.wmFocus.beginPath();
         this.wmFocus.moveTo(fx - 34, fy); this.wmFocus.lineTo(fx - 30, fy);
         this.wmFocus.moveTo(fx + 30, fy); this.wmFocus.lineTo(fx + 34, fy);
@@ -301,8 +301,7 @@ export default class UIScene extends Phaser.Scene {
   /** 渲染玩家元素指示（元素核心轮换用）：无元素隐藏，有元素显示彩色「元素 · X」 */
   _renderElement(el) {
     if (!this.elementText) return;
-    const INFO = { fire: ['火', '#ff7a3a'], ice: ['冰', '#6fd6ff'], thunder: ['雷', '#ffe14a'] };
-    if (el && INFO[el]) {
+    const INFO = { fire: ['火', '#ff7a3a'], ice: ['冰', '#6fd6ff'], thunder: ['雷', '#ffe14a'] };    if (el && INFO[el]) {
       this.elementText.setText(`元素 · ${INFO[el][0]}`).setColor(INFO[el][1]).setVisible(true);
     } else {
       this.elementText.setVisible(false);
@@ -367,7 +366,7 @@ export default class UIScene extends Phaser.Scene {
       this.bossBar.setVisible(true);
       const name = (info && info.name) ? info.name : 'BOSS';
       if (this.bossNameText) this.bossNameText.setText(name).setVisible(true);
-      this.flashCenter(`${name} 来袭`, '#ff5566');
+      this.flashCenter(`${name} 来袭`, THEME.textRed);
       if (this.waveText) this.waveText.setText('BOSS 战');
     };
     EventBus.on(EVENTS.BOSS_SPAWNED, this._onBossSpawn);
@@ -382,7 +381,7 @@ export default class UIScene extends Phaser.Scene {
 
     this._onBossPhase = (phase) => {
       const label = phase >= 3 ? '狂暴形态！' : `第 ${phase} 阶段`;
-      this.flashCenter(label, phase >= 3 ? '#ff5566' : '#ffd54a');
+      this.flashCenter(label, phase >= 3 ? THEME.textRed : THEME.textGold);
     };
     EventBus.on(EVENTS.BOSS_PHASE, this._onBossPhase);
 
@@ -413,7 +412,7 @@ export default class UIScene extends Phaser.Scene {
       }
       // 每次连击变化都更新文本 + 档位变色（combo<20 青 / 20~39 金 / ≥40 红）
       this.comboText.setText(`连击 ×${combo}\n×${(mult || 1).toFixed(1)}`);
-      this.comboText.setColor(combo >= 40 ? '#ff5566' : combo >= 20 ? '#ffd54a' : '#7cf3ff');
+      this.comboText.setColor(combo >= 40 ? THEME.textRed : combo >= 20 ? THEME.textGold : THEME.titleColor);
       // combo>1 即立即显示（优先于频控，保证断连后 120ms 内重新击杀也能立即显示）
       this.comboText.setVisible(true);
       // 频控：120ms 内跳过脉冲重放，防高频击杀抖动（但仍刷新文本/颜色/显隐）
@@ -554,9 +553,9 @@ export default class UIScene extends Phaser.Scene {
     this._lowHpBase = 0;
   }
 
-  flashCenter(text, color = '#7cf3ff') {
+  flashCenter(text, color = THEME.titleColor) {
     const t = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 40, text, {
-      fontFamily: 'sans-serif', fontSize: '38px', fontStyle: '800', color,
+      fontFamily: THEME.fontFamily, fontSize: '38px', fontStyle: '800', color,
     }).setOrigin(0.5).setDepth(120).setAlpha(0).setShadow(0, 0, '#000000', 8, true, true);
     this.tweens.add({
       targets: t, alpha: 1, scale: 1.2, duration: 300, yoyo: true, hold: 500,
@@ -586,12 +585,12 @@ export default class UIScene extends Phaser.Scene {
     const c = this.add.container(GAME_WIDTH / 2, -60).setDepth(150);
     const w = 300, h = 64;
     const bg = this.add.graphics();
-    bg.fillStyle(0x0d2840, 0.96); bg.fillRoundedRect(-w / 2, -h / 2, w, h, 12);
-    bg.lineStyle(2, 0x7cf3ff, 1); bg.strokeRoundedRect(-w / 2, -h / 2, w, h, 12);
+    bg.fillStyle(THEME.cardBg, 0.96); bg.fillRoundedRect(-w / 2, -h / 2, w, h, 12);
+    bg.lineStyle(2, THEME.accent, 1); bg.strokeRoundedRect(-w / 2, -h / 2, w, h, 12);
     const ico = this.add.image(-w / 2 + 18, 0, iconKey).setScale(0.85);
-    const tag = this.add.text(-w / 2 + 54, -16, '成就解锁', { fontFamily: 'sans-serif', fontSize: '12px', color: '#ffd86b', fontStyle: '800' }).setOrigin(0, 0.5);
-    const nm = this.add.text(-w / 2 + 54, 2, label, { fontFamily: 'sans-serif', fontSize: '17px', color: '#ffffff', fontStyle: '800' }).setOrigin(0, 0.5);
-    const ds = this.add.text(-w / 2 + 54, 20, desc, { fontFamily: 'sans-serif', fontSize: '11px', color: '#aaccdd' }).setOrigin(0, 0.5);
+    const tag = this.add.text(-w / 2 + 54, -16, '成就解锁', { fontFamily: THEME.fontFamily, fontSize: '12px', color: THEME.textGoldLight, fontStyle: '800' }).setOrigin(0, 0.5);
+    const nm = this.add.text(-w / 2 + 54, 2, label, { fontFamily: THEME.fontFamily, fontSize: '17px', color: THEME.white, fontStyle: '800' }).setOrigin(0, 0.5);
+    const ds = this.add.text(-w / 2 + 54, 20, desc, { fontFamily: THEME.fontFamily, fontSize: '11px', color: THEME.textMuted }).setOrigin(0, 0.5);
     c.add([bg, ico, tag, nm, ds]);
     this.tweens.add({
       targets: c, y: 100, duration: 220, ease: 'Cubic.out',

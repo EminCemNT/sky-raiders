@@ -22,6 +22,33 @@ const LAYER_PRESETS = [
   { count: 14, speed: 175, scale: [1.05, 1.55], alpha: 1.00, tint: 0x7cf3ff }, // 近：亮青大星
 ];
 
+/**
+ * UI P2 背景主题（菜单 / 机库，纯视觉装饰参数化）。
+ * 复用 Starfield 已有 nebula / cloudTint / silhouette 能力：
+ *   - 菜单：青色星云脉动 + 楼群近景剪影（科幻都市天际线）。
+ *   - 机库：淡紫青星云 + 陨石近景剪影；星云/星空会随所选战机 tint。
+ */
+export const MENU_BG_THEME = {
+  starTints: [0x2a4a6a, 0x6f9fd6, 0xbfe0ff, 0x7cf3ff],
+  nebula: { tints: [0x3a1f6e, 0x1f3a6e, 0x0f2a4a], alpha: 0.18 },
+  cloudTint: 0x9fd8ff,
+  silhouette: { kind: 'building', color: 0x0a101c, density: 1, speed: 40 },
+};
+
+export const HANGAR_BG_THEME = {
+  starTints: [0x2a4a6a, 0x6f9fd6, 0xbfe0ff, 0x9fd8ff],
+  nebula: { tints: [0x1f2a5a, 0x2a1f5a, 0x1f3a4a], alpha: 0.16 },
+  cloudTint: 0x9fd8ff,
+  silhouette: { kind: 'asteroid', color: 0x0a101c, density: 1, speed: 34 },
+};
+
+/** 颜色乘法（白纹理 tint 叠加）：base * tint 逐通道 /255，用于「星空随战机 tint 跟随」 */
+function mulTint(base, tint) {
+  const br = (base >> 16) & 0xff, bg = (base >> 8) & 0xff, bb = base & 0xff;
+  const tr = (tint >> 16) & 0xff, tg = (tint >> 8) & 0xff, tb = tint & 0xff;
+  return ((br * tr / 255) << 16) | ((bg * tg / 255) << 8) | (bb * tb / 255);
+}
+
 export function createStarfield(scene, { layers = 4, starTints = null, theme = null } = {}) {
   const reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   const stars = [];
@@ -41,6 +68,7 @@ export function createStarfield(scene, { layers = 4, starTints = null, theme = n
         .setAlpha(c.alpha)
         .setDepth(-100 + l)
         .setTint(tint);
+      s._baseTint = tint;   // 记录基色，供 setTint(战机色) 乘算叠加
       s._speed = c.speed * (0.85 + scale * 0.3); // 越大越快，强化纵深
       stars.push(s);
     }
@@ -64,6 +92,7 @@ export function createStarfield(scene, { layers = 4, starTints = null, theme = n
         .setAlpha(nebulaCfg.alpha != null ? nebulaCfg.alpha : 0.5)
         .setTint(tints[i % tints.length])
         .setScale(Phaser.Math.FloatBetween(0.8, 1.6));
+      img._baseTint = tints[i % tints.length];
       img._speed = 8;
       img._layer = 'nebula';
       img._baseAlpha = img.alpha;
@@ -81,6 +110,7 @@ export function createStarfield(scene, { layers = 4, starTints = null, theme = n
         .setAlpha(0.5)
         .setTint(cloudTint)
         .setScale(Phaser.Math.FloatBetween(0.7, 1.4));
+      img._baseTint = cloudTint;
       img._speed = 30;
       img._baseX = img.x;
       img._swayAmp = Phaser.Math.Between(20, 60);
@@ -113,11 +143,11 @@ export function createStarfield(scene, { layers = 4, starTints = null, theme = n
   let meteorTimer = Phaser.Math.Between(2200, 4200); // 首颗流星延迟
 
   if (!reduceMotion) {
-    // 能量流光带：少量竖向发光带，慢速向下流动 + 横向缓动（ADD 混合更"发光"）
+    // 能量流光带：少量竖向发光长条，慢速向下流动 + 横向缓动（ADD 混合更"发光"）
     const STREAM_COUNT = 4;
     for (let i = 0; i < STREAM_COUNT; i++) {
       const x = Phaser.Math.Between(40, GAME_WIDTH - 40);
-      const s = scene.add.image(x, Phaser.Math.Between(0, GAME_HEIGHT), 'particle')
+      const s = scene.add.image(x, Phaser.Math.Between(0, GAME_HEIGHT), 'particle_streak')
         .setDepth(-95)
         .setTint(0x7cf3ff)
         .setScale(2.2 + i * 0.6, 150 + i * 20)
@@ -181,8 +211,7 @@ export function createStarfield(scene, { layers = 4, starTints = null, theme = n
 
   return {
     update(dt) {
-      const d = dt / 1000;
-      for (const s of stars) {
+      const d = dt / 1000;      for (const s of stars) {
         s.y += s._speed * d;
         if (s.y > GAME_HEIGHT + 4) {
           s.y = -4;
@@ -228,6 +257,19 @@ export function createStarfield(scene, { layers = 4, starTints = null, theme = n
       meteors.forEach((m) => { scene.tweens.killTweensOf(m); m.destroy(); });
       meteors.length = 0;
       nebulaImgs.forEach((img) => scene.tweens.killTweensOf(img));
+    },
+    /**
+     * 机库用：让星空 / 星云 / 云层的色调随所选战机 tint 跟随（乘算叠加基色）。
+     * 传入 null/0 时回到基色（恢复默认观感）。
+     */
+    setTint(tint) {
+      if (!tint) {
+        stars.forEach((s) => s.setTint(s._baseTint));
+        bg.forEach((img) => { if (img._baseTint) img.setTint(img._baseTint); });
+        return;
+      }
+      stars.forEach((s) => s.setTint(mulTint(s._baseTint, tint)));
+      bg.forEach((img) => { if (img._baseTint) img.setTint(mulTint(img._baseTint, tint)); });
     },
     // 调试接口（供 QA 探针断言，不影响运行）
     _dbg: {

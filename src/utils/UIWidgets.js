@@ -3,13 +3,39 @@ import { COLORS } from '../config/GameConfig.js';
 
 // ── 全局视觉主题（统一各场景配色，避免魔法数散落）─────────────────
 export const THEME = {
+  // 字体（零外部字体：系统无衬线 / 分数等宽防跳动）
+  fontFamily: 'sans-serif',
+  scoreFont: 'Consolas, "Courier New", monospace',
+  // 标题 / 强调
   accent: COLORS.accent,            // 主霓虹青（与按钮描边一致）
-  titleColor: '#7cf3ff',            // 标题文字
+  titleColor: '#7cf3ff',            // 标题文字（主青）
+  titleBright: '#aef6ff',           // 标题亮色（比主青更亮）
   titleShadow: '#2a86c0',           // 标题投影色
   subColor: '#4a90c0',              // 副标题 / 英文小字
+  subBright: '#6fb6e6',             // 英文副标题（更亮）
+  // 正文层级
   textPrimary: '#cfe8ff',           // 主文字
   textSecondary: '#88bbdd',         // 次文字
-  textGold: '#ffd54a',              // 金币 / 成就强调
+  textMuted: '#aaccdd',             // 次级浅色
+  textDim: '#5a7a99',               // 弱提示
+  textDisabled: '#8899aa',          // 锁定 / 禁用
+  textDisabledDim: '#667788',
+  white: '#ffffff',
+  // 语义色
+  textGold: '#ffd54a',              // 金币 / 强调金
+  textGoldLight: '#ffd86b',         // 成就 / 新纪录浅金
+  textSuccess: '#7cffa0',           // 生命 / 任务完成绿
+  textAchieve: '#cfe8c0',           // 成就已解锁描述浅绿
+  textCyan: '#9ff0ff',              // 青色强调（元素 / 僚机）
+  textMint: '#c9a6ff',              // 能量值浅紫
+  textPink: '#ff8aa0',              // Boss 名粉
+  textRed: '#ff5566',               // 危险 / 失败红
+  textWmCd: '#ff8888',              // 僚机重生倒计时红
+  textSection: '#7fb8e0',           // 机库区块小标签
+  hudLabel: '#5fb0e0',              // HUD 小标签（SCORE）
+  dangerDeep: '#ff3355',            // Boss 名投影深红
+  shield: '#3ad1ff',                // 护盾青
+  magnet: '#ff4d6d',                // 磁力红
   // 面板（弹窗背景卡片）
   panelBg: 0x0a2236,
   panelBgAlpha: 0.94,
@@ -20,9 +46,30 @@ export const THEME = {
   btnBg: 0x123a5a,
   btnBgHover: 0x1b5580,
   btnStroke: COLORS.accent,
-  // 卡片（机库 / 关卡行）
+  // 卡片（机库 / 关卡行 / 升级行）
   cardBg: 0x0d2840,
   cardStroke: 0x2f6f96,
+  lockedBg: 0x16161e,
+  lockedStroke: 0x445566,
+  achBg: 0x163a2e,                  // 成就已解锁卡片底
+  // 机库选择器
+  chipBg: 0x102a44,
+  chipStroke: 0x3a7fb0,
+  arrowBg: 0x1b4a6b,
+  // 进度条 / 轨道
+  trackBg: 0x223344,
+  trackStroke: 0x557799,
+  trackFill: 0x66ccff,
+  success: 0x7cffa0,
+  // 结算页星级
+  starEmpty: 0x334455,
+  starEmptyStroke: 0x556677,
+  starFillStroke: 0xfff3b0,
+  // 低血红框告警
+  dangerBorder: 0xff2a44,
+  // 图形白 / 金色数值（Graphics 层用）
+  whiteHex: 0xffffff,
+  coinHex: 0xffd54a,
   // 星点默认色
   starTints: [0x9fd8ff, 0x7cf3ff, 0xffffff],
   // 战斗 HUD 配色（A5：血条 / 能量 / 暂停键 分离）
@@ -110,7 +157,7 @@ export class NeonButton {
     this.g = scene.add.graphics();
     this._drawBg(bgColor, stroke, 1);
     this.text = scene.add.text(0, 0, label, {
-      fontFamily: 'sans-serif', fontSize: `${opts.fontSize ?? 22}px`,
+      fontFamily: THEME.fontFamily, fontSize: `${opts.fontSize ?? 22}px`,
       fontStyle: '700', color: textColor,
     }).setOrigin(0.5);
     this.container.add([this.glowG, this.g, this.text]);
@@ -136,7 +183,7 @@ export class NeonButton {
     g.fillRoundedRect(-this.w / 2, -this.h / 2, this.w, this.h, r);
     g.lineStyle(2, stroke, 0.95);
     g.strokeRoundedRect(-this.w / 2, -this.h / 2, this.w, this.h, r);
-    g.lineStyle(1, 0xffffff, 0.1);
+    g.lineStyle(1, THEME.whiteHex, 0.1);
     g.strokeRoundedRect(-this.w / 2 + 3, -this.h / 2 + 3, this.w - 6, this.h - 6, r - 3);
   }
 
@@ -183,10 +230,10 @@ export function makeIconButton(scene, x, y, iconKey, opts = {}) {
   const bg = scene.add.circle(0, 0, r, bgColor, 0.85).setStrokeStyle(2, stroke, 0.9);
   const icon = scene.add.image(0, 0, iconKey).setScale(opts.iconScale ?? 1.6);
   const label = opts.label
-    ? scene.add.text(0, r + 14, opts.label, { fontFamily: 'sans-serif', fontSize: '13px', color: '#ffffff' }).setOrigin(0.5)
+    ? scene.add.text(0, r + 14, opts.label, { fontFamily: THEME.fontFamily, fontSize: '13px', color: THEME.white }).setOrigin(0.5)
     : null;
   const count = (opts.count !== undefined)
-    ? scene.add.text(0, r - 2, opts.count, { fontFamily: 'sans-serif', fontSize: '13px', color: '#ffd54a' }).setOrigin(0.5)
+    ? scene.add.text(0, r - 2, opts.count, { fontFamily: THEME.fontFamily, fontSize: '13px', color: THEME.textGold }).setOrigin(0.5)
     : null;
   const parts = [ring, bg, icon];
   if (label) parts.push(label);

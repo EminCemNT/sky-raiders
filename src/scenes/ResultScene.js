@@ -1,10 +1,12 @@
 import Phaser from 'phaser';
 import { SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, LEVELS } from '../config/GameConfig.js';
 import { createStarfield } from '../systems/Starfield.js';
-import { NeonButton } from '../utils/UIWidgets.js';
+import { NeonButton, NeonBar, THEME } from '../utils/UIWidgets.js';
 
 /**
  * ResultScene：关卡结算。显示胜负、星级、分数、金币，提供重来/返回。
+ * UI P2 信息层：NeonBar 完成度条（击杀/星级进度）+ 最高分 + 连击峰值面板。
+ * 纯视觉：不改任何伤害/连击/流程/数值；布局随数据行数动态下移，不遮挡既有元素。
  */
 export default class ResultScene extends Phaser.Scene {
   constructor() {
@@ -38,9 +40,9 @@ export default class ResultScene extends Phaser.Scene {
 
     // 标题
     const title = r.mode === 'endless' ? '无尽挑战结束' : (r.victory ? '关卡通过' : '任务失败');
-    const titleColor = r.mode === 'endless' ? '#7cf3ff' : (r.victory ? '#7cf3ff' : '#ff5566');
+    const titleColor = r.mode === 'endless' ? THEME.titleColor : (r.victory ? THEME.titleColor : THEME.textRed);
     this.add.text(cx, 200, title, {
-      fontFamily: 'sans-serif', fontSize: '48px', fontStyle: '800', color: titleColor,
+      fontFamily: THEME.fontFamily, fontSize: '48px', fontStyle: '800', color: titleColor,
     }).setOrigin(0.5).setShadow(0, 0, titleColor, 20, true, true);
 
     // Phase C：胜利全屏爆闪
@@ -57,12 +59,12 @@ export default class ResultScene extends Phaser.Scene {
       const names = r.newAchievements.map((a) => a.name).join('   ');
       // 标题行：勋章矢量图标 + 文本（取代 emoji 🏅，跨端字形一致）
       const achTitle = this.add.text(0, 0, '本局解锁成就', {
-        fontFamily: 'sans-serif', fontSize: '18px', color: '#ffd86b', fontStyle: '800',
+        fontFamily: THEME.fontFamily, fontSize: '18px', color: THEME.textGoldLight, fontStyle: '800',
       }).setOrigin(0.5);
       const achMedal = this.add.image(-achTitle.width / 2 - 16, 0, 'icon_medal').setScale(0.75);
       this.add.container(cx, 345, [achMedal, achTitle]);
       this.add.text(cx, 375, names, {
-        fontFamily: 'sans-serif', fontSize: '16px', color: COLORS.coin, fontStyle: '700',
+        fontFamily: THEME.fontFamily, fontSize: '16px', color: COLORS.coin, fontStyle: '700',
       }).setOrigin(0.5).setWordWrapWidth(GAME_WIDTH - 60);
     }
 
@@ -74,37 +76,75 @@ export default class ResultScene extends Phaser.Scene {
     ];
     if (r.mode === 'endless') lines.push({ label: '波次', value: `第 ${r.wave || 0} 波` });
     lines.push({ label: '最高分', value: r.bestScore ?? 0 });
+    const dataStartY = 400;
     lines.forEach((l, i) => {
-      this.add.text(cx, 400 + i * 40, `${l.label}   ${l.value}${l.newBest ? '  ★新纪录' : ''}`, {
-        fontFamily: 'sans-serif', fontSize: '22px',
-        color: l.newBest ? '#ffd86b' : '#cfe8ff',
+      this.add.text(cx, dataStartY + i * 40, `${l.label}   ${l.value}${l.newBest ? '  ★新纪录' : ''}`, {
+        fontFamily: THEME.fontFamily, fontSize: '22px',
+        color: l.newBest ? THEME.textGoldLight : THEME.textPrimary,
         fontStyle: l.newBest ? '800' : 'normal',
       }).setOrigin(0.5);
     });
 
+    // ── UI P2 信息层：完成度条（NeonBar）+ 连击峰值面板 ──
+    // 动态下移：数据行数（normal 4 行 / endless 5 行）决定信息层与按钮基准 Y，避免遮挡。
+    const dataEndY = dataStartY + lines.length * 40;
+    const barY = dataEndY + 18;
+    const comboY = barY + 56;
+    const btnY = comboY + 66;
+
+    // 完成度 = 加权 composite（击杀 50% + 金币 30% + 无伤 20%），直连星级评分；
+    // 探针/旧调用未传 composite 时回退为星级/3（星级进度语义）。
+    const completionRatio = r.composite != null
+      ? Phaser.Math.Clamp(r.composite, 0, 1)
+      : (r.stars ? Phaser.Math.Clamp(r.stars / 3, 0, 1) : 0.5);
+    this.completionRatio = completionRatio;
+    this.add.text(cx - 195, barY, '完成度', {
+      fontFamily: THEME.fontFamily, fontSize: '16px', color: THEME.textSecondary,
+    }).setOrigin(0, 0.5);
+    this.completionBar = new NeonBar(this, cx - 90, barY, 250, 14, {
+      color: THEME.coinHex, borderColor: 0x6a5a2a,
+    });
+    this.completionBar.setRatio(completionRatio);
+    this.add.text(cx + 175, barY, `${Math.round(completionRatio * 100)}%`, {
+      fontFamily: THEME.fontFamily, fontSize: '16px', fontStyle: '700', color: THEME.textGoldLight,
+    }).setOrigin(0, 0.5);
+
+    // 连击峰值面板（Graphics 画卡片：避免 Container+Rectangle 干扰既有 QA 判定 rsRectBtnCount）
+    const comboCard = this.add.graphics().setDepth(5);
+    comboCard.fillStyle(0x0a2236, 0.85).fillRoundedRect(cx - 200, comboY - 34, 400, 68, 12);
+    comboCard.lineStyle(2, 0x4fc3ff, 0.5).strokeRoundedRect(cx - 200, comboY - 34, 400, 68, 12);
+    this.add.text(cx - 150, comboY, '连击峰值', {
+      fontFamily: THEME.fontFamily, fontSize: '16px', color: THEME.textSecondary,
+    }).setOrigin(0, 0.5);
+    const peak = r.maxCombo || 0;
+    this.comboPeakText = this.add.text(cx + 130, comboY, `×${peak}`, {
+      fontFamily: THEME.fontFamily, fontSize: '28px', fontStyle: '800',
+      color: peak >= 20 ? THEME.textGold : THEME.titleColor,
+    }).setOrigin(1, 0.5);
+
     // 按钮：无尽模式 -> 再来一局（仍进无尽）；胜利且可解锁 -> 下一关；其余 -> 重来/菜单
     if (r.mode === 'endless') {
-      this.makeButton(cx, 580, '再来一局', () => {
+      this.makeButton(cx, btnY, '再来一局', () => {
         this.scene.start(SCENES.GAME, { mode: 'endless', levelId: 1 });
       });
-      this.makeButton(cx, 660, '返回菜单', () => {
+      this.makeButton(cx, btnY + 80, '返回菜单', () => {
         this.scene.start(SCENES.MENU);
       });
     } else if (r.victory && (r.levelId || 1) < LEVELS.length) {
-      this.makeButton(cx, 540, '下一关', () => {
+      this.makeButton(cx, btnY, '下一关', () => {
         this.scene.start(SCENES.GAME, { levelId: (r.levelId || 1) + 1 });
       });
-      this.makeButton(cx, 620, '再玩一次', () => {
+      this.makeButton(cx, btnY + 80, '再玩一次', () => {
         this.scene.start(SCENES.GAME, { levelId: r.levelId || 1 });
       });
-      this.makeButton(cx, 700, '返回菜单', () => {
+      this.makeButton(cx, btnY + 160, '返回菜单', () => {
         this.scene.start(SCENES.MENU);
       });
     } else {
-      this.makeButton(cx, 580, r.victory ? '再玩一次' : '重新挑战', () => {
+      this.makeButton(cx, btnY, r.victory ? '再玩一次' : '重新挑战', () => {
         this.scene.start(SCENES.GAME, { levelId: r.levelId || 1 });
       });
-      this.makeButton(cx, 660, '返回菜单', () => {
+      this.makeButton(cx, btnY + 80, '返回菜单', () => {
         this.scene.start(SCENES.MENU);
       });
     }
@@ -115,8 +155,8 @@ export default class ResultScene extends Phaser.Scene {
     for (let i = 0; i < 3; i++) {
       const filled = i < count;
       const x = cx + (i - 1) * gap;
-      const star = this.add.star(x, y, 5, 14, 30, filled ? COLORS.coin : 0x334455);
-      star.setStrokeStyle(2, filled ? 0xfff3b0 : 0x556677);
+      const star = this.add.star(x, y, 5, 14, 30, filled ? COLORS.coin : THEME.starEmpty);
+      star.setStrokeStyle(2, filled ? THEME.starFillStroke : THEME.starEmptyStroke);
       if (filled) {
         star.setScale(0);
         this.tweens.add({

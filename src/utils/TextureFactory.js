@@ -76,6 +76,10 @@ export function generateAll(scene) {
   drawBulletEnemy(g); g.generateTexture('bullet_enemy', 18, 18);
   drawPowerup(g); g.generateTexture('powerup', 26, 26);
   drawParticle(g); g.generateTexture('particle', 6, 6);
+  // 粒子多纹理（UI P2）：圆点/长条/星形，供 VFX 按用途分派（可 tint 复用）
+  drawParticleDot(g); g.generateTexture('particle_dot', 8, 8);
+  drawParticleStreak(g); g.generateTexture('particle_streak', 8, 24);
+  drawParticleSpark(g); g.generateTexture('particle_spark', 16, 16);
   drawStar(g); g.generateTexture('star', 4, 4);
   drawBgNebula(g); g.generateTexture('bg_nebula', 256, 256);
   drawBgCloud(g); g.generateTexture('bg_cloud', 160, 80);
@@ -563,6 +567,43 @@ function drawParticle(g) {
   g.clear();
   g.fillStyle(0xffffff, 1);
   g.fillRect(0, 0, 6, 6);
+}
+
+// ─── 圆点粒子 softDot（8×8 径向柔光，爆炸/冲击波用，可 tint）────
+function drawParticleDot(g) {
+  g.clear();
+  const cx = 4, cy = 4;
+  for (let r = 4; r > 0.4; r -= 0.4) {
+    const t = 1 - r / 4; // 中心亮、边缘透明
+    g.fillStyle(0xffffff, 0.10 + t * 0.80);
+    g.fillCircle(cx, cy, r);
+  }
+}
+
+// ─── 长条粒子 streak（8×24 竖向柔光尾迹，尾焰/拖尾用，可 tint）──
+function drawParticleStreak(g) {
+  g.clear();
+  const cx = 4, cy = 12;
+  for (let w = 6; w > 0.5; w -= 0.8) {
+    const t = 1 - w / 6; // 中间宽亮、外缘细透
+    g.fillStyle(0xffffff, 0.05 + t * 0.55);
+    g.fillRoundedRect(cx - w / 2, cy - 12, w, 24, w / 2);
+  }
+}
+
+// ─── 星形粒子 sparkStar（16×16 四角火花，受击/枪口闪光用）───────
+function drawParticleSpark(g) {
+  g.clear();
+  const cx = 8, cy = 8;
+  g.fillStyle(0xffffff, 0.30);
+  g.fillCircle(cx, cy, 6);   // 柔和光晕
+  g.fillStyle(0xffffff, 1);
+  g.fillPoints([
+    { x: cx, y: 0.5 }, { x: cx + 2.4, y: 5.6 }, { x: 15.5, y: cy },
+    { x: cx + 2.4, y: 10.4 }, { x: cx, y: 15.5 },
+    { x: 5.6, y: 10.4 }, { x: 0.5, y: cy },
+    { x: 5.6, y: 5.6 },
+  ], true);
 }
 
 // ─── 背景星点 ────────────────────────────────────────────────────

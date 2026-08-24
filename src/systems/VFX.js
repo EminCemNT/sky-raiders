@@ -19,7 +19,7 @@ const prefersReduced = (typeof window !== 'undefined' && window.matchMedia
  */
 export function explosion(scene, x, y, color, scale = 1) {
   if (prefersReduced) return;
-  const p = scene.add.particles(x, y, 'particle', {
+  const p = scene.add.particles(x, y, 'particle_dot', {
     speed: { min: 70 * scale, max: 280 * scale },
     lifespan: 550,
     scale: { start: 1.7 * scale, end: 0 },
@@ -35,10 +35,10 @@ export function explosion(scene, x, y, color, scale = 1) {
   scene.time.delayedCall(600, () => { if (p && p.active) p.destroy(); });
 }
 
-/** 子弹击中目标时的点状闪光 */
+/** 子弹击中目标时的点状闪光（星形火花） */
 export function hitSpark(scene, x, y) {
   if (prefersReduced) return;
-  const p = scene.add.particles(x, y, 'particle', {
+  const p = scene.add.particles(x, y, 'particle_spark', {
     speed: { min: 25, max: 100 },
     lifespan: 150,
     scale: { start: 0.7, end: 0 },
@@ -53,10 +53,10 @@ export function hitSpark(scene, x, y) {
   scene.time.delayedCall(200, () => { if (p && p.active) p.destroy(); });
 }
 
-/** 炸弹/星风暴：全屏冲击波 + 屏震 + 闪光 */
+/** 炸弹/星风暴：全屏冲击波 + 屏震 + 闪光（圆点柔光） */
 export function bombShockwave(scene, x, y) {
   if (prefersReduced) return;
-  const p = scene.add.particles(x, y, 'particle', {
+  const p = scene.add.particles(x, y, 'particle_dot', {
     speed: { min: 140, max: 460 },
     lifespan: 750,
     scale: { start: 2.4, end: 0 },
@@ -113,7 +113,7 @@ export function bossDeathExplosion(scene, boss, color) {
  */
 export function attachEnemyThruster(scene, enemy, color = COLORS.enemy) {
   if (prefersReduced) return null;
-  const t = scene.add.particles(0, 0, 'particle', {
+  const t = scene.add.particles(0, 0, 'particle_streak', {
     speedY: { min: 40, max: 100 },
     lifespan: 240,
     scale: { start: 0.75, end: 0 },
@@ -127,10 +127,10 @@ export function attachEnemyThruster(scene, enemy, color = COLORS.enemy) {
   return t;
 }
 
-/** 玩家尾焰（比默认更浓厚） */
+/** 玩家尾焰（比默认更浓厚，长条拖尾） */
 export function attachPlayerThruster(scene, player) {
   if (prefersReduced) return null;
-  const t = scene.add.particles(0, 0, 'particle', {
+  const t = scene.add.particles(0, 0, 'particle_streak', {
     speedY: { min: 90, max: 200 },
     lifespan: 360,
     scale: { start: 1.3, end: 0 },
@@ -144,10 +144,10 @@ export function attachPlayerThruster(scene, player) {
   return t;
 }
 
-/** 玩家子弹尾迹（青色发光，ADD 混合）。reduced-motion 下返回 null */
+/** 玩家子弹尾迹（青色发光长条，ADD 混合）。reduced-motion 下返回 null */
 export function bulletTrail(scene) {
   if (prefersReduced) return null;
-  const e = scene.add.particles(0, 0, 'particle', {
+  const e = scene.add.particles(0, 0, 'particle_streak', {
     lifespan: 160,
     scale: { start: 0.9, end: 0 },
     alpha: { start: 0.8, end: 0 },
@@ -159,10 +159,10 @@ export function bulletTrail(scene) {
   return e;
 }
 
-/** 敌弹光晕（红橙脉冲，ADD 混合）。reduced-motion 下返回 null */
+/** 敌弹光晕（红橙脉冲圆点，ADD 混合）。reduced-motion 下返回 null */
 export function enemyBulletGlow(scene) {
   if (prefersReduced) return null;
-  const e = scene.add.particles(0, 0, 'particle', {
+  const e = scene.add.particles(0, 0, 'particle_dot', {
     lifespan: 200,
     scale: { start: { min: 0.6, max: 1.1 }, end: 0 },
     alpha: { start: 0.7, end: 0 },
@@ -174,10 +174,10 @@ export function enemyBulletGlow(scene) {
   return e;
 }
 
-/** 机首瞬时发射闪光（复用粒子白 emitter 一次），激光束创建时调用 */
+/** 机首瞬时发射闪光（星形火花粒子一次），激光束创建时调用 */
 export function laserMuzzleFlash(scene, x, y) {
   if (prefersReduced) return;
-  const p = scene.add.particles(x, y, 'particle', {
+  const p = scene.add.particles(x, y, 'particle_spark', {
     speed: { min: 40, max: 120 },
     lifespan: 180,
     scale: { start: 1.2, end: 0 },
@@ -199,7 +199,7 @@ export function laserMuzzleFlash(scene, x, y) {
  */
 export function createBulletTrails(scene) {
   if (prefersReduced) return null;
-  const mk = (tint) => scene.add.particles(0, 0, 'particle', {
+  const mk = (tint) => scene.add.particles(0, 0, 'particle_streak', {
     lifespan: 160,
     scale: { start: 0.9, end: 0 },
     alpha: { start: 0.8, end: 0 },
@@ -226,14 +226,14 @@ export function createBulletTrails(scene) {
  */
 export function warmup(scene) {
   if (prefersReduced) return;
-  const hs = scene.add.particles(-300, -300, 'particle', {
+  const hs = scene.add.particles(-300, -300, 'particle_spark', {
     speed: { min: 25, max: 100 }, lifespan: 150, scale: { start: 0.7, end: 0 },
     alpha: { start: 0.9, end: 0 }, quantity: 6, blendMode: 'ADD',
     tint: [0xffffff, 0xffd54a, 0x8fe3ff, 0xffaa33], emitting: false,
   });
   hs.setDepth(55);
   hs.explode(1);
-  const ex = scene.add.particles(-300, -300, 'particle', {
+  const ex = scene.add.particles(-300, -300, 'particle_dot', {
     speed: { min: 70, max: 280 }, lifespan: 550, scale: { start: 1.7, end: 0 },
     alpha: { start: 0.9, end: 0 }, quantity: 22, blendMode: 'ADD',
     tint: [COLORS.enemy, 0xffaa33, 0xffffff, 0xff6622], gravityY: 18, emitting: false,

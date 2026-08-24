@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, LEVELS, DIFFICULTIES } from '../config/GameConfig.js';
 import { SaveManager } from '../utils/SaveManager.js';
 import { AchievementManager } from '../systems/AchievementManager.js';
-import { createStarfield } from '../systems/Starfield.js';
+import { createStarfield, MENU_BG_THEME } from '../systems/Starfield.js';
 import { audio } from '../systems/AudioSystem.js';
 import { NeonButton, THEME } from '../utils/UIWidgets.js';
 import HangarScene from './HangarScene.js';
@@ -23,8 +23,8 @@ export default class MenuScene extends Phaser.Scene {
     // reduced-motion 偏好（子面板动画降级）
     this.reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
-    // 背景滚动星空
-    this.starfield = createStarfield(this);
+    // 背景滚动星空（UI P2：主题化 = 星云脉动 + 近景剪影，reduced-motion 自动降级为静态）
+    this.starfield = createStarfield(this, { theme: MENU_BG_THEME });
 
     // 动态注册机库场景（GameConfig 只读，未登记 HANGAR，故运行时注册一次）
     if (!this.scene.get('HangarScene')) {
@@ -33,17 +33,17 @@ export default class MenuScene extends Phaser.Scene {
 
     // 标题（霓虹辉光层 + 本体 + 呼吸脉动）
     this.titleGlow = this.add.text(cx, 218, '苍穹战机', {
-      fontFamily: 'sans-serif', fontSize: '62px', fontStyle: '800', color: '#7cf3ff',
-    }).setOrigin(0.5).setShadow(0, 0, '#7cf3ff', 38, true, true).setAlpha(0.32).setDepth(1);
+      fontFamily: THEME.fontFamily, fontSize: '62px', fontStyle: '800', color: THEME.titleColor,
+    }).setOrigin(0.5).setShadow(0, 0, THEME.titleColor, 38, true, true).setAlpha(0.32).setDepth(1);
     this.title = this.add.text(cx, 218, '苍穹战机', {
-      fontFamily: 'sans-serif', fontSize: '58px', fontStyle: '800', color: '#aef6ff',
-    }).setOrigin(0.5).setShadow(0, 0, '#2a86c0', 24, true, true).setDepth(2);
+      fontFamily: THEME.fontFamily, fontSize: '58px', fontStyle: '800', color: THEME.titleBright,
+    }).setOrigin(0.5).setShadow(0, 0, THEME.titleShadow, 24, true, true).setDepth(2);
     this.tweens.add({ targets: [this.title, this.titleGlow], scale: { from: 1, to: 1.035 }, duration: 1700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     this.tweens.add({ targets: this.titleGlow, alpha: { from: 0.26, to: 0.5 }, duration: 1700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
     // 英文名（宽字距 + 副色呼吸）
     this.subTitle = this.add.text(cx, 284, 'S K Y   R A I D E R S', {
-      fontFamily: 'sans-serif', fontSize: '17px', color: '#6fb6e6', fontStyle: '700',
+      fontFamily: THEME.fontFamily, fontSize: '17px', color: THEME.subBright, fontStyle: '700',
     }).setOrigin(0.5).setAlpha(0.75).setDepth(2).setLetterSpacing(8);
     this.tweens.add({ targets: this.subTitle, alpha: { from: 0.5, to: 0.95 }, duration: 2200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
@@ -129,17 +129,17 @@ export default class MenuScene extends Phaser.Scene {
     // 存档信息（含全局最高分）
     this.saveInfoText = this.add.text(cx, GAME_HEIGHT - 44,
       this._saveInfoLabel(), {
-      fontFamily: 'sans-serif', fontSize: '16px', color: '#88bbdd',
+      fontFamily: THEME.fontFamily, fontSize: '16px', color: THEME.textSecondary,
     }).setOrigin(0.5).setAlpha(0.8);
 
     this.add.text(cx, GAME_HEIGHT - 20,
       '移动：拖动 / 方向键     开火：自动     炸弹：空格 / 屏幕按钮', {
-      fontFamily: 'sans-serif', fontSize: '13px', color: '#5a7a99',
+      fontFamily: THEME.fontFamily, fontSize: '13px', color: THEME.textDim,
     }).setOrigin(0.5);
 
     // 版本号（右上角装饰）
     this.add.text(GAME_WIDTH - 14, 14, 'v1.4.0', {
-      fontFamily: 'sans-serif', fontSize: '13px', color: '#4a90c0',
+      fontFamily: THEME.fontFamily, fontSize: '13px', color: THEME.subColor,
     }).setOrigin(1, 0).setAlpha(0.6).setDepth(50);
 
     // 键盘也能开始
@@ -179,12 +179,12 @@ export default class MenuScene extends Phaser.Scene {
       .setOrigin(0).setInteractive();
     ov.add(dim);
     this.addPanel(ov, cx);
-    this.addGlowTitle(ov, cx, 250, '设置 · 音量', '#7cf3ff');
+    this.addGlowTitle(ov, cx, 250, '设置 · 音量', THEME.titleColor);
 
     // 四档难度按钮（P0）：一排四档，当前档选中高亮；点击切换 → 持久化 + 刷新高亮
     this._difficultyBtns = [];
     const diffLabel = this.add.text(cx, 302, '难度', {
-      fontFamily: 'sans-serif', fontSize: '18px', color: '#cfe8ff',
+      fontFamily: THEME.fontFamily, fontSize: '18px', color: THEME.textPrimary,
     }).setOrigin(0.5);
     ov.add(diffLabel);
     const btnW = 92, btnH = 46, gap = 8;
@@ -233,7 +233,7 @@ export default class MenuScene extends Phaser.Scene {
       .setOrigin(0).setInteractive();
     ov.add(dim);
     this.addPanel(ov, cx);
-    this.addGlowTitle(ov, cx, 110, '选择关卡', '#7cf3ff');
+    this.addGlowTitle(ov, cx, 110, '选择关卡', THEME.titleColor);
 
     const save = SaveManager.load();
     const cardW = 380, cardH = 132, gap = 16;
@@ -243,23 +243,23 @@ export default class MenuScene extends Phaser.Scene {
       const unlocked = lvl.id <= (save.unlockedLevel || 1);
       const stars = save.levelStars[lvl.id] || 0;
       const c = this.add.container(cx, y);
-      const bgColor = unlocked ? 0x123a5a : 0x16161e;
+      const bgColor = unlocked ? THEME.btnBg : THEME.lockedBg;
       const bg = this.add.rectangle(0, 0, cardW, cardH, bgColor, 0.95)
-        .setStrokeStyle(2, unlocked ? lvl.theme.accent : 0x445566);
+        .setStrokeStyle(2, unlocked ? lvl.theme.accent : THEME.lockedStroke);
       c.add(bg);
       c.add(this.add.text(-cardW / 2 + 18, -cardH / 2 + 18, lvl.name, {
-        fontFamily: 'sans-serif', fontSize: '24px', fontStyle: '700',
-        color: unlocked ? '#ffffff' : '#8899aa',
+        fontFamily: THEME.fontFamily, fontSize: '24px', fontStyle: '700',
+        color: unlocked ? THEME.white : THEME.textDisabled,
       }).setOrigin(0, 0));
       const accentHex = '#' + lvl.theme.accent.toString(16).padStart(6, '0');
       c.add(this.add.text(-cardW / 2 + 18, -cardH / 2 + 52, `Boss · ${lvl.boss.name}`, {
-        fontFamily: 'sans-serif', fontSize: '15px',
-        color: unlocked ? accentHex : '#667788',
+        fontFamily: THEME.fontFamily, fontSize: '15px',
+        color: unlocked ? accentHex : THEME.textDisabledDim,
       }).setOrigin(0, 0));
       for (let s = 0; s < 3; s++) {
         const st = this.add.star(-cardW / 2 + 26 + s * 34, cardH / 2 - 26, 5, 7, 15,
-          s < stars ? COLORS.coin : 0x334455);
-        st.setStrokeStyle(2, s < stars ? 0xfff3b0 : 0x556677);
+          s < stars ? COLORS.coin : THEME.starEmpty);
+        st.setStrokeStyle(2, s < stars ? THEME.starFillStroke : THEME.starEmptyStroke);
         c.add(st);
       }
       if (unlocked) {
@@ -268,8 +268,8 @@ export default class MenuScene extends Phaser.Scene {
           hitAreaCallback: (rect, x, y) => rect.contains(x, y),
           useHandCursor: true,
         });
-        c.on('pointerover', () => bg.setFillStyle(0x1b5580, 1));
-        c.on('pointerout', () => bg.setFillStyle(0x123a5a, 0.95));
+        c.on('pointerover', () => bg.setFillStyle(THEME.btnBgHover, 1));
+        c.on('pointerout', () => bg.setFillStyle(THEME.btnBg, 0.95));
         c.on('pointerdown', () => {
           audio.sfx('ui');
           this.closeLevelSelect();
@@ -302,7 +302,7 @@ export default class MenuScene extends Phaser.Scene {
       .setOrigin(0).setInteractive();
     ov.add(dim);
     this.addPanel(ov, cx);
-    this.addGlowTitle(ov, cx, 70, '成就勋章', '#ffd86b');
+    this.addGlowTitle(ov, cx, 70, '成就勋章', THEME.textGoldLight);
 
     const list = AchievementManager.getAll();
     const cols = 2, cardW = 230, cardH = 96, gapX = 16, gapY = 14;
@@ -313,19 +313,19 @@ export default class MenuScene extends Phaser.Scene {
       const x = startX + col * (cardW + gapX);
       const y = startY + row * (cardH + gapY);
       const c = this.add.container(x, y);
-      const bgColor = a.unlocked ? 0x163a2e : 0x16161e;
+      const bgColor = a.unlocked ? THEME.achBg : THEME.lockedBg;
       const bg = this.add.rectangle(0, 0, cardW, cardH, bgColor, 0.96)
-        .setStrokeStyle(2, a.unlocked ? COLORS.coin : 0x445566);
+        .setStrokeStyle(2, a.unlocked ? COLORS.coin : THEME.lockedStroke);
       c.add(bg);
       // 矢量图标：已解锁勋章 / 未解锁锁（取代 a.icon emoji，跨端字形一致）
       c.add(this.add.image(-cardW / 2 + 18, -cardH / 2 + 20, a.unlocked ? 'icon_medal' : 'icon_lock').setScale(0.62));
       c.add(this.add.text(-cardW / 2 + 36, -cardH / 2 + 12, a.name, {
-        fontFamily: 'sans-serif', fontSize: '18px', fontStyle: '700',
-        color: a.unlocked ? '#ffffff' : '#8899aa',
+        fontFamily: THEME.fontFamily, fontSize: '18px', fontStyle: '700',
+        color: a.unlocked ? THEME.white : THEME.textDisabled,
       }).setOrigin(0, 0));
       c.add(this.add.text(-cardW / 2 + 14, -cardH / 2 + 42, a.desc, {
-        fontFamily: 'sans-serif', fontSize: '12px',
-        color: a.unlocked ? '#cfe8c0' : '#667788',
+        fontFamily: THEME.fontFamily, fontSize: '12px',
+        color: a.unlocked ? THEME.textAchieve : THEME.textDisabledDim,
         wordWrap: { width: cardW - 28 },
       }).setOrigin(0, 0));
       ov.add(c);
@@ -335,7 +335,7 @@ export default class MenuScene extends Phaser.Scene {
     const rows = Math.ceil(list.length / cols);
     ov.add(this.add.text(cx, startY + rows * (cardH + gapY) - 6,
       `已解锁 ${unlockedCount} / ${list.length}`, {
-      fontFamily: 'sans-serif', fontSize: '16px', color: '#aaccdd',
+      fontFamily: THEME.fontFamily, fontSize: '16px', color: THEME.textMuted,
     }).setOrigin(0.5));
 
     ov.add(this.makeMenuBtn(cx, GAME_HEIGHT - 70, '关闭', () => this.closeAchievements()));
@@ -357,7 +357,7 @@ export default class MenuScene extends Phaser.Scene {
       .setOrigin(0).setInteractive();
     ov.add(dim);
     this.addPanel(ov, cx);
-    this.addGlowTitle(ov, cx, 300, '每日签到', '#ffd86b');
+    this.addGlowTitle(ov, cx, 300, '每日签到', THEME.textGoldLight);
 
     const cur = SaveManager.load();
     const y = new Date(Date.now() - 86400000);
@@ -365,7 +365,7 @@ export default class MenuScene extends Phaser.Scene {
     const nextStreak = (cur.lastCheckin === yStr) ? (cur.checkinStreak || 0) + 1 : 1;
     const reward = 50 + (nextStreak - 1) * 20;
     const info = this.add.text(cx, 370, `连续签到第 ${cur.checkinStreak || 0} 天\n今日可领：${reward} 金币`, {
-      fontFamily: 'sans-serif', fontSize: '20px', color: '#cfe8ff', align: 'center',
+      fontFamily: THEME.fontFamily, fontSize: '20px', color: THEME.textPrimary, align: 'center',
       wordWrap: { width: 360 },
     }).setOrigin(0.5);
     ov.add(info);
@@ -403,7 +403,7 @@ export default class MenuScene extends Phaser.Scene {
       .setOrigin(0).setInteractive();
     ov.add(dim);
     this.addPanel(ov, cx);
-    this.addGlowTitle(ov, cx, 250, '每日任务', '#7cf3ff');
+    this.addGlowTitle(ov, cx, 250, '每日任务', THEME.titleColor);
 
     const quests = SaveManager.getDailyQuests();
     const claimed = SaveManager.dailyQuestsClaimed();
@@ -411,25 +411,25 @@ export default class MenuScene extends Phaser.Scene {
     quests.forEach((q) => {
       const y = cursor; cursor += 96;
       const label = this.add.text(cx - 200, y, q.desc, {
-        fontFamily: 'sans-serif', fontSize: '19px', color: '#cfe8ff',
+        fontFamily: THEME.fontFamily, fontSize: '19px', color: THEME.textPrimary,
       }).setOrigin(0, 0.5);
       const prog = this.add.text(cx + 200, y, `${q.progress}/${q.target}  +${q.reward}`, {
-        fontFamily: 'sans-serif', fontSize: '17px',
-        color: q.done ? '#7cffa0' : '#88bbdd',
+        fontFamily: THEME.fontFamily, fontSize: '17px',
+        color: q.done ? THEME.textSuccess : THEME.textSecondary,
       }).setOrigin(1, 0.5);
       // 进度条
       const barW = 380, barX = cx - barW / 2, barY = y + 22;
-      const track = this.add.rectangle(barX, barY, barW, 8, 0x223344)
-        .setOrigin(0, 0.5).setStrokeStyle(1, 0x557799);
+      const track = this.add.rectangle(barX, barY, barW, 8, THEME.trackBg)
+        .setOrigin(0, 0.5).setStrokeStyle(1, THEME.trackStroke);
       const ratio = q.target ? Math.min(1, q.progress / q.target) : 0;
-      const fill = this.add.rectangle(barX, barY, barW * ratio, 8, q.done ? 0x7cffa0 : 0x66ccff)
+      const fill = this.add.rectangle(barX, barY, barW * ratio, 8, q.done ? THEME.success : THEME.trackFill)
         .setOrigin(0, 0.5);
       ov.add([label, prog, track, fill]);
     });
 
     const statusText = this.add.text(cx, cursor + 6, claimed ? '今日任务已领取'
       : (SaveManager.dailyQuestsReady() ? '全部完成，可领取奖励！' : '完成上方目标即可领取金币'), {
-      fontFamily: 'sans-serif', fontSize: '18px', color: claimed ? '#7cffa0' : '#cfe8ff',
+      fontFamily: THEME.fontFamily, fontSize: '18px', color: claimed ? THEME.textSuccess : THEME.textPrimary,
       align: 'center', wordWrap: { width: 400 },
     }).setOrigin(0.5);
     ov.add(statusText);
@@ -461,17 +461,17 @@ export default class MenuScene extends Phaser.Scene {
   makeSlider(ov, cx, y, label, type) {
     const val = audio.getVolume(type);
     const lab = this.add.text(cx - 150, y, label, {
-      fontFamily: 'sans-serif', fontSize: '20px', color: '#cfe8ff',
+      fontFamily: THEME.fontFamily, fontSize: '20px', color: THEME.textPrimary,
     }).setOrigin(0, 0.5);
     const trackW = 220, trackH = 8, tx = cx - 10;
-    const track = this.add.rectangle(tx, y, trackW, trackH, 0x223344)
-      .setStrokeStyle(1, 0x557799).setInteractive();
-    const fill = this.add.rectangle(tx - trackW / 2, y, trackW * val, trackH, 0x66ccff)
+    const track = this.add.rectangle(tx, y, trackW, trackH, THEME.trackBg)
+      .setStrokeStyle(1, THEME.trackStroke).setInteractive();
+    const fill = this.add.rectangle(tx - trackW / 2, y, trackW * val, trackH, THEME.trackFill)
       .setOrigin(0, 0.5);
-    const knob = this.add.circle(tx - trackW / 2 + trackW * val, y, 12, 0x7cf3ff)
-      .setStrokeStyle(2, 0xffffff).setInteractive({ useHandCursor: true });
+    const knob = this.add.circle(tx - trackW / 2 + trackW * val, y, 12, THEME.titleColor)
+      .setStrokeStyle(2, THEME.whiteHex).setInteractive({ useHandCursor: true });
     const valTxt = this.add.text(tx + trackW / 2 + 16, y, `${Math.round(val * 100)}%`, {
-      fontFamily: 'sans-serif', fontSize: '16px', color: '#aaccdd',
+      fontFamily: THEME.fontFamily, fontSize: '16px', color: THEME.textMuted,
     }).setOrigin(0, 0.5);
     ov.add([lab, track, fill, knob, valTxt]);
     const apply = (t) => {
@@ -492,10 +492,10 @@ export default class MenuScene extends Phaser.Scene {
   /** 辉光标题：副本层发光 + 本体，呼吸脉动（reduced-motion 下静态） */
   addGlowTitle(ov, cx, y, text, colorHex) {
     const glow = this.add.text(cx, y, text, {
-      fontFamily: 'sans-serif', fontSize: '34px', fontStyle: '800', color: colorHex,
+      fontFamily: THEME.fontFamily, fontSize: '34px', fontStyle: '800', color: colorHex,
     }).setOrigin(0.5).setShadow(0, 0, colorHex, 30, true, true).setAlpha(0.3);
     const title = this.add.text(cx, y, text, {
-      fontFamily: 'sans-serif', fontSize: '34px', fontStyle: '800', color: colorHex,
+      fontFamily: THEME.fontFamily, fontSize: '34px', fontStyle: '800', color: colorHex,
     }).setOrigin(0.5).setShadow(0, 0, colorHex, 14, true, true);
     ov.add(glow);
     ov.add(title);
