@@ -85,6 +85,8 @@ export function generateAll(scene) {
   drawBgCloud(g); g.generateTexture('bg_cloud', 160, 80);
   drawBgAsteroid(g); g.generateTexture('bg_asteroid', 48, 40);
   drawBgBuilding(g); g.generateTexture('bg_building', 64, 120);
+  drawGlowSoft(g); g.generateTexture('glow_soft', 512, 512);    // P3 柔光贴图（光效纪律白名单：机/弹/爆/拾取）
+  drawBgGlowband(g); g.generateTexture('bg_glowband', 512, 96); // P3 背景底部地平线光带
 
   g.destroy();
 }
@@ -428,37 +430,37 @@ function drawBulletBomb(g) {
   g.fillCircle(9, 13, 1.2);
 }
 
-// ─── 玩家子弹：青色能量弹（明显柔光晕，作安全回退）─────────────
+// ─── 玩家子弹：青色能量弹（明显柔光晕，作安全回退；P3 辉光+10%/亮芯收窄）─
 function drawBulletPlayer(g) {
   g.clear();
-  // 更明显的青色柔光晕（双层）
-  g.fillStyle(0x66ccff, 0.22);
+  // 更明显的青色柔光晕（双层；alpha +10%）
+  g.fillStyle(0x66ccff, 0.24);
   g.fillRoundedRect(0, 0, 12, 24, 6);
-  g.fillStyle(COLORS.playerBullet, 0.34);
+  g.fillStyle(COLORS.playerBullet, 0.37);
   g.fillRoundedRect(1, 1, 10, 22, 6);
   // 核心渐变
   g.fillGradientStyle(0xffffff, 0xffffff, 0x8fe3ff, 0x66ccff, 1);
   g.fillRoundedRect(2, 1, 8, 22, 4);
-  // 亮芯线
+  // 亮芯线（width 4→2.8，收窄 30%）
   g.fillStyle(0xffffff, 0.95);
-  g.fillRoundedRect(4, 3, 4, 14, 2);
+  g.fillRoundedRect(4.6, 3, 2.8, 14, 1.4);
 }
 
-// ─── 敌弹：红橙发光球 + 白色高光点 ─────────────────────────────
+// ─── 敌弹：红橙发光球 + 白亮核（P3：外发光提亮扩大 + 亮核收窄提亮）──────
 function drawBulletEnemy(g) {
   g.clear();
-  // 外发光（红橙）
-  g.fillStyle(COLORS.enemyBullet, 0.34);
-  g.fillCircle(9, 9, 9);
+  // 外发光（红橙，0.34→0.42 提亮，9→11px 扩大）
+  g.fillStyle(COLORS.enemyBullet, 0.42);
+  g.fillCircle(9, 9, 11);
   // 球体渐变 红→橙
   g.fillGradientStyle(0xffd0a0, 0xff7a3c, 0xff5a3c, 0xd93420, 1);
   g.fillCircle(9, 9, 7);
   // 脉冲内圈
   g.fillStyle(0xff5a3c, 0.5);
   g.fillCircle(9, 9, 5);
-  // 白色高光点
-  g.fillStyle(0xffffff, 0.95);
-  g.fillCircle(6.5, 6.5, 2.2);
+  // 白色亮核（2.2→1.6px 收窄提亮，更聚焦）
+  g.fillStyle(0xffffff, 1);
+  g.fillCircle(6.5, 6.5, 1.6);
 }
 
 // ─── 道具：火力(P)（橙金圆盘 + 闪电符号） ───────────────────────
@@ -649,18 +651,18 @@ function drawEnemyDiver(g) {
   g.strokeTriangle(18, 3, 12, 34, 24, 34);
 }
 
-// ─── 玩家脉冲弹：青白核心 + 外层 0x66ccff@0.25 柔晕（10×28）──────
+// ─── 玩家脉冲弹：青白核心 + 外层柔晕（P3：辉光壳 +10%，亮芯收窄 30%）────
 function drawBulletPulse(g) {
   g.clear();
-  // 外层柔晕
-  g.fillStyle(0x66ccff, 0.25);
+  // 外层柔晕（alpha 0.25→0.275，+10%）
+  g.fillStyle(0x66ccff, 0.275);
   g.fillRoundedRect(0, 0, 10, 28, 5);
   // 核心渐变
   g.fillGradientStyle(0xffffff, 0xffffff, 0x8fe3ff, 0x66ccff, 1);
   g.fillRoundedRect(2, 1, 6, 26, 3);
-  // 亮芯线
+  // 亮芯线（width 2→1.4，收窄 30% 更聚焦）
   g.fillStyle(0xffffff, 0.95);
-  g.fillRoundedRect(4, 3, 2, 22, 1);
+  g.fillRoundedRect(4.3, 3, 1.4, 22, 0.7);
 }
 
 // ─── 玩家散射弹：圆环 + 白芯浅蓝（14×14）──────────────────────
@@ -836,5 +838,27 @@ function drawBgBuilding(g) {
   for (let yy = 30; yy < 116; yy += 14) {
     g.fillRect(48, yy, 3, 5);
     g.fillRect(54, yy + 6, 3, 5);
+  }
+}
+
+// ─── 柔光贴图（512×512 径向白→透明，P3 光效纪律：机/弹/爆/拾取）──────
+function drawGlowSoft(g) {
+  g.clear();
+  const cx = 256, cy = 256;
+  for (let r = 256; r > 0; r -= 2) {
+    const t = 1 - r / 256; // 中心亮、边缘透明
+    g.fillStyle(0xffffff, 0.015 + t * 0.55);
+    g.fillCircle(cx, cy, r);
+  }
+}
+
+// ─── 背景底部地平线光带（512×96 横向柔光带，白色基底便于 tint）────
+function drawBgGlowband(g) {
+  g.clear();
+  const cx = 256, cy = 48;
+  for (let r = 48; r > 0; r -= 3) {
+    const t = 1 - r / 48; // 中心亮、边缘透明
+    g.fillStyle(0xffffff, 0.02 + t * 0.07);
+    g.fillEllipse(cx, cy, 512 * (0.92 + t * 0.08), r * 2);
   }
 }

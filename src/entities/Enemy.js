@@ -153,6 +153,7 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
       b.eHoming = homing;                    // C3：tracking 弹由 GameScene 转向
       b.setVelocity(0, 0);
       scene.physics.velocityFromRotation(ang, spd, b.body.velocity);
+      if (scene.enemyTrail) scene.enemyTrail.emitParticleAt(b.x, b.y);   // 敌弹拖尾视觉一行
     };
 
     switch (this.firePattern) {
@@ -258,8 +259,11 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     if (Math.random() < this.def.coin && this.scene.spawnCoin) {
       this.scene.spawnCoin(this.x, this.y);
     }
-    // 增强爆炸
-    VFX.explosion(this.scene, this.x, this.y, this.getColor(), this.typeKey === 'mid' ? 1.3 : 1);
+    // 增强爆炸（P3 五层：闪光→冲击波→粒子→残骸→烟尘；mid 层数减半）
+    VFX.explosionLayered(this.scene, this.x, this.y, this.getColor(), {
+      scale: this.typeKey === 'mid' ? 1.3 : 1,
+      tier: this.typeKey === 'mid' ? 'mid' : 'small',
+    });
     if (this.scene.maybeDropItem) this.scene.maybeDropItem(this.x, this.y);
     // 局内火力(P)掉落（P1）：独立于普通道具的概率掉落
     if (this.scene.maybeDropPower) this.scene.maybeDropPower(this.x, this.y);

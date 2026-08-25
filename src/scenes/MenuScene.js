@@ -4,7 +4,7 @@ import { SaveManager } from '../utils/SaveManager.js';
 import { AchievementManager } from '../systems/AchievementManager.js';
 import { createStarfield, MENU_BG_THEME } from '../systems/Starfield.js';
 import { audio } from '../systems/AudioSystem.js';
-import { NeonButton, THEME } from '../utils/UIWidgets.js';
+import { NeonButton, THEME, drawGlassPanel } from '../utils/UIWidgets.js';
 import HangarScene from './HangarScene.js';
 
 /**
@@ -513,15 +513,10 @@ export default class MenuScene extends Phaser.Scene {
     this.tweens.add({ targets: ov, alpha: 1, y: 0, duration: 260, ease: 'Cubic.out' });
   }
 
-  /** 统一的内嵌霓虹面板背景：圆角半透卡片 + 霓虹描边，套在 dim 之上、内容之下 */
+  /** 统一的内嵌霓虹面板背景：玻璃拟态卡片（半透 + 内发光 + 顶部高光），套在 dim 之上、内容之下 */
   addPanel(ov, cx, top = 70, bottom = GAME_HEIGHT - 50, w = 460) {
     const g = this.add.graphics();
-    // 外发光描边层（让面板边缘发光，纯视觉）
-    g.lineStyle(10, THEME.panelStroke, 0.12).strokeRoundedRect(cx - w / 2 - 2, top - 2, w + 4, bottom - top + 4, THEME.panelRadius + 2);
-    g.fillStyle(THEME.panelBg, THEME.panelBgAlpha);
-    g.fillRoundedRect(cx - w / 2, top, w, bottom - top, THEME.panelRadius);
-    g.lineStyle(2, THEME.panelStroke, THEME.panelStrokeAlpha);
-    g.strokeRoundedRect(cx - w / 2, top, w, bottom - top, THEME.panelRadius);
+    drawGlassPanel(g, cx, top, bottom, w, THEME.panelRadius);
     ov.add(g);
   }
 }

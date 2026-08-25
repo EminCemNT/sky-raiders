@@ -151,7 +151,7 @@ export const LEVELS = [
       skyTop: 0x0b1c33, skyBottom: 0x040a16,
       starTints: [0x2a4a6a, 0x6f9fd6, 0xbfe0ff, 0x66ccff],
       accent: 0x66ccff,
-      nebula: { tints: [0x3a1f6e, 0x1f3a6e], alpha: 0.16 },
+      nebula: { tints: [0x3a1f6e, 0x1f3a6e], alpha: 0.22 },
       cloudTint: 0x9fd8ff,
       silhouette: { kind: 'none', color: 0x0a0f1c, density: 1, speed: 40 },
     },
@@ -172,7 +172,7 @@ export const LEVELS = [
       skyTop: 0x2a1408, skyBottom: 0x0a0604,
       starTints: [0x6a3a1a, 0xd68f4a, 0xffb070, 0xff7a3a],
       accent: 0xff7a3a,
-      nebula: { tints: [0x6a2f0a, 0x3a1a08], alpha: 0.18 },
+      nebula: { tints: [0x6a2f0a, 0x3a1a08], alpha: 0.22 },
       cloudTint: 0xd68f4a,
       silhouette: { kind: 'asteroid', color: 0x0a0604, density: 1, speed: 46 },
     },
@@ -194,7 +194,7 @@ export const LEVELS = [
       skyTop: 0x1a0f33, skyBottom: 0x070414,
       starTints: [0x4a2a6a, 0x9a6fd6, 0xc9bfff, 0xb98bff],
       accent: 0xb98bff,
-      nebula: { tints: [0x3a1f6e, 0x6a2f8a], alpha: 0.18 },
+      nebula: { tints: [0x3a1f6e, 0x6a2f8a], alpha: 0.22 },
       cloudTint: 0x9a6fd6,
       silhouette: { kind: 'building', color: 0x070414, density: 1, speed: 42 },
     },
@@ -217,7 +217,7 @@ export const LEVELS = [
       skyTop: 0x2a0a1a, skyBottom: 0x0a0408,
       starTints: [0x6a2a3a, 0xd66a7a, 0xffb0c0, 0xff7a8a],
       accent: 0xff6a8a,
-      nebula: { tints: [0x6a1a2a, 0x3a0a1a], alpha: 0.20 },
+      nebula: { tints: [0x6a1a2a, 0x3a0a1a], alpha: 0.22 },
       cloudTint: 0xd66a7a,
       silhouette: { kind: 'building', color: 0x0a0408, density: 1, speed: 44 },
     },
@@ -301,7 +301,9 @@ export const UPGRADE_TREE = {
   wingmanFirepower: { name: '僚机火力', max: 5, baseCost: 600, costMul: 1.8 },
 };
 
-// 中国股市/涨跌无关，这里是玩家阵营配色（青蓝科技风）
+// 中国股市/涨跌无关，这里是玩家阵营配色（青蓝科技风）。
+// 配色纪律（P3 画面质感打磨）：COLORS 只放"阵营 / 界面基色"；
+// 特效专属颜色一律进下方 VFX_COLORS 供 VFX.js 引用，禁止在特效/场景里散落魔法色。
 export const COLORS = {
   player: 0x66ccff,
   playerBullet: 0x8fe3ff,
@@ -310,6 +312,28 @@ export const COLORS = {
   coin: 0xffd54a,
   bg: 0x05070f,
   accent: 0x7cf3ff,
+};
+
+// 特效调色板（P3 画面质感打磨，append-only）：VFX.js 统一引用的特效颜色。
+//   flash  白闪核心 / ring 冲击波环（默认机体红）/ debris 残骸深红 / smoke 烟尘灰
+//   hit    命中火花序列 [白, 金, 青, 橙]
+//   trail  各弹种拖尾主色（pulse 脉冲青 / scatter 散射 / missile 导弹金 /
+//          fire 火橙 / ice 冰青 / thunder 雷黄 / enemy 敌弹红橙亮核）
+export const VFX_COLORS = {
+  flash: 0xffffff,
+  ring: COLORS.enemy,
+  debris: 0x8a2233,
+  smoke: 0x55606a,
+  hit: [0xffffff, 0xffd54a, 0x8fe3ff, 0xffaa33],
+  trail: {
+    pulse: 0x66ccff,
+    scatter: 0x9fd8ff,
+    missile: 0xffcc44,
+    fire: 0xff7a3a,
+    ice: 0x6fd6ff,
+    thunder: 0xffe14a,
+    enemy: 0xff5a3c,
+  },
 };
 
 // 音频（程序化 WebAudio，主控/音效/BGM 音量）

@@ -180,6 +180,7 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
     b.body.enable = true;
     b.setTint(this.color);
     scene.physics.velocityFromRotation(angle, speed, b.body.velocity);
+    if (scene.enemyTrail) scene.enemyTrail.emitParticleAt(b.x, b.y);   // 敌弹拖尾视觉一行
   }
 
   // 半圆扇形（基础弹幕）：向下半圆铺开
@@ -303,6 +304,22 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
   die() {
     EventBus.emit(EVENTS.BOSS_DEFEATED);
     VFX.bossDeathExplosion(this.scene, this, this.color);
+    // P3 弹性缩放死亡演出：1→1.25 Back.easeOut(90ms)→0 Back.easeIn(260ms)，fxG 同步 yoyo
+    if (!PREFERS_REDUCED) {
+      this.scene.tweens.add({
+        targets: this, scaleX: 1.25, scaleY: 1.25, duration: 90, ease: 'Back.easeOut',
+        onComplete: () => {
+          this.scene.tweens.add({
+            targets: this, scaleX: 0, scaleY: 0, duration: 260, ease: 'Back.easeIn',
+          });
+        },
+      });
+      if (this.fxG) {
+        this.scene.tweens.add({
+          targets: this.fxG, scaleX: 1.25, scaleY: 1.25, duration: 90, yoyo: true, ease: 'Back.easeOut',
+        });
+      }
+    }
     this.setActive(false);
     this.scene.time.delayedCall(800, () => {
       if (this.fxG) { this.fxG.destroy(); this.fxG = null; }

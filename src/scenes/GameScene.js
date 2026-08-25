@@ -85,6 +85,9 @@ export default class GameScene extends Phaser.Scene {
     // 星空（按关卡色调染色）
     this.starfield = createStarfield(this, { layers: 4, starTints: theme.starTints, theme });
 
+    // 顶部主光（P3 光效纪律：发光白名单=机/弹/爆/拾取，背景仅此一层顶光）
+    VFX.addKeyLight(this);
+
     // 对象池
     this.playerBullets = this.physics.add.group({ defaultKey: 'bullet_pulse', maxSize: 200 });
     this.enemyBullets = this.physics.add.group({ defaultKey: 'bullet_enemy', maxSize: 400 });
@@ -138,6 +141,9 @@ export default class GameScene extends Phaser.Scene {
     // 激光束注入（B4）
     this.player.beamGroup = this.playerBeams;
 
+    // 玩家机柔光（P3 光效纪律白名单：机/弹/爆/拾取；随 player 移动/显隐）
+    VFX.glowTarget(this.player, this.player.shipTint || COLORS.player, { radius: 0.55, alpha: 0.20, depth: -2 });
+
     // 道具/技能系统状态（#151）— 必须在首个 ENERGY_CHANGED 事件前初始化
     this.energy = 0;
     this.buffs = { shieldUntil: 0, magnetUntil: 0 };
@@ -173,6 +179,17 @@ export default class GameScene extends Phaser.Scene {
     // 子弹特效 emitter（reduced-motion 下返回 null，调用方判空降级）
     this.bulletTrails = VFX.createBulletTrails(this);
     this.enemyGlow = VFX.enemyBulletGlow(this);
+    this.enemyTrail = VFX.enemyBulletTrail(this);
+
+    // 拾取柔光（P3 光效纪律白名单：机/弹/爆/拾取；对象池每实例挂一层，随 active 显隐）
+    this.items.children.each((it) => VFX.glowTarget(it, 0x9ff0ff, { radius: 0.38, alpha: 0.22, depth: -1 }));
+    // 玩家弹柔光：capped 池复用（别滥用），由 update 每帧映射到活跃弹；克制到"几乎不可见的辉光"
+    this._bulletGlowPool = [];
+    for (let i = 0; i < 10; i++) {
+      this._bulletGlowPool.push(this.add.image(0, 0, 'glow_soft')
+        .setDepth(17).setAlpha(0.10).setTint(0x8fdcff)
+        .setBlendMode(Phaser.BlendModes.ADD).setScale(0.07).setVisible(false));
+    }
 
     // 首击卡顿预热：在 createBulletTrails 之后调用。
     // 编译粒子管线 / 字体光栅化 / 音频节点路径，确保首次命中无可见卡顿。
@@ -351,7 +368,7 @@ export default class GameScene extends Phaser.Scene {
     EventBus.on(EVENTS.PLAYER_DIED, this._onPlayerDied);
 
     this._onBossDefeated = () => {
-      this.requestHitStop(350);     // Boss 击破：强命中定格，打击感爆发
+      this.requestHitStop(120);     // Boss 击破：强命中定格（P3 视觉打磨，350→120 收敛不拖沓）
       if (this.boss && this.boss.active) {
         // P2 Boss Rush 差异化：按机库稀有概率追加掉落并累计（普通模式 extraRare=0，行为不变）
         const rareChance = (this.mode === 'bossrush' && this._rushScale) ? this._rushScale.rareChance : 0;
@@ -485,6 +502,17 @@ export default class GameScene extends Phaser.Scene {
           });
         }
       }
+    }
+
+    // 玩家弹柔光跟随（P3 capped 池：只照亮前 N 颗活跃弹，防滥用）
+    if (this._bulletGlowPool && this._bulletGlowPool.length) {
+      let gi = 0;
+      this.playerBullets.children.each((b) => {
+        if (!b.active || b.isBeam || gi >= this._bulletGlowPool.length) return;
+        const g = this._bulletGlowPool[gi++];
+        g.setPosition(b.x, b.y).setVisible(true);
+      });
+      for (let k = gi; k < this._bulletGlowPool.length; k++) this._bulletGlowPool[k].setVisible(false);
     }
 
     // 键盘炸弹
@@ -633,6 +661,8 @@ export default class GameScene extends Phaser.Scene {
       ...cfg,
       difficulty: baseDifficulty * bossBulletMul,
     });
+    // Boss 柔光（P3 光效纪律白名单：机/弹/爆/拾取；随 Boss 销毁自动清理）
+    if (this.boss) VFX.glowTarget(this.boss, cfg.color || COLORS.enemy, { radius: 0.75, alpha: 0.25, depth: -1 });
     // P1-9 Boss 动态音乐 + UIScene 血条：boss 生成唯一入口统一 emit（原仅 rush 发，普通关 Boss 缺此事件）
     EventBus.emit(EVENTS.BOSS_SPAWNED, {
       key: bossKey,
@@ -908,6 +938,7 @@ export default class GameScene extends Phaser.Scene {
     if (this._lastImpact && now - this._lastImpact < 90) return;
     this._lastImpact = now;
     VFX.shake(this, 'light');
+    this.requestHitStop(33);   // 普通命中 2 帧定格（吃既有 70ms 冷却限频，连发不卡顿）
     const p = this.player;
     const reduced = (typeof window !== 'undefined' && window.matchMedia
       && window.matchMedia('(prefers-reduced-motion: reduce)').matches);

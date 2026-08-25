@@ -30,14 +30,14 @@ const LAYER_PRESETS = [
  */
 export const MENU_BG_THEME = {
   starTints: [0x2a4a6a, 0x6f9fd6, 0xbfe0ff, 0x7cf3ff],
-  nebula: { tints: [0x3a1f6e, 0x1f3a6e, 0x0f2a4a], alpha: 0.18 },
+  nebula: { tints: [0x3a1f6e, 0x1f3a6e, 0x0f2a4a], alpha: 0.22 },
   cloudTint: 0x9fd8ff,
   silhouette: { kind: 'building', color: 0x0a101c, density: 1, speed: 40 },
 };
 
 export const HANGAR_BG_THEME = {
   starTints: [0x2a4a6a, 0x6f9fd6, 0xbfe0ff, 0x9fd8ff],
-  nebula: { tints: [0x1f2a5a, 0x2a1f5a, 0x1f3a4a], alpha: 0.16 },
+  nebula: { tints: [0x1f2a5a, 0x2a1f5a, 0x1f3a4a], alpha: 0.22 },
   cloudTint: 0x9fd8ff,
   silhouette: { kind: 'asteroid', color: 0x0a101c, density: 1, speed: 34 },
 };
@@ -82,10 +82,10 @@ export function createStarfield(scene, { layers = 4, starTints = null, theme = n
   const bg = [];
   const nebulaImgs = [];
 
-  // 星云带（depth -180, 慢速）
+  // 星云带（depth -180, 慢速；P3：3→4 张，雾感更厚）
   if (nebulaCfg) {
     const tints = nebulaCfg.tints || [0xffffff];
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 4; i++) {
       const img = scene.add.image(
         Phaser.Math.Between(0, GAME_WIDTH), Phaser.Math.Between(0, GAME_HEIGHT), 'bg_nebula',
       ).setDepth(-180)
@@ -137,6 +137,21 @@ export function createStarfield(scene, { layers = 4, starTints = null, theme = n
     }
   }
 
+  // 底部地平线光带（P3：ADD 贴屏底滚动，alpha 0.10~0.14 随 theme tint）
+  {
+    const bandTint = (theme && (theme.accent || theme.cloudTint)) || 0x7cf3ff;
+    const band = scene.add.image(GAME_WIDTH / 2, GAME_HEIGHT - 10, 'bg_glowband')
+      .setDepth(-90)
+      .setAlpha(Phaser.Math.FloatBetween(0.10, 0.14))
+      .setTint(bandTint)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setScale((GAME_WIDTH * 1.2) / 512, 1.0);
+    band._baseTint = bandTint;
+    band._speed = 18;
+    band._layer = 'glowband';
+    bg.push(band);
+  }
+
   // ── 动态酷炫层（Phase D）：能量流光带 + 流星（reduced-motion 下不创建）──
   const streams = [];
   const meteors = [];
@@ -151,7 +166,7 @@ export function createStarfield(scene, { layers = 4, starTints = null, theme = n
         .setDepth(-95)
         .setTint(0x7cf3ff)
         .setScale(2.2 + i * 0.6, 150 + i * 20)
-        .setAlpha(0.05 + i * 0.012)
+        .setAlpha(0.08 + i * 0.02)   // P3：流光 alpha 微提 0.05~0.11 → 0.08~0.14
         .setBlendMode(Phaser.BlendModes.ADD);
       s._speed = Phaser.Math.Between(45, 95);
       s._baseX = x;

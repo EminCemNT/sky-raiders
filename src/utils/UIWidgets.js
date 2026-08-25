@@ -36,12 +36,18 @@ export const THEME = {
   dangerDeep: '#ff3355',            // Boss 名投影深红
   shield: '#3ad1ff',                // 护盾青
   magnet: '#ff4d6d',                // 磁力红
-  // 面板（弹窗背景卡片）
+  // 面板（弹窗背景卡片，P3 玻璃拟态：半透底 + 内发光描边 + 顶部高光）
   panelBg: 0x0a2236,
-  panelBgAlpha: 0.94,
+  panelBgAlpha: 0.72,
   panelStroke: 0x4fc3ff,
   panelStrokeAlpha: 0.55,
   panelRadius: 18,
+  panelGlass: {
+    innerStroke: 0x9fd8ff,      // 内发光描边（1px 亮色低 alpha）
+    innerStrokeAlpha: 0.14,
+    topHighlight: 0xffffff,     // 顶部 1px 高光条
+    topHighlightAlpha: 0.18,
+  },
   // 按钮
   btnBg: 0x123a5a,
   btnBgHover: 0x1b5580,
@@ -77,6 +83,33 @@ export const THEME = {
   energy: { low: 0x7c6bff, full: 0x6fd0ff },
   pauseBtn: { size: 56, glow: 0x7cf3ff },
 };
+
+/**
+ * 玻璃拟态面板（P3 画面质感打磨）：半透玻璃底 + 霓虹描边 +
+ * 内发光描边（1px 亮色低 alpha）+ 顶部 1px 高光条。
+ * 供 MenuScene.addPanel 等统一绘制，视觉语言集中在 THEME.panelGlass。
+ * @param {Phaser.GameObjects.Graphics} g
+ */
+export function drawGlassPanel(g, cx, top, bottom, w, radius = THEME.panelRadius) {
+  const h = bottom - top;
+  // 外发光描边层（让面板边缘发光，纯视觉）
+  g.lineStyle(10, THEME.panelStroke, 0.12).strokeRoundedRect(cx - w / 2 - 2, top - 2, w + 4, h + 4, radius + 2);
+  // 半透玻璃底
+  g.fillStyle(THEME.panelBg, THEME.panelBgAlpha);
+  g.fillRoundedRect(cx - w / 2, top, w, h, radius);
+  // 霓虹描边
+  g.lineStyle(2, THEME.panelStroke, THEME.panelStrokeAlpha);
+  g.strokeRoundedRect(cx - w / 2, top, w, h, radius);
+  // 内发光描边（1px 亮色低 alpha）
+  g.lineStyle(1, THEME.panelGlass.innerStroke, THEME.panelGlass.innerStrokeAlpha);
+  g.strokeRoundedRect(cx - w / 2 + 4, top + 4, w - 8, h - 8, Math.max(2, radius - 5));
+  // 顶部 1px 高光条
+  g.lineStyle(1, THEME.panelGlass.topHighlight, THEME.panelGlass.topHighlightAlpha);
+  g.beginPath();
+  g.moveTo(cx - w / 2 + 16, top + 3);
+  g.lineTo(cx + w / 2 - 16, top + 3);
+  g.strokePath();
+}
 
 /**
  * UIWidgets —— 科幻扁平霓虹风格的复用 UI 组件。
@@ -156,10 +189,14 @@ export class NeonButton {
     this.glowG.setAlpha(0);
     this.g = scene.add.graphics();
     this._drawBg(bgColor, stroke, 1);
+    const fontSize = opts.fontSize ?? 22;
     this.text = scene.add.text(0, 0, label, {
-      fontFamily: THEME.fontFamily, fontSize: `${opts.fontSize ?? 22}px`,
+      fontFamily: THEME.fontFamily, fontSize: `${fontSize}px`,
       fontStyle: '700', color: textColor,
-    }).setOrigin(0.5);
+    }).setOrigin(0.5).setShadow(0, 2, '#000000', 4);   // P3 文字投影
+    // P3 标题级字距：按字号比例（每 10px 字号约 1px）
+    const ls = Math.max(0, Math.round(fontSize / 10));
+    if (ls > 0) this.text.setLetterSpacing(ls);
     this.container.add([this.glowG, this.g, this.text]);
     this._hitConfig = {
       hitArea: new Phaser.Geom.Rectangle(-this.w / 2, -this.h / 2, this.w, this.h),
