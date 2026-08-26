@@ -6,6 +6,7 @@ import {
 } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
+import { Ads } from '../systems/Ads.js';
 import { createStarfield } from '../systems/Starfield.js';
 import Player from '../entities/Player.js';
 import Enemy from '../entities/Enemy.js';
@@ -15,6 +16,7 @@ import WaveSystem from '../systems/WaveSystem.js';
 import WingmanSystem from '../systems/WingmanSystem.js';
 import ElementReaction from '../systems/ElementReaction.js';
 import { FloatingTextManager, warmFonts } from '../systems/FloatingText.js';
+import { NeonButton } from '../utils/UIWidgets.js';
 import { AchievementManager } from '../systems/AchievementManager.js';
 import { audio } from '../systems/AudioSystem.js';
 import * as VFX from '../systems/VFX.js';
@@ -71,6 +73,11 @@ export default class GameScene extends Phaser.Scene {
     // Boss Rush 差异化（P2）
     this._rushScale = null;
     this._rushRareDrops = 0;
+    // 无尽看广告复活（P2 激励广告位预留）：每局一次，不持久化
+    this._adReviveUsed = false;
+    this._adReviveOpen = false;
+    this._adReviveOverlay = null;
+    this._adReviveCtl = null;
     // 成就系统：本局开始，重置会话态并预载累计数据
     AchievementManager.startRun(this.mode, this.levelId);
   }
@@ -407,6 +414,9 @@ export default class GameScene extends Phaser.Scene {
       EventBus.emit(EVENTS.LIVES_CHANGED, this.lives);
       if (this.lives > 0) {
         this.respawnPlayer();
+      } else if (this.mode === 'endless' && Ads.hasAds() && !this._adReviveUsed && this._offerAdRevive()) {
+        // P2 激励广告位预留：无尽失败弹「看广告复活继续」面板（由 _offerAdRevive 接管；
+        // 广告成功复活 1 次继续，取消/失败则走 endGame(false)）
       } else {
         this.endGame(false);
       }
@@ -1228,6 +1238,78 @@ export default class GameScene extends Phaser.Scene {
     EventBus.emit(EVENTS.HP_CHANGED, p.hp, p.maxHp);
   }
 
+  /**
+   * P2 激励广告位预留：无尽失败弹「看广告复活继续」面板。
+   * 广告成功 -> 复活 1 次继续；取消/失败 -> 走 endGame(false)。每局最多一次。
+   * 纯 UI：不改任何 hp/score/判定/连击核心逻辑。
+   * @returns {boolean} 面板是否弹出
+   */
+  _offerAdRevive() {
+    if (this.gameEnded || this._adReviveUsed) return false;
+    const cx = GAME_WIDTH / 2, cy = GAME_HEIGHT / 2;
+    const ov = this.add.container(0, 0).setDepth(800);
+    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.66)
+      .setOrigin(0).setInteractive();
+    const panel = this.add.rectangle(cx, cy, 440, 250, 0x0d2236, 0.98)
+      .setStrokeStyle(2, COLORS.accent);
+    const title = this.add.text(cx, cy - 66, '命数耗尽', {
+      fontFamily: 'sans-serif', fontSize: '34px', fontStyle: '800', color: COLORS.accent,
+    }).setOrigin(0.5).setShadow(0, 0, '#000000', 8, true, true);
+    const sub = this.add.text(cx, cy - 20, '看广告复活，继续本周赛！', {
+      fontFamily: 'sans-serif', fontSize: '18px', color: '#cfe8ff',
+    }).setOrigin(0.5);
+    ov.add([dim, panel, title, sub]);
+
+    let done = false;
+    const finish = (revive) => {
+      if (done) return;
+      done = true;
+      this._adReviveOpen = false;
+      this._adReviveCtl = null;
+      if (ov.active) ov.destroy();
+      this._adReviveOverlay = null;
+      if (this.physics && this.physics.world && this.physics.world.isPaused) this.physics.world.resume();
+      if (revive) {
+        this._adReviveUsed = true;
+        this.lives = 1;
+        EventBus.emit(EVENTS.LIVES_CHANGED, this.lives);
+        this.respawnPlayer();
+      } else {
+        this.endGame(false);
+      }
+    };
+
+    const adBtn = new NeonButton(this, cx - 100, cy + 62, '看广告复活', {
+      w: 190, glow: true,
+      onDown: () => {
+        audio.sfx('ui');
+        adBtn.setEnabled(false);
+        sub.setText('广告播放中…');
+        Ads.showRewardAd((ok) => {
+          if (ok) {
+            sub.setText('复活成功！');
+            this.time.delayedCall(260, () => finish(true));
+          } else {
+            sub.setText('广告未完成，无法复活');
+            adBtn.setEnabled(true);
+          }
+        });
+      },
+    });
+    const quitBtn = new NeonButton(this, cx + 100, cy + 62, '返回结算', {
+      w: 190, glow: true, onDown: () => { audio.sfx('ui'); finish(false); },
+    });
+    ov.add([adBtn.container, quitBtn.container]);
+
+    // 面板弹出期间冻结物理世界（玩家已死，敌弹/敌机静止；复活时恢复）
+    if (this.physics && this.physics.world) this.physics.world.pause();
+    this._adReviveOpen = true;
+    this._adReviveOverlay = ov;
+    // 测试钩子（与 window.__SKY 同性质，不影响玩法）
+    this._adReviveCtl = { adBtn, quitBtn, finish, overlay: ov, title, sub };
+    return true;
+  }
+
   playerHit(dmg) {
     // 护盾激活时吸收全部伤害
     if (this.time.now < (this.buffs.shieldUntil || 0)) return;
@@ -1474,6 +1556,9 @@ export default class GameScene extends Phaser.Scene {
     const isNewBest = SaveManager.recordBestScore(scaledScore);
     const bestScore = SaveManager.getBestScore();
 
+    // P2 系统扩展·无尽周赛：无尽模式分数写入 league（取本周最高，纯本地假组）
+    if (this.mode === 'endless') SaveManager.recordLeagueScore(scaledScore);
+
     // P0 留存-新手计划：跨模式累计进度（与 addDailyProgress 一样不立即存盘，由下方 save() 统一 flush）
     if (this.mode === 'normal') {
       if (victory) {
@@ -1603,6 +1688,9 @@ export default class GameScene extends Phaser.Scene {
     EventBus.off(EVENTS.SKILL_SWITCHED, this._onSkillSwitched);
     EventBus.off(EVENTS.WINGMAN_COMBO, this._onWingmanCombo);
     audio.unbindGameEvents();
+    // 无尽看广告复活：清理面板并恢复物理（避免切场景残留冻结）
+    if (this._adReviveOverlay) { this._adReviveOverlay.destroy(); this._adReviveOverlay = null; }
+    if (this.physics && this.physics.world && this.physics.world.isPaused) this.physics.world.resume();
     if (this.wingmanSystem) { this.wingmanSystem.destroy(); this.wingmanSystem = null; }
     if (this.starfield) this.starfield.destroy();
   }

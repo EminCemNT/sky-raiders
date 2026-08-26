@@ -1,4 +1,4 @@
-import { SAVE_KEY, DAILY_QUEST_POOL, DIFFICULTIES, PERFORMANCE, NEWBIE_PLAN, UPGRADE_TREE, MODULES, MODULE_SLOTS, MODULE_SHOP, SKIN_PRICE } from '../config/GameConfig.js';
+import { SAVE_KEY, DAILY_QUEST_POOL, DIFFICULTIES, PERFORMANCE, NEWBIE_PLAN, UPGRADE_TREE, MODULES, MODULE_SLOTS, MODULE_SHOP, SKIN_PRICE, WEEKLY_LEAGUE, getIsoWeekKey } from '../config/GameConfig.js';
 
 /**
  * 存档管理（localStorage）
@@ -48,6 +48,12 @@ const DEFAULT_SAVE = {
   //   skins={ [shipId]: 当前皮肤索引 }；ownedSkins=已购买皮肤数组（"shipId:skinId"，第 0 款默认自带不进数组）
   skins: {},
   ownedSkins: [],
+  // P2 激励广告位预留：去广告纯净版开关（本地立即生效，未来接付费解锁）
+  noAds: false,
+  // P2 系统扩展·无尽周赛（本地假组，纯本地不接后端）：
+  //   week=ISO 周 key（"2026-W34"）；score=本周无尽最高分；rank=本周名次（固定种子伪随机组）；
+  //   claimed=是否已结算（周切换自动结算上周奖励后置 true，新周重置 false）
+  league: { week: '', score: 0, claimed: false, rank: 0 },
 };
 
 let cache = null;
@@ -76,6 +82,8 @@ function freshSave() {
     moduleInv: [],
     skins: {},
     ownedSkins: [],
+    noAds: false,
+    league: { week: '', score: 0, claimed: false, rank: 0 },
   };
 }
 
@@ -126,6 +134,13 @@ export const SaveManager = {
         // P2 体验细节·皮肤装饰：只新增字段，老存档缺失兜底默认
         skins: { ...((parsed.skins) || {}) },
         ownedSkins: Array.isArray(parsed.ownedSkins) ? parsed.ownedSkins : [],
+        // P2 激励广告位预留：去广告纯净版开关（布尔，老存档缺失默认 false）
+        noAds: !!parsed.noAds,
+        // P2 系统扩展·无尽周赛：深合并，老存档缺失兜底默认（只新增字段，不改旧字段）
+        league: {
+          week: '', score: 0, claimed: false, rank: 0,
+          ...(parsed.league || {}),
+        },
       };
       // 勋章计数是派生字段：每次 load 从 levelMedals 重算，老存档/脏数据自动自愈
       cache.medalCount = Object.values(cache.levelMedals || {})
@@ -565,5 +580,79 @@ export const SaveManager = {
     s.ownedSkins.push(`${Number(shipId)}:${id}`);
     this.save();
     return true;
+  },
+
+  // ---- 无尽周赛（P2 系统扩展：无尽周赛，本地假组，纯本地不接后端）----
+  /** 固定种子伪随机组：同分必同排名（纯本地模拟 50 人假组），rank ∈ [1, GROUP_SIZE] */
+  _leagueRankForScore(score) {
+    const s = Math.max(0, Math.floor(Number(score) || 0));
+    const gs = (WEEKLY_LEAGUE && WEEKLY_LEAGUE.GROUP_SIZE) || 50;
+    return (Math.floor(s * 0.7 + 17) % gs) + 1;
+  },
+
+  /** 按 rank 查周赛金币奖励（score<=0 不发奖）；REWARDS 支持单值 rank 与 "a-b" 区间 */
+  _leagueRewardForRank(rank, score) {
+    if (!score || score <= 0) return 0;
+    const rewards = (WEEKLY_LEAGUE && WEEKLY_LEAGUE.REWARDS) || [];
+    for (const r of rewards) {
+      if (!r || r.coins == null) continue;
+      if (typeof r.rank === 'number') {
+        if (rank === r.rank) return r.coins;
+      } else {
+        const m = String(r.rank).match(/(\d+)\s*-\s*(\d+)/);
+        if (m) {
+          const a = Number(m[1]); const b = Number(m[2]);
+          if (rank >= a && rank <= b) return r.coins;
+        }
+      }
+    }
+    return 0;
+  },
+
+  /**
+   * 本周赛快照（进菜单/结算前调用一次）：
+   * - 周切换（ISO 周号变化）自动结算上周奖励（rank → REWARDS 金币）并重置本周；
+   * - 同周内按本周最高分算 rank（固定种子，同分同排名）。
+   * 返回 { week, score, rank, settled, reward, settledRank }
+   */
+  getLeagueSnapshot() {
+    const s = this.load();
+    const week = getIsoWeekKey();
+    const lg = s.league || (s.league = { week: '', score: 0, claimed: false, rank: 0 });
+    if (lg.week && lg.week !== week) {
+      // 跨周：先按上周 rank 结算金币，再重置本周
+      const settledRank = lg.rank || this._leagueRankForScore(lg.score);
+      const reward = this._leagueRewardForRank(settledRank, lg.score);
+      if (reward > 0) s.coins += reward;
+      lg.week = week; lg.score = 0; lg.claimed = true;
+      const rank = this._leagueRankForScore(0);
+      lg.rank = rank;
+      this.save();
+      return { week, score: 0, rank, settled: true, reward, settledRank };
+    }
+    if (!lg.week) { lg.week = week; this.save(); }
+    const score = Math.max(0, Math.floor(Number(lg.score) || 0));
+    const rank = this._leagueRankForScore(score);
+    lg.rank = rank;
+    return { week, score, rank, settled: false, reward: 0, settledRank: 0 };
+  },
+
+  /** 记录本周无尽分数（endless endGame 调用，取本周最高分；跨周自动先结算上周） */
+  recordLeagueScore(score) {
+    const s = this.load();
+    const week = getIsoWeekKey();
+    const lg = s.league || (s.league = { week: '', score: 0, claimed: false, rank: 0 });
+    if (lg.week && lg.week !== week) {
+      const settledRank = lg.rank || this._leagueRankForScore(lg.score);
+      const reward = this._leagueRewardForRank(settledRank, lg.score);
+      if (reward > 0) s.coins += reward;
+      lg.week = week; lg.score = 0; lg.rank = 0; lg.claimed = true;
+    }
+    if (!lg.week) lg.week = week;
+    const v = Math.max(0, Math.floor(Number(score) || 0));
+    if (v > (lg.score || 0)) lg.score = v;
+    lg.rank = this._leagueRankForScore(lg.score);
+    this.save();
+    return lg;
   },
 };

@@ -233,7 +233,12 @@ push('无尽难度：每 5 波 +10%（第 6 波 = ×1.1）', Math.abs(diff.d6 - 
 push('无尽难度：第 11 波 = ×1.2', Math.abs(diff.d11 - diff.base * 1.2) < 1e-9, `d11=${diff.d11}`);
 
 // ── 9) 命尽结束 → ResultScene 无尽结算 + 最高分 ──
-await page.evaluate(() => window.__SAVE.set('bestScore', 0));
+// 注：P2 激励广告位预留后，无尽命尽默认会弹「看广告复活」面板（Ads.hasAds()=true）。
+// 本段测经典"命尽直接结算"流，故开 noAds=true（纯净版语义 = 不弹广告位），保持既有断言不变。
+await page.evaluate(() => {
+  window.__SAVE.set('bestScore', 0);
+  window.__SAVE.set('noAds', true);
+});
 await startGame(page, 'endless');
 const ended = await page.evaluate(() => {
   const gs = window.__SKY__.scene.getScene('GameScene');

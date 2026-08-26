@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, LEVELS, DIFFICULTIES, PERFORMANCE, MEDALS, getCurrentEvent } from '../config/GameConfig.js';
 import { SaveManager } from '../utils/SaveManager.js';
+import { Ads } from '../systems/Ads.js';
 import { AchievementManager } from '../systems/AchievementManager.js';
 import { createStarfield, MENU_BG_THEME } from '../systems/Starfield.js';
 import { audio } from '../systems/AudioSystem.js';
@@ -81,6 +82,17 @@ export default class MenuScene extends Phaser.Scene {
         audio.resume(); audio.startBgm(); audio.sfx('ui'); this.startEndless();
       },
     });
+
+    // P2 系统扩展·无尽周赛：无尽入口旁显示本周赛状态（结算+重置由 SaveManager 自动处理）
+    {
+      const snap = SaveManager.getLeagueSnapshot();
+      this.leagueText = this.add.text(cx + 116, 520, this._leagueLabel(snap), {
+        fontFamily: THEME.fontFamily, fontSize: '13px', color: THEME.textSecondary,
+      }).setOrigin(0.5).setAlpha(0.92);
+      if (snap.settled && snap.reward > 0) {
+        this.flashToast(`上周周赛结算 · 第 ${snap.settledRank} 名 · +${snap.reward} 金币`);
+      }
+    }
 
     // 机库按钮
     new NeonButton(this, cx, 548, '机  库', {
@@ -188,6 +200,19 @@ export default class MenuScene extends Phaser.Scene {
     return `金币 ${sv.coins}   ·   最高分 ${sv.bestScore || 0}   ·   勋章 ${SaveManager.countMedals()}   ·   已解锁第 ${sv.unlockedLevel} 关`;
   }
 
+  /** 距下周一的剩余天数（周结倒计时，与活动轮换一致） */
+  _weekDaysLeft() {
+    const d = new Date();
+    const nextMonday = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    nextMonday.setDate(nextMonday.getDate() + (((8 - d.getDay()) % 7) || 7));
+    return Math.max(1, Math.ceil((nextMonday - d) / 86400000));
+  }
+
+  /** 无尽入口旁周赛状态文案：本周赛 · 当前第 X 名 · 周结倒计时 */
+  _leagueLabel(snap) {
+    return `本周赛 · 当前第 ${(snap && snap.rank) || 0} 名 · 周结剩 ${this._weekDaysLeft()} 天`;
+  }
+
   // ---- 设置面板（P0 音量设置）----
   openSettings() {
     this.settingsOpen = true;
@@ -249,11 +274,35 @@ export default class MenuScene extends Phaser.Scene {
     });
     this.refreshQualitySelect();
 
-    this.makeSlider(ov, cx, 480, '主音量', 'master');
-    this.makeSlider(ov, cx, 550, '音效', 'sfx');
-    this.makeSlider(ov, cx, 620, '音乐', 'bgm');
-    ov.add(this.makeMenuBtn(cx, 690, '关闭', () => this.closeSettings()));
+    // P2 激励广告位预留：去广告开关（本地立即生效，未来接付费解锁）
+    const adLabel = this.add.text(cx - 150, 470, '去广告', {
+      fontFamily: THEME.fontFamily, fontSize: '18px', color: THEME.textPrimary,
+    }).setOrigin(0, 0.5);
+    ov.add(adLabel);
+    const adBtn = new NeonButton(this, cx + 60, 470, '', { w: 170, h: 40, fontSize: 15, glow: true, onDown: () => {
+      audio.sfx('ui');
+      const cur = !!SaveManager.load().noAds;
+      SaveManager.set('noAds', !cur);
+      this.refreshNoAdsSelect();
+    } });
+    ov.add(adBtn.container);
+    this._noAdsBtn = adBtn;
+    this.refreshNoAdsSelect();
+
+    this.makeSlider(ov, cx, 510, '主音量', 'master');
+    this.makeSlider(ov, cx, 580, '音效', 'sfx');
+    this.makeSlider(ov, cx, 650, '音乐', 'bgm');
+    ov.add(this.makeMenuBtn(cx, 700, '关闭', () => this.closeSettings()));
     this.fadeInPanel(ov);
+  }
+
+  /** 刷新去广告开关选中态（noAds=true 高亮 = 纯净版已开启） */
+  refreshNoAdsSelect() {
+    const cur = !!SaveManager.load().noAds;
+    if (this._noAdsBtn) {
+      this._noAdsBtn.setLabel(cur ? '纯净版：开' : '纯净版：关');
+      this._noAdsBtn.setSelected(cur);
+    }
   }
 
   /** 刷新四档难度按钮选中态（当前档高亮） */
@@ -271,6 +320,7 @@ export default class MenuScene extends Phaser.Scene {
   closeSettings() {
     if (this.settingsOverlay) { this.settingsOverlay.destroy(); this.settingsOverlay = null; }
     this.settingsOpen = false;
+    this._noAdsBtn = null;
   }
 
   // ---- 关卡选择面板 ----
@@ -449,15 +499,41 @@ export default class MenuScene extends Phaser.Scene {
       if (res.claimed) {
         info.setText(`已领取！\n+${res.reward} 金币 · 连续 ${res.streak} 天`);
         claimBtn.destroy();
+        this._checkinClaimBtn = null;
         if (this.saveInfoText) {
           this.saveInfoText.setText(this._saveInfoLabel());
         }
-        ov.add(this.makeMenuBtn(cx, 470, '好的', () => this.closeCheckIn()));
+        // P2 激励广告位预留：签到后提供「看广告双倍」按钮（Ads 成功后金币×2）
+        if (Ads.hasAds()) {
+          const dbl = new NeonButton(this, cx - 95, 470, '看广告双倍', {
+            w: 170, glow: true, onDown: () => {
+              audio.sfx('ui');
+              dbl.setAlpha(0.45).disableInteractive();
+              info.setText('广告播放中…');
+              Ads.showRewardAd((ok) => {
+                if (ok) {
+                  SaveManager.addCoins(res.reward);
+                  info.setText(`已领取！\n+${res.reward} 金币 · 看广告双倍再 +${res.reward}`);
+                  if (this.saveInfoText) this.saveInfoText.setText(this._saveInfoLabel());
+                  dbl.destroy();
+                  this._checkinDoubleBtn = null;
+                } else {
+                  info.setText(`已领取！\n+${res.reward} 金币 · 双倍未生效`);
+                  dbl.setAlpha(1).setInteractive();
+                }
+              });
+            },
+          }).container;
+          ov.add(dbl);
+          this._checkinDoubleBtn = dbl;
+        }
+        ov.add(new NeonButton(this, cx + 95, 470, '好的', { w: 170, glow: true, onDown: () => this.closeCheckIn() }).container);
       } else {
         info.setText('今天已经签到啦～');
       }
     });
     ov.add(claimBtn);
+    this._checkinClaimBtn = claimBtn;
     ov.add(this.makeMenuBtn(cx, 540, '稍后再说', () => this.closeCheckIn()));
     this.fadeInPanel(ov);
   }
@@ -465,6 +541,8 @@ export default class MenuScene extends Phaser.Scene {
   closeCheckIn() {
     if (this.checkinOverlay) { this.checkinOverlay.destroy(); this.checkinOverlay = null; }
     this.checkinOpen = false;
+    this._checkinClaimBtn = null;
+    this._checkinDoubleBtn = null;
   }
 
   // ---- 每日任务面板（留存系统 #每日任务）----

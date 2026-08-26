@@ -674,6 +674,32 @@ export function getCurrentEvent(date = new Date()) {
 }
 
 // ───────────────────────────────────────────────────────────────
+// P2 系统扩展 · 无尽周赛（本地假组，纯本地不接后端）
+// 无尽模式只有 bestScore，无竞争周期；这里给无尽加"每周排位"。
+// GROUP_SIZE  假组人数（本地模拟 50 人排位，rank 在 [1, GROUP_SIZE]）
+// REWARDS     周结按 rank 发金币（append-only：rank 支持单值或 "a-b" 区间）
+// ───────────────────────────────────────────────────────────────
+export const WEEKLY_LEAGUE = {
+  GROUP_SIZE: 50,
+  REWARDS: [
+    { rank: 1, coins: 500 },
+    { rank: 2, coins: 300 },
+    { rank: 3, coins: 200 },
+    { rank: '4-10', coins: 100 },
+    { rank: '11-50', coins: 50 },
+  ],
+};
+
+/** ISO 周 key（形如 "2026-W34"）：无尽周赛按周切换。复用 _isoWeekNumber 的算法，ISO 年取自偏移后的日期。 */
+export function getIsoWeekKey(date = new Date()) {
+  const wk = _isoWeekNumber(date);
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  return `${d.getUTCFullYear()}-W${String(wk).padStart(2, '0')}`;
+}
+
+// ───────────────────────────────────────────────────────────────
 // 画质档位（P0 性能三件套）：低端机降级，纯视觉/技术，零业务逻辑。
 // tiers 顺序即设置面板展示顺序；scale 为粒子/弹幕密度缩放系数（消费方读 scene.qualityScale）。
 // 消费方：VFX.poolExplode/poolSpark/debrisBurst/smokePuff（爆炸粒子 quantity 按档缩放）、

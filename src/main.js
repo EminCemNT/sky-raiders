@@ -56,4 +56,61 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   });
 }
 
+// ───────────────────────────────────────────────────────────────
+// P2 离线产品化（纯 DOM 叠层，不阻塞游戏）：
+//   1) 断网/恢复顶部 toast：监听 online/offline，非弹窗、pointer-events:none；
+//   2) 移动端横屏提示遮罩：仅移动端 UA + 非 iframe（避免干扰 CrazyGames 桌面嵌入）+ 横屏才显示。
+// ───────────────────────────────────────────────────────────────
+(function setupOfflineToast() {
+  const el = document.createElement('div');
+  el.id = 'offline-toast';
+  Object.assign(el.style, {
+    position: 'fixed', top: '0', left: '0', right: '0', zIndex: '9999',
+    textAlign: 'center', padding: '10px 0', fontSize: '14px', fontWeight: '700',
+    color: '#7cf3ff', background: 'rgba(5,10,20,0.94)',
+    borderBottom: '1px solid rgba(120,200,255,.4)',
+    pointerEvents: 'none', opacity: '0', transition: 'opacity .25s',
+  });
+  document.body.appendChild(el);
+  let timer = null;
+  const show = (msg, persist = false) => {
+    el.textContent = msg;
+    el.style.opacity = '1';
+    if (timer) clearTimeout(timer);
+    // 断网提示常驻到恢复；恢复提示 2.2s 后自动淡出
+    if (!persist) timer = setTimeout(() => { el.style.opacity = '0'; }, 2200);
+  };
+  window.addEventListener('online', () => show('网络已恢复'));
+  window.addEventListener('offline', () => show('网络已断开，当前为离线模式', true));
+  // 测试钩子（与 window.__SKY 同性质，不影响玩法）
+  window.__OFFLINE_TOAST = { show, el };
+})();
+
+(function setupLandscapeOverlay() {
+  const el = document.createElement('div');
+  el.id = 'landscape-overlay';
+  Object.assign(el.style, {
+    position: 'fixed', inset: '0', zIndex: '9998', display: 'none',
+    alignItems: 'center', justifyContent: 'center',
+    background: 'rgba(5,10,20,0.96)', color: '#7cf3ff',
+    fontSize: '20px', fontWeight: '700', letterSpacing: '2px', textAlign: 'center',
+  });
+  el.textContent = '请竖屏游玩';
+  document.body.appendChild(el);
+  // 探测：移动端 UA + 非 iframe（避免干扰 CrazyGames 桌面嵌入）+ 横屏
+  const state = {
+    isMobile: /Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(navigator.userAgent),
+    inIframe: window.self !== window.top,
+  };
+  const update = () => {
+    const landscape = window.innerWidth > window.innerHeight;
+    el.style.display = (state.isMobile && !state.inIframe && landscape) ? 'flex' : 'none';
+  };
+  window.addEventListener('resize', update);
+  window.addEventListener('orientationchange', update);
+  update();
+  // 测试钩子（可改 state 模拟 iframe/桌面/移动端，再调 update 验证）
+  window.__LANDSCAPE_OVERLAY = { el, state, update };
+})();
+
 export default game;
