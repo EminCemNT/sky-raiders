@@ -470,3 +470,16 @@ export const DAILY_QUEST_POOL = [
   { metric: 'combos', target: 5,  desc: '触发 5 次元素协同', reward: 50 },
   { metric: 'super',  target: 2,  desc: '释放 2 次星风暴',   reward: 30 },
 ];
+
+// ───────────────────────────────────────────────────────────────
+// 画质档位（P0 性能三件套）：低端机降级，纯视觉/技术，零业务逻辑。
+// tiers 顺序即设置面板展示顺序；scale 为粒子/弹幕密度缩放系数（消费方读 scene.qualityScale）。
+// 消费方：VFX.poolExplode/poolSpark/debrisBurst/smokePuff（爆炸粒子 quantity 按档缩放）、
+//         GameScene.create（qualityScale = PERFORMANCE.scale[quality]）。
+// reduced-motion 优先于 quality（reduced 更保守，VFX 内部全降级，池不创建）。
+// ───────────────────────────────────────────────────────────────
+export const PERFORMANCE = {
+  tiers: ['high', 'mid', 'low'],
+  defaultTier: 'high',
+  scale: { high: 1.0, mid: 0.7, low: 0.45 },
+};

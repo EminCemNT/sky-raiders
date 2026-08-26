@@ -9,6 +9,13 @@ import { COLORS, ELEMENTS, GAME_WIDTH, VFX_COLORS } from '../config/GameConfig.j
 const prefersReduced = (typeof window !== 'undefined' && window.matchMedia
   && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
+// 画质档缩放：读 GameScene.qualityScale（P0 性能三件套：high=1.0 / mid=0.7 / low=0.45）。
+// 默认 1.0（未建场景 / 未设置时零回归）；reduced-motion 优先于 quality（更保守，上层已短路）。
+function _qualityScale(scene) {
+  const q = scene && scene.qualityScale;
+  return (typeof q === 'number' && q > 0 && q <= 1) ? q : 1;
+}
+
 // 未纳入 VFX_COLORS 的少量局部美术色（命名化，避免特效散落魔法数；append-only）
 const LOCAL_COLORS = {
   emberOrange: 0xff6622,  // 爆炸橙红余烬（VFX_COLORS 无精确对应）
@@ -33,12 +40,15 @@ const LOCAL_COLORS = {
  */
 export function explosion(scene, x, y, color, scale = 1) {
   if (prefersReduced) return;
+  // 池化优先：GameScene 已建 vfxPool 时复用 offscreen emitter，避免每次 new emitter + delayedCall destroy（GC 抖动）
+  if (scene && scene.vfxPool) { poolExplode(scene, scene.vfxPool, x, y, color, { scale }); return; }
+  const qs = _qualityScale(scene);
   const p = scene.add.particles(x, y, 'particle_dot', {
     speed: { min: 70 * scale, max: 280 * scale },
     lifespan: 550,
     scale: { start: 1.7 * scale, end: 0 },
     alpha: { start: 0.9, end: 0 },
-    quantity: Math.floor(22 * scale),
+    quantity: Math.max(1, Math.floor(22 * scale * qs)),
     blendMode: 'ADD',
     tint: [color, VFX_COLORS.hit[3], VFX_COLORS.flash, LOCAL_COLORS.emberOrange],
     gravityY: 18,
@@ -97,7 +107,8 @@ export function shockwaveRing(scene, x, y, color, opts = {}) {
 /** 残骸：4-6 片深色碎片（NORMAL 混合，旋转飘散，650ms） */
 export function debrisBurst(scene, x, y, color = VFX_COLORS.debris, count = 5, scale = 1) {
   if (prefersReduced) return null;
-  const n = Math.max(1, Math.round(Phaser.Math.Between(4, 6) * (count / 5) * scale));
+  const qs = _qualityScale(scene);
+  const n = Math.max(1, Math.round(Phaser.Math.Between(4, 6) * (count / 5) * scale * qs));
   const p = scene.add.particles(x, y, 'particle_dot', {
     speed: { min: 60 * scale, max: 180 * scale },
     lifespan: 650,
@@ -117,12 +128,13 @@ export function debrisBurst(scene, x, y, color = VFX_COLORS.debris, count = 5, s
 /** 烟尘：5-8 片灰团（NORMAL 低 alpha，慢速上浮，900ms） */
 export function smokePuff(scene, x, y, scale = 1) {
   if (prefersReduced) return null;
+  const qs = _qualityScale(scene);
   const p = scene.add.particles(x, y, 'particle_dot', {
     speed: { min: 20, max: 60 },
     lifespan: 900,
     scale: { start: 1.3 * scale, end: 0 },
     alpha: { start: 0.4, end: 0 },
-    quantity: Phaser.Math.Between(5, 8),
+    quantity: Math.max(1, Math.round(Phaser.Math.Between(5, 8) * qs)),
     tint: VFX_COLORS.smoke,
     emitting: false,
   });
@@ -157,7 +169,51 @@ export function explosionLayered(scene, x, y, color, opts = {}) {
 /** 子弹击中目标时的点状闪光（星形火花） */
 export function hitSpark(scene, x, y) {
   if (prefersReduced) return;
+  // 池化优先：命中火花复用 offscreen emitter（消除高频命中下的 GC 抖动）
+  if (scene && scene.vfxPool) { poolSpark(scene, scene.vfxPool, x, y); return; }
+  const qs = _qualityScale(scene);
   const p = scene.add.particles(x, y, 'particle_spark', {
+    speed: { min: 25, max: 100 },
+    lifespan: 150,
+    scale: { start: 0.7, end: 0 },
+    alpha: { start: 0.9, end: 0 },
+    quantity: Math.max(1, Math.floor(6 * qs)),
+    blendMode: 'ADD',
+    tint: VFX_COLORS.hit,
+    emitting: false,
+  });
+  p.setDepth(55);
+  p.explode();
+  scene.time.delayedCall(200, () => { if (p && p.active) p.destroy(); });
+}
+
+// ─── 粒子对象池（P0 技术品质：消除 GC 抖动）────────────────────────
+// 爆炸/火花不再每次 new emitter + delayedCall destroy，而是预建 2 个 offscreen
+// emitter（emitting:false）用 emitParticleAt 复用。reduced-motion 下不建池（返回 null，
+// 调用方判空降级为无粒子）；粒子寿命结束后自动回收到 emitter.dead 池，重复使用。
+
+/**
+ * 预建爆炸/命中火花 offscreen emitter 池。
+ * @param {Phaser.Scene} scene
+ * @returns {{explosion: Phaser.GameObjects.Particles.ParticleEmitter,
+ *            hitSpark: Phaser.GameObjects.Particles.ParticleEmitter}|null}
+ *          reduced-motion 下返回 null（调用方判空降级）。
+ */
+export function createVfxPool(scene) {
+  if (prefersReduced || !scene) return null;
+  const explosion = scene.add.particles(0, 0, 'particle_dot', {
+    speed: { min: 70, max: 280 },
+    lifespan: 550,
+    scale: { start: 1.7, end: 0 },
+    alpha: { start: 0.9, end: 0 },
+    quantity: 22,
+    blendMode: 'ADD',
+    tint: [COLORS.enemy, VFX_COLORS.hit[3], VFX_COLORS.flash, LOCAL_COLORS.emberOrange],
+    gravityY: 18,
+    emitting: false,
+  });
+  explosion.setDepth(50);
+  const hitSpark = scene.add.particles(0, 0, 'particle_spark', {
     speed: { min: 25, max: 100 },
     lifespan: 150,
     scale: { start: 0.7, end: 0 },
@@ -167,9 +223,57 @@ export function hitSpark(scene, x, y) {
     tint: VFX_COLORS.hit,
     emitting: false,
   });
-  p.setDepth(55);
-  p.explode();
-  scene.time.delayedCall(200, () => { if (p && p.active) p.destroy(); });
+  hitSpark.setDepth(55);
+  // 复用计数 / 最近单次粒子量（QA 探针验证池化生效与画质档缩放）
+  explosion.poolUseCount = 0; explosion.lastQuantity = 0;
+  hitSpark.poolUseCount = 0; hitSpark.lastQuantity = 0;
+  return { explosion, hitSpark };
+}
+
+/**
+ * 池化爆炸：复用 createVfxPool 建的 explosion emitter（emitParticleAt），
+ * 逐次 setConfig 覆盖颜色/缩放，quantity 按画质档缩放。
+ * @param {Phaser.Scene} scene
+ * @param {{explosion: object, hitSpark: object}|null} pool
+ * @param {number} x
+ * @param {number} y
+ * @param {number} color 主色（复用为机体/核心色）
+ * @param {{scale?: number}} opts
+ */
+export function poolExplode(scene, pool, x, y, color, opts = {}) {
+  if (prefersReduced || !pool || !pool.explosion) return;
+  const scale = opts.scale ?? 1;
+  const qs = _qualityScale(scene);
+  const qty = Math.max(1, Math.floor(22 * scale * qs));
+  const ex = pool.explosion;
+  ex.poolUseCount = (ex.poolUseCount || 0) + 1;
+  ex.lastQuantity = qty;
+  ex.setConfig({
+    speed: { min: 70 * scale, max: 280 * scale },
+    lifespan: 550,
+    scale: { start: 1.7 * scale, end: 0 },
+    alpha: { start: 0.9, end: 0 },
+    quantity: qty,
+    blendMode: 'ADD',
+    tint: [color, VFX_COLORS.hit[3], VFX_COLORS.flash, LOCAL_COLORS.emberOrange],
+    gravityY: 18,
+    emitting: false,
+  });
+  ex.emitParticleAt(x, y, qty);
+}
+
+/**
+ * 池化命中火花：复用 createVfxPool 建的 hitSpark emitter（emitParticleAt）。
+ * quantity 按画质档缩放。
+ */
+export function poolSpark(scene, pool, x, y) {
+  if (prefersReduced || !pool || !pool.hitSpark) return;
+  const qs = _qualityScale(scene);
+  const qty = Math.max(1, Math.floor(6 * qs));
+  const hs = pool.hitSpark;
+  hs.poolUseCount = (hs.poolUseCount || 0) + 1;
+  hs.lastQuantity = qty;
+  hs.emitParticleAt(x, y, qty);
 }
 
 /** 炸弹/星风暴：五层爆炸（全层）+ 屏震 + 闪光（reduced-motion 仅静态白闪） */

@@ -80,23 +80,28 @@ const r1 = await page.evaluate(async () => {
     });
     return { arcs, emitters };
   };
+  // P0 粒子池化：爆炸粒子层复用 vfxPool.explosion（不新增 emitter），
+  // 故除 Arc/新增 emitter 外，还要验证池化爆炸 emitter 被实际复用（poolUseCount 增加）。
+  const use0 = gs.vfxPool && gs.vfxPool.explosion ? (gs.vfxPool.explosion.poolUseCount || 0) : 0;
   const t0 = count();
   VFX.explosionLayered(gs, gs.player.x, gs.player.y - 60, 0xff5a6e, { tier: 'small' });
   await new Promise((res) => setTimeout(res, 100));
   const t1 = count();
   await new Promise((res) => setTimeout(res, 70));
   const t2 = count();
+  const use1 = gs.vfxPool && gs.vfxPool.explosion ? (gs.vfxPool.explosion.poolUseCount || 0) : 0;
   out.maxArcs = Math.max(t1.arcs - t0.arcs, t2.arcs - t0.arcs);
-  out.maxEmitters = Math.max(t1.emitters - t0.emitters, t2.emitters - t0.emitters);
+  out.newEmitters = Math.max(t1.emitters - t0.emitters, t2.emitters - t0.emitters);
+  out.poolExplodeUsed = use1 > use0;
   return out;
 });
 push('VFX 五层接口导出（explosionLayered/flashCore/shockwaveRing/debrisBurst/smokePuff）',
   !!r1.api.explosionLayered && !!r1.api.flashCore && !!r1.api.shockwaveRing
   && !!r1.api.debrisBurst && !!r1.api.smokePuff,
   JSON.stringify(r1.api));
-push('explosionLayered 至少 4 层触发（闪光圆+冲击波环 ≥2 Arc，粒子+残骸+烟尘 ≥3 Emitter）',
-  r1.maxArcs >= 2 && r1.maxEmitters >= 3,
-  `maxArcs=${r1.maxArcs} maxEmitters=${r1.maxEmitters}`);
+push('explosionLayered 五层触发（闪光圆+冲击波环 ≥2 Arc，粒子层走池化复用，残骸+烟尘 ≥2 Emitter）',
+  r1.maxArcs >= 2 && r1.newEmitters >= 2 && r1.poolExplodeUsed === true,
+  `maxArcs=${r1.maxArcs} newEmitters=${r1.newEmitters} poolExplodeUsed=${r1.poolExplodeUsed}`);
 
 // ── 2) Boss.die 弹性缩放 tween（源码级）──
 const bossSrc = fs.readFileSync(path.join(ROOT, 'src/entities/Boss.js'), 'utf8');

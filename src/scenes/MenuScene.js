@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, LEVELS, DIFFICULTIES } from '../config/GameConfig.js';
+import { SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, LEVELS, DIFFICULTIES, PERFORMANCE } from '../config/GameConfig.js';
 import { SaveManager } from '../utils/SaveManager.js';
 import { AchievementManager } from '../systems/AchievementManager.js';
 import { createStarfield, MENU_BG_THEME } from '../systems/Starfield.js';
@@ -205,9 +205,34 @@ export default class MenuScene extends Phaser.Scene {
     });
     this.refreshDifficultySelect();
 
-    this.makeSlider(ov, cx, 430, '主音量', 'master');
-    this.makeSlider(ov, cx, 510, '音效', 'sfx');
-    this.makeSlider(ov, cx, 590, '音乐', 'bgm');
+    // 画质档位按钮（P0 性能三件套）：三档画质，当前档选中高亮；点击切换 → 持久化 + 刷新高亮
+    this._qualityBtns = [];
+    const qLabel = this.add.text(cx, 386, '画质', {
+      fontFamily: THEME.fontFamily, fontSize: '18px', color: THEME.textPrimary,
+    }).setOrigin(0.5);
+    ov.add(qLabel);
+    const qW = 92, qH = 46;
+    const qTotalW = PERFORMANCE.tiers.length * qW + (PERFORMANCE.tiers.length - 1) * gap;
+    const qStartX = cx - qTotalW / 2 + qW / 2;
+    const QUALITY_NAMES = { high: '高', mid: '中', low: '低' };
+    PERFORMANCE.tiers.forEach((t, i) => {
+      const x = qStartX + i * (qW + gap);
+      const btn = new NeonButton(this, x, 426, QUALITY_NAMES[t] || t, {
+        w: qW, h: qH, fontSize: 16, glow: true,
+        onDown: () => {
+          audio.sfx('ui');
+          SaveManager.set('quality', t);
+          this.refreshQualitySelect();
+        },
+      });
+      ov.add(btn.container);
+      this._qualityBtns.push({ btn, id: t });
+    });
+    this.refreshQualitySelect();
+
+    this.makeSlider(ov, cx, 480, '主音量', 'master');
+    this.makeSlider(ov, cx, 550, '音效', 'sfx');
+    this.makeSlider(ov, cx, 620, '音乐', 'bgm');
     ov.add(this.makeMenuBtn(cx, 690, '关闭', () => this.closeSettings()));
     this.fadeInPanel(ov);
   }
@@ -216,6 +241,12 @@ export default class MenuScene extends Phaser.Scene {
   refreshDifficultySelect() {
     const cur = SaveManager.load().selectedDifficulty || 'standard';
     (this._difficultyBtns || []).forEach(({ btn, id }) => btn.setSelected(id === cur));
+  }
+
+  /** 刷新三档画质按钮选中态（当前档高亮） */
+  refreshQualitySelect() {
+    const cur = SaveManager.load().quality || PERFORMANCE.defaultTier;
+    (this._qualityBtns || []).forEach(({ btn, id }) => btn.setSelected(id === cur));
   }
 
   closeSettings() {

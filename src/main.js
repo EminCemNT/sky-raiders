@@ -46,4 +46,14 @@ const game = new Phaser.Game(config);
 window.__SKY__ = game;
 window.__SAVE = SaveManager;
 
+// P0 技术品质：生产环境注册 Service Worker（离线缓存，缓存优先）。
+// 仅 production 注册 —— dev 不注册，避免 SW 缓存干扰开发调试（改代码不生效）。
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => {
+      // SW 注册失败不影响游戏运行（隐私模式/受限上下文等场景静默降级）
+    });
+  });
+}
+
 export default game;

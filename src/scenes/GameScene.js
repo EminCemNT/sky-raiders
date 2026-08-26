@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import {
   SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, COLORS, PLAYER, BULLET, LEVELS, BOSS_RUSH, SHIPS, ELEMENTS, WINGMAN,
-  DIFFICULTIES, getDifficulty, POWERUP, GRAZE, OVERDRIVE, bossRushScale,
+  DIFFICULTIES, getDifficulty, POWERUP, GRAZE, OVERDRIVE, bossRushScale, PERFORMANCE,
 } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
@@ -180,6 +180,13 @@ export default class GameScene extends Phaser.Scene {
     this.bulletTrails = VFX.createBulletTrails(this);
     this.enemyGlow = VFX.enemyBulletGlow(this);
     this.enemyTrail = VFX.enemyBulletTrail(this);
+
+    // 画质档（P0 性能三件套）：读存档 quality → 粒子/弹幕密度缩放系数。
+    // reduced-motion 优先于 quality（VFX.createVfxPool 内部返回 null，爆炸/火花调用点判空降级为无粒子）。
+    const quality = (SaveManager.load().quality) || PERFORMANCE.defaultTier;
+    this.qualityScale = (PERFORMANCE.scale && PERFORMANCE.scale[quality]) || 1;
+    // 爆炸/命中火花对象池：预建 2 个 offscreen emitter 复用（消除 GC 抖动）
+    this.vfxPool = VFX.createVfxPool(this);
 
     // 拾取柔光（P3 光效纪律白名单：机/弹/爆/拾取；对象池每实例挂一层，随 active 显隐）
     this.items.children.each((it) => VFX.glowTarget(it, 0x9ff0ff, { radius: 0.38, alpha: 0.22, depth: -1 }));
