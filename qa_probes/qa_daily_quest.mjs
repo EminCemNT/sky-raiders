@@ -27,10 +27,11 @@ const init = await page.evaluate(() => {
   const s = S.load();
   s.dailyQuest = { date: '', claimed: false, progress: {}, picked: [] }; // 强制刷新
   const q = S.getDailyQuests();
-  return { n: q.length, metrics: q.map((x) => x.metric), claimed: S.dailyQuestsClaimed(), ready: S.dailyQuestsReady() };
+  const POOL = ['kills', 'coins', 'bombs', 'combos', 'grazes', 'clears', 'bossRushClears', 'endlessWaves', 'modules', 'skins'];
+  return { n: q.length, metrics: q.map((x) => x.metric), claimed: S.dailyQuestsClaimed(), ready: S.dailyQuestsReady(), inPool: q.every((x) => POOL.includes(x.metric)) };
 });
-assert(init.n === 3, `当日任务数=3（实际 ${init.n}）`);
-assert(init.metrics.every((m) => ['kills', 'coins', 'bombs', 'combos', 'super'].includes(m)), `任务指标均来自池（${init.metrics.join(',')}）`);
+assert(init.n === 4, `当日任务数=4（实际 ${init.n}）`);
+assert(init.inPool, `任务指标均来自池（${init.metrics.join(',')}）`);
 assert(init.claimed === false, '初始未领取');
 assert(init.ready === false, '初始未全部完成');
 
@@ -44,13 +45,14 @@ const filled = await page.evaluate(() => {
 assert(filled.allDone, '灌满后全部 done');
 assert(filled.ready, 'dailyQuestsReady=true');
 
-// (C) 领取 -> 金币增加 + claimed + count
+// (C) 领取 -> 金币增加 + claimed + count（含全清奖励）
 const before = await page.evaluate(() => window.__SAVE.load().coins);
 const claim = await page.evaluate(() => window.__SAVE.claimDailyQuests());
 const after = await page.evaluate(() => window.__SAVE.load().coins);
 assert(claim.claimed === true, '领取成功');
-assert(claim.count === 3, `领取 3 项（实际 ${claim.count}）`);
+assert(claim.count === 4, `领取 4 项（实际 ${claim.count}）`);
 assert(after - before === claim.reward, `金币 +${claim.reward}（实际 +${after - before}）`);
+assert(claim.bonus >= 50, `全清奖励含 bonus（实际 ${claim.bonus}）`);
 
 // (D) 重复领取应被拒
 const dup = await page.evaluate(() => window.__SAVE.claimDailyQuests());
@@ -69,7 +71,7 @@ const refresh = await page.evaluate(() => {
   const s2 = S.load();
   return { n: q.length, claimed: s2.dailyQuest.claimed, progressEmpty: Object.keys(s2.dailyQuest.progress).length === 0, dateIsToday: s2.dailyQuest.date !== yStr };
 });
-assert(refresh.n === 3, '跨天后重新生成 3 个');
+assert(refresh.n === 4, '跨天后重新生成 4 个');
 assert(refresh.claimed === false, '跨天后领取状态重置');
 assert(refresh.progressEmpty, '跨天后进度重置');
 assert(refresh.dateIsToday, '跨天后 date 更新为今天');

@@ -17,6 +17,10 @@ export default class WaveSystem {
   constructor(scene, levelId = 1, opts = {}) {
     this.scene = scene;
     this.endless = !!opts.endless; // P1 无尽 Score Attack：无限循环 + 难度递增，永不进 Boss
+    // P1 留存·深空爬塔（无尽升级）：每 endlessBossEvery 波一个 Boss 波（0=关闭，其他模式零 diff）
+    this.endlessBossEvery = Math.max(0, Number(opts.endlessBossEvery) || 0);
+    // P1 留存·深空爬塔：每波清空后等待 scene 弹「3 选 1 增益」面板，选完调 continueAfterWave() 继续
+    this.awaitBuff = !!opts.awaitBuff;
     this.level = LEVELS.find((l) => l.id === levelId) || LEVELS[0];
     this.totalWaves = this.level.waves;
     this.currentWave = 0;
@@ -33,6 +37,13 @@ export default class WaveSystem {
 
   startNextWave() {
     this.currentWave++;
+    // 深空爬塔：每 N 波 Boss（无尽模式专用；wave=10 → 层 1，wave=20 → 层 2…）
+    if (this.endless && this.endlessBossEvery > 0 && this.currentWave % this.endlessBossEvery === 0) {
+      this.state = 'boss';
+      const floor = Math.floor(this.currentWave / this.endlessBossEvery);
+      if (this.scene.spawnTowerBoss) this.scene.spawnTowerBoss(floor);
+      return;
+    }
     // 无尽模式：无限循环，永不触发 Boss；普通模式走原有关卡 Boss 收尾
     if (!this.endless && this.currentWave > this.totalWaves) {
       // 所有波次完成 -> Boss
@@ -96,15 +107,25 @@ export default class WaveSystem {
       const aliveEnemies = this.scene.enemies
         ? this.scene.enemies.countActive(true) : 0;
       if (aliveEnemies === 0 || this._delayTimer > 6000) {
-        if (aliveEnemies === 0) EventBus.emit(EVENTS.WAVE_CLEARED, this.currentWave);
+        const cleared = aliveEnemies === 0;
+        if (cleared) EventBus.emit(EVENTS.WAVE_CLEARED, this.currentWave);
         this._delayTimer = 0;
-        if (this._delayTimer === 0) {
-          // 小延迟后开下一波
+        // 深空爬塔：波清空后暂停推进，等 scene 弹「3 选 1 增益」面板，选完调 continueAfterWave()
+        if (this.awaitBuff && cleared) {
           this.state = 'idle';
-          this.scene.time.delayedCall(this._nextWaveDelay, () => this.startNextWave());
+          return;
         }
+        this.state = 'idle';
+        this.scene.time.delayedCall(this._nextWaveDelay, () => this.startNextWave());
       }
     }
+  }
+
+  /** 深空爬塔：3 选 1 增益选择完毕后调用，推进到下一波 */
+  continueAfterWave() {
+    if (this.state !== 'idle' && this.state !== 'boss') return;
+    this.state = 'idle';
+    this.scene.time.delayedCall(this._nextWaveDelay, () => this.startNextWave());
   }
 
   spawnOne() {

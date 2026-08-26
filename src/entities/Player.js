@@ -94,6 +94,14 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     this.moduleGrazeExtra = 0;
     this.applyModules((SaveManager.load().modules) || {});
 
+    // P1 留存·深空爬塔局内临时增益（不入存档）：
+    //   towerExtraShots 主炮并列弹 +N（fire() 消费）
+    //   towerSpeedMul    移速倍率（×1.08^N，getMoveSpeed / 拖拽路径消费）
+    //   towerGrazeExtra  擦弹环额外半径 +8N px（getGrazeCircle 消费）
+    this.towerExtraShots = 0;
+    this.towerSpeedMul = 1;
+    this.towerGrazeExtra = 0;
+
     // 尾焰粒子（增强版）
     this.thruster = VFX.attachPlayerThruster(scene, this);
 
@@ -128,9 +136,9 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     return this;
   }
 
-  /** 模块加持后的最大移动速度（键盘路径用）；P1 聚焦模式下移速 ×0.45 */
+  /** 模块加持后的最大移动速度（键盘路径用）；P1 聚焦模式下移速 ×0.45；爬塔增益叠加 */
   getMoveSpeed() {
-    const base = Math.round(PLAYER.SPEED * (this.moduleSpeedMul || 1));
+    const base = Math.round(PLAYER.SPEED * (this.moduleSpeedMul || 1) * (this.towerSpeedMul || 1));
     if (this.focusing && FOCUS.SPEED_MUL) return Math.round(base * FOCUS.SPEED_MUL);
     return base;
   }
@@ -143,7 +151,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
       const ty = Phaser.Math.Clamp(pointer.worldY - 40, 40, GAME_HEIGHT - 20);
       // 引擎模块移速加成 + P1 聚焦减速：同时作用于拖动插值系数（保守封顶，不破坏手感）
       const spdMul = this.focusing ? (FOCUS.SPEED_MUL || 1) : 1;
-      const k = Math.min(0.35 * (this.moduleSpeedMul || 1) * spdMul, 0.55);
+      const k = Math.min(0.35 * (this.moduleSpeedMul || 1) * (this.towerSpeedMul || 1) * spdMul, 0.55);
       this.x = Phaser.Math.Linear(this.x, tx, k);
       this.y = Phaser.Math.Linear(this.y, ty, k);
     } else if (cursors) {
@@ -221,6 +229,15 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     if (this.weapon === 'pulse' && this.powerLevel > 0) {
       const spread = 16;
       for (let i = 0; i < this.powerLevel; i++) {
+        const side = (i % 2 === 0) ? (i / 2 + 1) : -Math.ceil(i / 2);
+        this._emitBullet({ dx: side * spread, vx: 0, bulletKey: 'bullet_pulse' });
+      }
+    }
+
+    // P1 留存·深空爬塔：弹量 +N（主炮并列弹，走既有 _emitBullet 机制）
+    if (this.weapon === 'pulse' && this.towerExtraShots > 0) {
+      const spread = 16;
+      for (let i = 0; i < this.towerExtraShots; i++) {
         const side = (i % 2 === 0) ? (i / 2 + 1) : -Math.ceil(i / 2);
         this._emitBullet({ dx: side * spread, vx: 0, bulletKey: 'bullet_pulse' });
       }
@@ -503,9 +520,12 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     return { x: this.x, y: this.y, r: PLAYER.HITBOX_RADIUS };
   }
 
-  /** 擦弹环（P2）：判定圈外的擦弹判定半径（r = 判定圈 + RING_EXTRA + 引擎模块擦弹环加成） */
+  /** 擦弹环（P2）：判定圈外的擦弹判定半径（r = 判定圈 + RING_EXTRA + 引擎模块擦弹环加成 + 爬塔擦弹环加成） */
   getGrazeCircle() {
-    return { x: this.x, y: this.y, r: PLAYER.HITBOX_RADIUS + GRAZE.RING_EXTRA + (this.moduleGrazeExtra || 0) };
+    return {
+      x: this.x, y: this.y,
+      r: PLAYER.HITBOX_RADIUS + GRAZE.RING_EXTRA + (this.moduleGrazeExtra || 0) + (this.towerGrazeExtra || 0),
+    };
   }
 
   kill() {

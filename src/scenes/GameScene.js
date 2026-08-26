@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import {
   SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, COLORS, PLAYER, BULLET, LEVELS, BOSS_RUSH, SHIPS, ELEMENTS, WINGMAN,
   DIFFICULTIES, getDifficulty, POWERUP, GRAZE, OVERDRIVE, OVERCHARGE, FOCUS, bossRushScale, PERFORMANCE,
-  EVENT_MODES, getCurrentEvent, MODULE_DROP_CHANCE, getShipSkins,
+  EVENT_MODES, getCurrentEvent, MODULE_DROP_CHANCE, getShipSkins, TOWER, TOWER_BUFFS,
 } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
@@ -85,6 +85,14 @@ export default class GameScene extends Phaser.Scene {
     this._adReviveOpen = false;
     this._adReviveOverlay = null;
     this._adReviveCtl = null;
+    // P1 留存·深空爬塔（无尽升级）：局内临时状态（不入存档）
+    //   isTower=true 无尽爬塔；towerFloor=已通过层数（Boss 波通关数）；
+    //   towerBonuses={ fireRate/extraShot/speed/graze/hp/coin: 各增益累计次数 }
+    this.isTower = false;
+    this.towerFloor = 0;
+    this.towerBonuses = { fireRate: 0, extraShot: 0, speed: 0, graze: 0, hp: 0, coin: 0 };
+    this._towerBuffOpen = false;
+    this._towerBuffOverlay = null;
     // 成就系统：本局开始，重置会话态并预载累计数据
     AchievementManager.startRun(this.mode, this.levelId);
   }
@@ -206,9 +214,20 @@ export default class GameScene extends Phaser.Scene {
     // 波次系统（Boss Rush 模式不生成普通波次，改为纯 Boss 序列；
     // endless 复用同一 WaveSystem，开无尽循环 + 难度递增；
     // 活动模式同样走无尽循环，由 EVENT_TIMER 到期结算）
+    // P1 留存·深空爬塔：无尽模式升级为爬塔（每 TOWER.BOSS_EVERY 波一个 Boss + 每波 3 选 1 增益）；
+    //   活动模式（coin_rush/survival）保持纯无尽，不受影响。
     this.bossRushIndex = 0;
+    this.isTower = this.mode === 'endless';
+    if (this.isTower) {
+      this.towerFloor = 0;
+      this.towerBonuses = { fireRate: 0, extraShot: 0, speed: 0, graze: 0, hp: 0, coin: 0 };
+    }
     if (this.mode !== 'bossrush') {
-      this.waves = new WaveSystem(this, this.levelId, { endless: this.mode === 'endless' || !!this.eventCfg });
+      this.waves = new WaveSystem(this, this.levelId, {
+        endless: this.mode === 'endless' || !!this.eventCfg,
+        endlessBossEvery: this.isTower ? (TOWER.BOSS_EVERY || 10) : 0,
+        awaitBuff: this.isTower,
+      });
     }
     this.boss = null;
 
@@ -467,6 +486,18 @@ export default class GameScene extends Phaser.Scene {
         } else {
           this.time.delayedCall(1200, () => this.endGame(true));
         }
+      } else if (this.isTower) {
+        // P1 留存·深空爬塔：Boss 击破 → 层数 +1 → 记录最高层 → 弹 3 选 1 增益 → 继续下一波
+        this.towerFloor = (this.towerFloor || 0) + 1;
+        SaveManager.recordTowerTop(this.towerFloor);
+        // Boss 波结束：波次系统回 idle，等增益面板选择后 continueAfterWave 推进下一波
+        if (this.waves) this.waves.state = 'idle';
+        this.time.delayedCall(1200, () => {
+          const shown = this.showTowerBuffPanel();
+          if (!shown && this.waves && typeof this.waves.continueAfterWave === 'function') {
+            this.waves.continueAfterWave();
+          }
+        });
       } else {
         this.time.delayedCall(1200, () => this.endGame(true));
       }
@@ -500,6 +531,18 @@ export default class GameScene extends Phaser.Scene {
     // P1 聚焦模式：移动端按钮切换（UIScene 发 FOCUS_TOGGLE）
     this._onFocusToggle = () => { this._focusBtnDown = !this._focusBtnDown; };
     EventBus.on(EVENTS.FOCUS_TOGGLE, this._onFocusToggle);
+
+    // P1 留存·深空爬塔：普通波清空 → 弹 3 选 1 增益（Boss 波在 _onBossDefeated 分支处理）
+    this._onWaveCleared = () => {
+      if (this.isTower && !this.gameEnded) {
+        const shown = this.showTowerBuffPanel();
+        // 玩家已死等场景未弹面板：直接推进下一波，避免波次死锁
+        if (!shown && this.waves && typeof this.waves.continueAfterWave === 'function') {
+          this.waves.continueAfterWave();
+        }
+      }
+    };
+    EventBus.on(EVENTS.WAVE_CLEARED, this._onWaveCleared);
   }
 
   update(time, dt) {
@@ -823,6 +866,26 @@ export default class GameScene extends Phaser.Scene {
     });
   }
 
+  /**
+   * P1 留存·深空爬塔：无尽模式每 TOWER.BOSS_EVERY 波的 Boss 波。
+   * 复用 spawnBoss；bossKey 按层数轮换 BOSS_RUSH 4 Boss；层数越高血越厚、弹速越快。
+   * @param {number} floor 爬塔层数（1 起；wave=10 → floor 1）
+   */
+  spawnTowerBoss(floor) {
+    const f = Math.max(1, Math.floor(Number(floor) || 1));
+    const seq = BOSS_RUSH[(f - 1) % BOSS_RUSH.length] || BOSS_RUSH[0];
+    const tower = TOWER || { BOSS_HP_GROWTH: 0.18, BOSS_DIFF_GROWTH: 0.15 };
+    const hpGrowth = (tower.BOSS_HP_GROWTH || 0.18) * (f - 1);
+    const diffGrowth = (tower.BOSS_DIFF_GROWTH || 0.15) * (f - 1);
+    this.spawnBoss(seq.bossKey, {
+      name: `爬塔 ${f} 层 · ${seq.name}`,
+      color: seq.color, pattern: seq.pattern,
+      maxHp: Math.round(seq.maxHp * (1 + hpGrowth)),
+      difficulty: 1.0 + diffGrowth,
+    });
+    EventBus.emit(EVENTS.FLOAT_SCORE, { x: GAME_WIDTH / 2, y: 260, special: true, label: `爬塔 ${f} 层` });
+  }
+
   spawnCoin(x, y) {
     const c = this.coins.get(x, y, 'coin');
     if (!c) return;
@@ -944,6 +1007,7 @@ export default class GameScene extends Phaser.Scene {
         case 'module':
           // P0 机库模块养成：Boss 掉落的模块 → 随机入库存（机库面板装备/合成）
           SaveManager.addRandomModule();
+          SaveManager.addDailyProgress('modules', 1); // P1 留存-每日任务：收集模块进度
           break;
         case 'element':
           this.rotatePlayerElement();   // 元素核心：火→冰→雷→火 轮换
@@ -1188,6 +1252,7 @@ export default class GameScene extends Phaser.Scene {
     EventBus.emit(EVENTS.FLOAT_SCORE, { x, y, amount: total, special: true, label: '擦弹' });
     EventBus.emit(EVENTS.GRAZE_CHANGED, { count: this.grazeCount, chain: this.grazeChain });
     SaveManager.addNewbieProgress('grazes', 1); // P0 留存-新手计划：D6 擦弹进度
+    SaveManager.addDailyProgress('grazes', 1); // P1 留存-每日任务：累计擦弹进度
     // P1 超载：连续擦弹计数（30s 窗口）
     this._registerOvercharge('graze', now);
   }
@@ -1434,6 +1499,126 @@ export default class GameScene extends Phaser.Scene {
     return true;
   }
 
+  // ---- P1 留存·深空爬塔：每波结束 3 选 1 随机增益 ----
+  /** 从 TOWER_BUFFS 随机抽 3 个不同增益 */
+  rollTowerBuffOptions() {
+    const pool = (TOWER_BUFFS || []).slice();
+    const out = [];
+    while (out.length < 3 && pool.length) {
+      const i = Math.floor(Math.random() * pool.length);
+      out.push(pool.splice(i, 1)[0]);
+    }
+    return out;
+  }
+
+  /**
+   * 弹「3 选 1 增益」面板：暂停物理世界，玩家选择后应用增益并继续下一波。
+   * 纯局内临时：towerBonuses 不入存档，复用 Player/GameScene 既有机制。
+   * @returns {boolean} 面板是否弹出（玩家已死/游戏结束等场景返回 false，调用方应继续推进波次）
+   */
+  showTowerBuffPanel() {
+    if (this.gameEnded || this._towerBuffOpen || !this.player || !this.player.active) return false;
+    const cx = GAME_WIDTH / 2, cy = GAME_HEIGHT / 2;
+    const ov = this.add.container(0, 0).setDepth(800);
+    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.72)
+      .setOrigin(0).setInteractive();
+    const panel = this.add.rectangle(cx, cy, 460, 430, 0x0d2236, 0.98)
+      .setStrokeStyle(2, COLORS.accent);
+    const title = this.add.text(cx, cy - 158, '波次奖励 · 三选一', {
+      fontFamily: 'sans-serif', fontSize: '30px', fontStyle: '800', color: COLORS.accent,
+    }).setOrigin(0.5).setShadow(0, 0, '#000000', 8, true, true);
+    const sub = this.add.text(cx, cy - 112, this.isTower ? `当前爬塔 ${this.towerFloor || 0} 层` : '选择一项增益强化战机', {
+      fontFamily: 'sans-serif', fontSize: '16px', color: '#cfe8ff',
+    }).setOrigin(0.5);
+    ov.add([dim, panel, title, sub]);
+
+    const opts = this.rollTowerBuffOptions();
+    let done = false;
+    const finish = (pickId) => {
+      if (done) return;
+      done = true;
+      this._towerBuffOpen = false;
+      this._towerBuffOverlay = null;
+      if (ov.active) ov.destroy();
+      if (this.physics && this.physics.world && this.physics.world.isPaused) this.physics.world.resume();
+      if (pickId) this.applyTowerBuff(pickId);
+      if (this.waves && typeof this.waves.continueAfterWave === 'function') this.waves.continueAfterWave();
+    };
+
+    opts.forEach((b, i) => {
+      const by = cy - 40 + i * 96;
+      const card = this.add.container(cx, by).setDepth(801);
+      const bg = this.add.rectangle(0, 0, 400, 80, 0x123a5a, 0.98)
+        .setStrokeStyle(2, COLORS.accent);
+      card.add(bg);
+      card.add(this.add.text(-170, -14, b.name, {
+        fontFamily: 'sans-serif', fontSize: '22px', fontStyle: '800', color: '#aef6ff',
+      }).setOrigin(0, 0.5));
+      card.add(this.add.text(-170, 18, b.desc, {
+        fontFamily: 'sans-serif', fontSize: '15px', color: '#88bbdd',
+      }).setOrigin(0, 0.5));
+      card.setSize(400, 80).setInteractive({
+        hitArea: new Phaser.Geom.Rectangle(-200, -40, 400, 80),
+        hitAreaCallback: (rect, x, y) => rect.contains(x, y),
+        useHandCursor: true,
+      });
+      card.on('pointerover', () => bg.setFillStyle(0x1b5580, 1));
+      card.on('pointerout', () => bg.setFillStyle(0x123a5a, 0.98));
+      card.on('pointerdown', () => { audio.sfx('ui'); finish(b.id); });
+      ov.add(card);
+    });
+
+    // 面板弹出期间冻结物理世界（选择后恢复；与广告复活面板同款）
+    if (this.physics && this.physics.world) this.physics.world.pause();
+    this._towerBuffOpen = true;
+    this._towerBuffOverlay = ov;
+    // 测试钩子（与 window.__SKY 同性质，不影响玩法）
+    this._towerBuffCtl = { opts, finish, overlay: ov, open: true };
+    return true;
+  }
+
+  /**
+   * 应用一项爬塔增益（幂等叠加，全部走既有机制）：
+   *   fireRate → player.setFireRateMul（×0.9^N） / extraShot → towerExtraShots
+   *   speed → towerSpeedMul（×1.08^N） / graze → towerGrazeExtra +8 / hp → maxHp+20 / coin → 结算 ×1.2^N
+   */
+  applyTowerBuff(id) {
+    const b = this.towerBonuses || (this.towerBonuses = { fireRate: 0, extraShot: 0, speed: 0, graze: 0, hp: 0, coin: 0 });
+    const p = this.player;
+    if (!p) return;
+    switch (id) {
+      case 'fireRate':
+        b.fireRate = (b.fireRate || 0) + 1;
+        if (p.setFireRateMul) p.setFireRateMul(Math.pow(0.9, b.fireRate));
+        break;
+      case 'extraShot':
+        b.extraShot = (b.extraShot || 0) + 1;
+        p.towerExtraShots = (p.towerExtraShots || 0) + 1;
+        break;
+      case 'speed':
+        b.speed = (b.speed || 0) + 1;
+        p.towerSpeedMul = Math.pow(1.08, b.speed);
+        break;
+      case 'graze':
+        b.graze = (b.graze || 0) + 1;
+        p.towerGrazeExtra = (p.towerGrazeExtra || 0) + 8;
+        if (p.grazeRing && p.grazeRing.setRadius) p.grazeRing.setRadius(p.getGrazeCircle().r);
+        break;
+      case 'hp':
+        b.hp = (b.hp || 0) + 1;
+        p.maxHp += 20;
+        p.hp = Math.min(p.maxHp, p.hp + 20);
+        EventBus.emit(EVENTS.HP_CHANGED, p.hp, p.maxHp);
+        break;
+      case 'coin':
+        b.coin = (b.coin || 0) + 1;
+        break;
+      default:
+        break;
+    }
+    EventBus.emit(EVENTS.FLOAT_SCORE, { x: p.x, y: p.y - 44, special: true, label: '增益' });
+  }
+
   playerHit(dmg) {
     // 护盾激活时吸收全部伤害
     if (this.time.now < (this.buffs.shieldUntil || 0)) return;
@@ -1646,8 +1831,11 @@ export default class GameScene extends Phaser.Scene {
     this._flushOverchargeBonus();
     const scoreMul = (this.difficultyCfg && this.difficultyCfg.scoreMul) || 1;
     const coinMul = (this.difficultyCfg && this.difficultyCfg.coinMul) || 1;
+    // P1 留存·深空爬塔：局内「金币 +20%」增益（towerBonuses.coin 次 → 结算 ×1.2^N）
+    const towerCoinMul = (this.isTower && this.towerBonuses && this.towerBonuses.coin > 0)
+      ? Math.pow(1.2, this.towerBonuses.coin) : 1;
     const scaledScore = Math.round(this.score * scoreMul);
-    const coinTarget = Math.round(this.stats.coins * coinMul);
+    const coinTarget = Math.round(this.stats.coins * coinMul * towerCoinMul);
     let coinDelta = coinTarget - this.stats.coins;
     // P2 Boss Rush 差异化：机库等级金币倍率补发（hangarLv=0 → coinMul=1 → 零 diff）。
     // rushReward 透传给 ResultScene 展示「Boss Rush 奖励」行。
@@ -1685,16 +1873,42 @@ export default class GameScene extends Phaser.Scene {
     // P2 系统扩展·无尽周赛：无尽模式分数写入 league（取本周最高，纯本地假组）
     if (this.mode === 'endless') SaveManager.recordLeagueScore(scaledScore);
 
+    // P1 留存·每日活跃宝箱：每局游玩 +1（endGame 唯一入口，一次性计数）
+    SaveManager.addDailyAct();
+
+    // P1 留存·社交排行（本地）：每次结算插入历史 Top10（按 score 降序，最多 10 条）
+    const topScoreRes = SaveManager.addTopScore({
+      score: scaledScore,
+      levelId: this.levelId,
+      mode: this.mode,
+      date: SaveManager._todayStr(),
+    });
+
+    // P1 留存·深空爬塔：记录最高层数（towerFloor 为本次已通过 Boss 波数）
+    let towerTop = 0;
+    let isNewTowerTop = false;
+    if (this.isTower) {
+      const prev = SaveManager.getTowerTop();
+      towerTop = SaveManager.recordTowerTop(this.towerFloor || 0);
+      isNewTowerTop = (this.towerFloor || 0) > 0 && (this.towerFloor || 0) > prev;
+    }
+
     // P0 留存-新手计划：跨模式累计进度（与 addDailyProgress 一样不立即存盘，由下方 save() 统一 flush）
     if (this.mode === 'normal') {
       if (victory) {
         SaveManager.addNewbieProgress('clears', 1);      // D1 通关任意关
         SaveManager.addNewbieProgress('levelClears', 1); // D7 累计通关关数
+        SaveManager.addDailyProgress('clears', 1);       // P1 留存-每日任务：通关任意一关
       }
     } else if (this.mode === 'bossrush') {
-      if (victory) SaveManager.addNewbieProgress('bossRushClears', 1); // D4 通关 Boss Rush
+      if (victory) {
+        SaveManager.addNewbieProgress('bossRushClears', 1); // D4 通关 Boss Rush
+        SaveManager.addDailyProgress('bossRushClears', 1);  // P1 留存-每日任务：通关 Boss Rush
+      }
     } else if (this.mode === 'endless') {
-      SaveManager.addNewbieProgress('endlessWaves', this.waves ? this.waves.currentWave : 0); // D5 无尽波次
+      const w = this.waves ? this.waves.currentWave : 0;
+      SaveManager.addNewbieProgress('endlessWaves', w); // D5 无尽波次
+      SaveManager.addDailyProgress('endlessWaves', w);  // P1 留存-每日任务：无尽累计波数
     }
 
     SaveManager.save(); // flush 每日任务/新手计划进度（不立即存盘类进度统一落盘）
@@ -1729,6 +1943,14 @@ export default class GameScene extends Phaser.Scene {
       ship: { id: this._runShipId != null ? this._runShipId : 0, skin: this._runSkinId != null ? this._runSkinId : 0 }, // P2 皮肤装饰：结算页战机立绘用
       eventReward,                    // P0 留存-活动轮换：活动模式结算明细
       event: eventCfg ? { name: eventCfg.name, short: eventCfg.short, double: !!this.eventDouble, daysLeft: this.eventDaysLeft } : null,
+      // P1 留存·深空爬塔：本次层数 + 历史最高（结算页展示）
+      towerFloor: this.isTower ? (this.towerFloor || 0) : 0,
+      towerTop,
+      isNewTowerTop,
+      towerCoinMul,
+      // P1 留存·社交排行：本局是否入 Top10 及名次（-1=未入榜）
+      topRank: topScoreRes ? topScoreRes.rank : -1,
+      topList: topScoreRes ? topScoreRes.list : [],
     };
 
     // 成就评估（#成就）：事件已实时上报，这里做局末兜底评估（无伤/通关/BossRush 等）。
@@ -1814,9 +2036,12 @@ export default class GameScene extends Phaser.Scene {
     EventBus.off(EVENTS.SKILL_SWITCHED, this._onSkillSwitched);
     EventBus.off(EVENTS.WINGMAN_COMBO, this._onWingmanCombo);
     EventBus.off(EVENTS.FOCUS_TOGGLE, this._onFocusToggle);
+    EventBus.off(EVENTS.WAVE_CLEARED, this._onWaveCleared);
     audio.unbindGameEvents();
     // 无尽看广告复活：清理面板并恢复物理（避免切场景残留冻结）
     if (this._adReviveOverlay) { this._adReviveOverlay.destroy(); this._adReviveOverlay = null; }
+    // P1 留存·深空爬塔：清理 3 选 1 增益面板并恢复物理
+    if (this._towerBuffOverlay) { this._towerBuffOverlay.destroy(); this._towerBuffOverlay = null; }
     if (this.physics && this.physics.world && this.physics.world.isPaused) this.physics.world.resume();
     if (this.wingmanSystem) { this.wingmanSystem.destroy(); this.wingmanSystem = null; }
     if (this.starfield) this.starfield.destroy();

@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, LEVELS } from '../config/GameConfig.js';
+import { SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, LEVELS, SHIPS, getShipSkins } from '../config/GameConfig.js';
 import { createStarfield } from '../systems/Starfield.js';
 import { NeonButton, NeonBar, THEME } from '../utils/UIWidgets.js';
 
@@ -66,6 +66,16 @@ export default class ResultScene extends Phaser.Scene {
       this.rsShipImg = this.add.image(96, 280, _skinKey).setScale(1.5).setAlpha(0.95).setDepth(6);
     }
 
+    // P1 留存·社交排行：成绩分享按钮（右上角；生成 canvas 成绩卡 → PNG 下载 / 文本复制）
+    this._initShareHooks();
+    new NeonButton(this, GAME_WIDTH - 84, 128, '分享', {
+      w: 116, h: 46, fontSize: 18, glow: true,
+      onDown: () => {
+        const res = this.downloadShareCard();
+        this._flashToast(res && res.ok ? '成绩卡已下载' : '生成失败');
+      },
+    }).container;
+
     // 本局新解锁成就（来自 GameScene.evaluate）
     if (r.newAchievements && r.newAchievements.length) {
       const names = r.newAchievements.map((a) => a.name).join('   ');
@@ -86,7 +96,15 @@ export default class ResultScene extends Phaser.Scene {
       { label: '击杀', value: r.kills || 0 },
       { label: '金币', value: r.coins || 0 },
     ];
-    if (r.mode === 'endless') lines.push({ label: '波次', value: `第 ${r.wave || 0} 波` });
+    if (r.mode === 'endless') {
+      lines.push({ label: '波次', value: `第 ${r.wave || 0} 波` });
+      // P1 留存·深空爬塔：无尽结算显示爬塔层数（含破新高标识）
+      if (r.towerFloor != null) {
+        lines.push({ label: '爬塔层数', value: `${r.towerFloor} 层`, newBest: !!r.isNewTowerTop });
+      }
+    }
+    // P1 留存·社交排行：本局入 Top10 显示名次
+    if (r.topRank > 0) lines.push({ label: '历史排行榜', value: `第 ${r.topRank} 名`, newBest: true });
     // P2 Boss Rush 差异化：胜利结算新增「Boss Rush 奖励」行（机库等级 / 金币倍率 / 稀有掉落数）
     if (r.mode === 'bossrush' && r.victory && r.rushReward) {
       const rr = r.rushReward;
@@ -221,6 +239,130 @@ export default class ResultScene extends Phaser.Scene {
   makeButton(x, y, label, cb) {
     // P1 UI：统一复用 NeonButton（辉光 + hover + 按压缩放），与 MenuScene 风格一致
     return new NeonButton(this, x, y, label, { glow: true, onDown: cb }).container;
+  }
+
+  // ---- P1 留存·社交排行：成绩分享卡（纯本地，无后端）----
+  /** 生成 canvas 成绩卡（分数/关卡/战机/皮肤/日期），返回 canvas */
+  buildShareCard() {
+    const r = this.result || {};
+    const canvas = document.createElement('canvas');
+    canvas.width = 540; canvas.height = 720;
+    const ctx = canvas.getContext('2d');
+    // 背景渐变
+    const g = ctx.createLinearGradient(0, 0, 0, 720);
+    g.addColorStop(0, '#0b1c33'); g.addColorStop(1, '#040a16');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 540, 720);
+    // 霓虹边框
+    ctx.strokeStyle = '#7cf3ff'; ctx.lineWidth = 4;
+    ctx.strokeRect(16, 16, 508, 688);
+    ctx.strokeStyle = 'rgba(124,243,255,0.25)'; ctx.lineWidth = 1;
+    ctx.strokeRect(24, 24, 492, 672);
+    ctx.textAlign = 'center';
+    // 标题
+    ctx.fillStyle = '#7cf3ff';
+    ctx.font = '800 42px sans-serif';
+    ctx.fillText('苍穹战机 · 战绩分享', 270, 118);
+    // 分数
+    ctx.fillStyle = '#ffd86b';
+    ctx.font = '800 76px Consolas, monospace';
+    ctx.fillText(String(r.score || 0), 270, 252);
+    ctx.fillStyle = '#88bbdd'; ctx.font = '600 20px sans-serif';
+    ctx.fillText('得分 SCORE', 270, 292);
+    // 模式 / 爬塔层数
+    const modeName = r.mode === 'endless'
+      ? `无尽爬塔 · ${r.towerFloor || 0} 层`
+      : r.mode === 'bossrush' ? 'BOSS RUSH 连战'
+      : r.mode === 'coin_rush' ? '金币冲刺'
+      : r.mode === 'survival' ? '限时生存'
+      : `第 ${r.levelId || 1} 关 · ${r.victory ? '通关' : '挑战'}`;
+    ctx.fillStyle = '#cfe8ff'; ctx.font = '700 30px sans-serif';
+    ctx.fillText(modeName, 270, 380);
+    // 数据行
+    ctx.fillStyle = '#88bbdd'; ctx.font = '600 22px sans-serif';
+    ctx.fillText(`击杀 ${r.kills || 0}  ·  金币 ${r.coins || 0}  ·  连击 ×${r.maxCombo || 0}`, 270, 452);
+    // 战机 / 皮肤
+    const ship = (SHIPS && SHIPS[(r.ship && r.ship.id) || 0]) || (SHIPS && SHIPS[0]) || { name: '苍鹰', id: 0 };
+    const skinId = (r.ship && r.ship.skin != null) ? Number(r.ship.skin) : 0;
+    const skins = getShipSkins(ship.id);
+    const skinName = (skins && skins[skinId] && skins[skinId].name) || '默认';
+    ctx.fillText(`战机 ${ship.name || '苍鹰'} · ${skinName}`, 270, 512);
+    // 日期
+    const d = new Date();
+    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    ctx.fillStyle = '#5a7a99'; ctx.font = '600 20px sans-serif';
+    ctx.fillText(dateStr, 270, 620);
+    // 文本摘要（复制用）
+    this._shareText = [
+      '苍穹战机 · 战绩分享',
+      `得分 ${r.score || 0} · ${modeName}`,
+      `击杀 ${r.kills || 0} · 金币 ${r.coins || 0} · 连击 ×${r.maxCombo || 0}`,
+      `战机 ${ship.name || '苍鹰'} · ${skinName}`,
+      dateStr,
+    ].join('\n');
+    this._shareCardCanvas = canvas;
+    return canvas;
+  }
+
+  /** 下载成绩卡 PNG（canvas.toDataURL + a 标签） */
+  downloadShareCard() {
+    try {
+      const canvas = this.buildShareCard();
+      const url = canvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'sky-raiders-score.png';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      return { ok: true, dataUrl: url.slice(0, 32) };
+    } catch (e) {
+      return { ok: false, error: String(e) };
+    }
+  }
+
+  /** 复制文本摘要（navigator.clipboard，失败回退 execCommand） */
+  async copyShareText() {
+    this.buildShareCard();
+    const text = this._shareText || '';
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        return { ok: true };
+      }
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return { ok: !!ok };
+    } catch (e) {
+      return { ok: false, error: String(e) };
+    }
+  }
+
+  /** 测试钩子（与 window.__SKY 同性质，不影响玩法） */
+  _initShareHooks() {
+    this._shareCardCanvas = null;
+    this._shareText = '';
+    window.__RESULT_SHARE = {
+      buildShareCard: () => this.buildShareCard(),
+      downloadShareCard: () => this.downloadShareCard(),
+      copyShareText: () => this.copyShareText(),
+      getText: () => this._shareText || '',
+      getCard: () => this._shareCardCanvas,
+    };
+  }
+
+  /** 顶部轻提示（分享下载/复制反馈），不阻塞交互 */
+  _flashToast(msg) {
+    const t = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 90, msg, {
+      fontFamily: THEME.fontFamily, fontSize: '20px', fontStyle: '800', color: THEME.textGoldLight,
+    }).setOrigin(0.5).setDepth(400).setShadow(0, 0, '#000000', 8, true, true).setAlpha(0);
+    this.tweens.add({
+      targets: t, alpha: 1, y: '-=14', duration: 240, yoyo: true, hold: 900,
+      onComplete: () => t.destroy(),
+    });
   }
 
   update(_, dt) {

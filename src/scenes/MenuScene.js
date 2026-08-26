@@ -22,6 +22,7 @@ export default class MenuScene extends Phaser.Scene {
     // modal 标志位初始化（防御：避免上一次残留导致按钮被错误拦截）
     this.settingsOpen = this.levelSelectOpen = this.achievementsOpen = this.checkinOpen = this.dailyQuestOpen = false;
     this.eventOpen = this.newbiePlanOpen = false; // P0 留存：本周活动 / 新手计划 面板标志
+    this.leaderboardOpen = this.returnGiftOpen = false; // P1 留存：排行榜 / 回归礼包 面板标志
     // reduced-motion 偏好（子面板动画降级）
     this.reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
@@ -60,7 +61,7 @@ export default class MenuScene extends Phaser.Scene {
     // 教程按钮（重看新手引导，进入第 1 关并强制显示教程）
     new NeonButton(this, cx, 400, '新手教程', {
       stroke: COLORS.accent, fontSize: 22, glow: true, onDown: () => {
-        if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen) return;
+        if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen || this.returnGiftOpen) return;
         audio.resume(); audio.startBgm(); audio.sfx('ui');
         this.scene.start(SCENES.GAME, { levelId: 1, mode: 'normal', forceTutorial: true });
       },
@@ -70,7 +71,7 @@ export default class MenuScene extends Phaser.Scene {
     new NeonButton(this, cx - 116, 480, '开始游戏', {
       w: 220, fontSize: 24, glow: true,
       onDown: () => {
-        if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen) return;
+        if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen || this.returnGiftOpen) return;
         audio.resume(); audio.startBgm(); audio.sfx('ui'); this.startGame();
       },
     });
@@ -78,7 +79,7 @@ export default class MenuScene extends Phaser.Scene {
     new NeonButton(this, cx + 116, 480, '无尽模式', {
       w: 220, fontSize: 24, stroke: 0xff8a3d, glow: true,
       onDown: () => {
-        if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen) return;
+        if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen || this.returnGiftOpen) return;
         audio.resume(); audio.startBgm(); audio.sfx('ui'); this.startEndless();
       },
     });
@@ -98,26 +99,26 @@ export default class MenuScene extends Phaser.Scene {
     new NeonButton(this, cx, 548, '机  库', {
       glow: true,
       onDown: () => {
-        if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen) return;
+        if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen || this.returnGiftOpen) return;
         this.scene.start('HangarScene');
       },
     });
 
     // 成就按钮
     new NeonButton(this, cx, 616, '成  就', { stroke: COLORS.coin, glow: true, onDown: () => {
-      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen) return;
+      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen || this.returnGiftOpen) return;
       audio.sfx('ui'); this.openAchievements();
     } });
 
     // 设置按钮
     new NeonButton(this, cx, 680, '设  置', { glow: true, onDown: () => {
-      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen) return;
+      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen || this.returnGiftOpen) return;
       this.openSettings();
     } });
 
     // Boss Rush 按钮
     new NeonButton(this, cx - 116, 736, 'BOSS RUSH', { stroke: 0xff5566, glow: true, onDown: () => {
-      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen) return;
+      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen || this.returnGiftOpen) return;
       audio.sfx('ui'); this.scene.start(SCENES.GAME, { mode: 'bossrush' });
     } });
 
@@ -125,7 +126,7 @@ export default class MenuScene extends Phaser.Scene {
     {
       const ev = getCurrentEvent();
       new NeonButton(this, cx + 116, 736, `本周活动·${ev.short}`, { w: 220, fontSize: 18, stroke: 0xffd54a, glow: true, onDown: () => {
-        if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen) return;
+        if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen || this.returnGiftOpen) return;
         audio.sfx('ui'); this.openEvent();
       } });
       this.add.text(cx + 116, 772, `剩余 ${ev.daysLeft} 天 · ${ev.double ? '今日双倍奖励' : '周末双倍奖励'}`, {
@@ -135,26 +136,32 @@ export default class MenuScene extends Phaser.Scene {
 
     // 选择关卡按钮
     new NeonButton(this, cx, 800, '选择关卡', { glow: true, onDown: () => {
-      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen) return;
+      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen || this.returnGiftOpen) return;
       audio.sfx('ui'); this.openLevelSelect();
     } });
 
     // 每日签到按钮（主动点击才弹，避免自动弹窗挡住"开始游戏"）
     new NeonButton(this, cx - 116, 864, '每日签到', { stroke: COLORS.coin, glow: true, onDown: () => {
-      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen) return;
+      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen || this.returnGiftOpen) return;
       audio.sfx('ui'); this.openCheckIn();
     } });
 
     // P0 留存-新手计划按钮（挂到签到旁）
     new NeonButton(this, cx + 116, 864, '新手计划', { stroke: 0x7cffa0, glow: true, onDown: () => {
-      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen) return;
+      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen || this.returnGiftOpen) return;
       audio.sfx('ui'); this.openNewbiePlan();
     } });
 
-    // 每日任务按钮（留存系统：击杀/金币/炸弹等每日目标，完成领金币）
-    new NeonButton(this, cx, 928, '每日任务', { stroke: COLORS.accent, glow: true, onDown: () => {
-      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.dailyQuestOpen || this.eventOpen || this.newbiePlanOpen) return;
+    // 每日任务按钮（留存系统：击杀/金币/炸弹等每日目标，完成领金币 + 活跃宝箱）
+    new NeonButton(this, cx - 116, 928, '每日任务', { stroke: COLORS.accent, glow: true, onDown: () => {
+      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.dailyQuestOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen || this.returnGiftOpen) return;
       audio.sfx('ui'); this.openDailyQuest();
+    } });
+
+    // P1 留存·社交排行：排行榜入口（本地历史 Top10 列表）
+    new NeonButton(this, cx + 116, 928, '排行榜', { stroke: COLORS.coin, glow: true, onDown: () => {
+      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.dailyQuestOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen || this.returnGiftOpen) return;
+      audio.sfx('ui'); this.openLeaderboard();
     } });
 
     // 存档信息（含全局最高分）
@@ -176,6 +183,9 @@ export default class MenuScene extends Phaser.Scene {
     // 键盘也能开始
     this.input.keyboard.once('keydown-ENTER', () => this.startGame());
     this.input.keyboard.once('keydown-SPACE', () => this.startGame());
+
+    // P1 留存·回归激励：断签 ≥3 天自动弹「回归礼包」（稍延迟，等菜单渲染完成）
+    this.time.delayedCall(450, () => this.maybeShowReturnGift());
   }
 
   update(_, dt) {
@@ -471,7 +481,7 @@ export default class MenuScene extends Phaser.Scene {
     this.achievementsOpen = false;
   }
 
-  // ---- 每日签到面板（首次进菜单自动弹）----
+  // ---- 每日签到面板（P1 升级：7 日循环大奖 + 补签；首次进菜单自动弹）----
   openCheckIn() {
     this.checkinOpen = true;
     const cx = GAME_WIDTH / 2;
@@ -481,14 +491,42 @@ export default class MenuScene extends Phaser.Scene {
       .setOrigin(0).setInteractive();
     ov.add(dim);
     this.addPanel(ov, cx);
-    this.addGlowTitle(ov, cx, 300, '每日签到', THEME.textGoldLight);
+    this.addGlowTitle(ov, cx, 230, '每日签到', THEME.textGoldLight);
 
-    const cur = SaveManager.load();
-    const y = new Date(Date.now() - 86400000);
-    const yStr = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, '0')}-${String(y.getDate()).padStart(2, '0')}`;
-    const nextStreak = (cur.lastCheckin === yStr) ? (cur.checkinStreak || 0) + 1 : 1;
-    const reward = 50 + (nextStreak - 1) * 20;
-    const info = this.add.text(cx, 370, `连续签到第 ${cur.checkinStreak || 0} 天\n今日可领：${reward} 金币`, {
+    const cyc = SaveManager.getCheckinCycle();
+    // 7 日循环奖励条（D1~D7，第 7 天大奖高亮；当前进行天描边）
+    const REWARD_NAMES = ['50', '60', '70', '80', '90', '100', '800'];
+    const boxW = 52, boxH = 58, gap = 6;
+    const totalW = 7 * boxW + 6 * gap;
+    const startX = cx - totalW / 2 + boxW / 2;
+    const cycY = 296;
+    for (let i = 0; i < 7; i++) {
+      const x = startX + i * (boxW + gap);
+      const d = i + 1;
+      const isBig = d === 7;
+      const isCur = d === cyc.day && !cyc.checkedToday;
+      const c = this.add.container(x, cycY);
+      const bg = this.add.rectangle(0, 0, boxW, boxH, isBig ? 0x4a3a12 : 0x0d2840, 0.96)
+        .setStrokeStyle(2, isBig ? THEME.textGoldLight : (isCur ? COLORS.accent : THEME.lockedStroke));
+      c.add(bg);
+      c.add(this.add.text(0, -14, `D${d}`, {
+        fontFamily: THEME.fontFamily, fontSize: '13px', fontStyle: '700',
+        color: isBig ? THEME.textGoldLight : THEME.textSecondary,
+      }).setOrigin(0.5));
+      c.add(this.add.text(0, 12, isBig ? '大奖' : `+${REWARD_NAMES[i]}`, {
+        fontFamily: THEME.fontFamily, fontSize: isBig ? '14px' : '13px', fontStyle: '800',
+        color: isBig ? THEME.textGoldLight : THEME.textPrimary,
+      }).setOrigin(0.5));
+      if (isCur) c.add(this.add.text(0, boxH / 2 - 8, '今', {
+        fontFamily: THEME.fontFamily, fontSize: '11px', color: COLORS.accent,
+      }).setOrigin(0.5));
+      ov.add(c);
+    }
+    ov.add(this.add.text(cx, cycY + boxH / 2 + 14, '第 7 天大奖：800 金币（僚机未满级再 +1 僚机） · 断签可补签', {
+      fontFamily: THEME.fontFamily, fontSize: '14px', color: THEME.textDim,
+    }).setOrigin(0.5));
+
+    const info = this.add.text(cx, 396, `连续签到第 ${cyc.streak || 0} 天\n今日可领：+${(cyc.rewards[cyc.day - 1] != null) ? cyc.rewards[cyc.day - 1] : 50} 金币`, {
       fontFamily: THEME.fontFamily, fontSize: '20px', color: THEME.textPrimary, align: 'center',
       wordWrap: { width: 360 },
     }).setOrigin(0.5);
@@ -497,7 +535,7 @@ export default class MenuScene extends Phaser.Scene {
     const claimBtn = this.makeMenuBtn(cx, 470, '领取奖励', () => {
       const res = SaveManager.checkIn();
       if (res.claimed) {
-        info.setText(`已领取！\n+${res.reward} 金币 · 连续 ${res.streak} 天`);
+        info.setText(`已领取！\n+${res.reward} 金币 · 连续 ${res.streak} 天${res.day === 7 ? ' · 第 7 天大礼' : ''}${res.wingmanUpgraded ? ' · 僚机 +1' : ''}`);
         claimBtn.destroy();
         this._checkinClaimBtn = null;
         if (this.saveInfoText) {
@@ -534,7 +572,27 @@ export default class MenuScene extends Phaser.Scene {
     });
     ov.add(claimBtn);
     this._checkinClaimBtn = claimBtn;
-    ov.add(this.makeMenuBtn(cx, 540, '稍后再说', () => this.closeCheckIn()));
+
+    // P1 补签：断签可消耗金币补 1 天（保留连签进度）
+    if (cyc.canMakeup && !cyc.checkedToday) {
+      const mkBtn = this.makeMenuBtn(cx, 540, `补签（-${cyc.makeupCost} 金币）`, () => {
+        const mk = SaveManager.makeupCheckIn();
+        if (mk.claimed) {
+          info.setText(`补签成功！\n-${mk.cost} 金币 · 连签 ${mk.streak} 天，今天还能再签到`);
+          mkBtn.destroy();
+          if (this.saveInfoText) this.saveInfoText.setText(this._saveInfoLabel());
+        } else if (mk.reason === 'no-coins') {
+          info.setText(`金币不足，无法补签（需 ${cyc.makeupCost} 金币）`);
+        } else {
+          info.setText('今天无需补签');
+          mkBtn.destroy();
+        }
+      });
+      ov.add(mkBtn);
+      this._checkinMakeupBtn = mkBtn;
+    }
+
+    ov.add(this.makeMenuBtn(cx, 600, '稍后再说', () => this.closeCheckIn()));
     this.fadeInPanel(ov);
   }
 
@@ -543,6 +601,7 @@ export default class MenuScene extends Phaser.Scene {
     this.checkinOpen = false;
     this._checkinClaimBtn = null;
     this._checkinDoubleBtn = null;
+    this._checkinMakeupBtn = null;
   }
 
   // ---- 每日任务面板（留存系统 #每日任务）----
@@ -559,55 +618,185 @@ export default class MenuScene extends Phaser.Scene {
 
     const quests = SaveManager.getDailyQuests();
     const claimed = SaveManager.dailyQuestsClaimed();
-    let cursor = 320;
+    let cursor = 300;
     quests.forEach((q) => {
-      const y = cursor; cursor += 96;
+      const y = cursor; cursor += 84;
       const label = this.add.text(cx - 200, y, q.desc, {
-        fontFamily: THEME.fontFamily, fontSize: '19px', color: THEME.textPrimary,
+        fontFamily: THEME.fontFamily, fontSize: '18px', color: THEME.textPrimary,
       }).setOrigin(0, 0.5);
       const prog = this.add.text(cx + 200, y, `${q.progress}/${q.target}  +${q.reward}`, {
-        fontFamily: THEME.fontFamily, fontSize: '17px',
+        fontFamily: THEME.fontFamily, fontSize: '16px',
         color: q.done ? THEME.textSuccess : THEME.textSecondary,
       }).setOrigin(1, 0.5);
       // 进度条
-      const barW = 380, barX = cx - barW / 2, barY = y + 22;
-      const track = this.add.rectangle(barX, barY, barW, 8, THEME.trackBg)
+      const barW = 380, barX = cx - barW / 2, barY = y + 20;
+      const track = this.add.rectangle(barX, barY, barW, 7, THEME.trackBg)
         .setOrigin(0, 0.5).setStrokeStyle(1, THEME.trackStroke);
       const ratio = q.target ? Math.min(1, q.progress / q.target) : 0;
-      const fill = this.add.rectangle(barX, barY, barW * ratio, 8, q.done ? THEME.success : THEME.trackFill)
+      const fill = this.add.rectangle(barX, barY, barW * ratio, 7, q.done ? THEME.success : THEME.trackFill)
         .setOrigin(0, 0.5);
       ov.add([label, prog, track, fill]);
     });
 
     const statusText = this.add.text(cx, cursor + 6, claimed ? '今日任务已领取'
       : (SaveManager.dailyQuestsReady() ? '全部完成，可领取奖励！' : '完成上方目标即可领取金币'), {
-      fontFamily: THEME.fontFamily, fontSize: '18px', color: claimed ? THEME.textSuccess : THEME.textPrimary,
+      fontFamily: THEME.fontFamily, fontSize: '17px', color: claimed ? THEME.textSuccess : THEME.textPrimary,
       align: 'center', wordWrap: { width: 400 },
     }).setOrigin(0.5);
     ov.add(statusText);
 
-    const claimBtn = this.makeMenuBtn(cx, cursor + 70, claimed ? '已领取' : '领取奖励', () => {
+    const claimBtn = this.makeMenuBtn(cx, cursor + 60, claimed ? '已领取' : '领取奖励', () => {
       const res = SaveManager.claimDailyQuests();
       if (res.claimed) {
-        statusText.setText(`已领取！\n+${res.reward} 金币 · ${res.count} 项任务`);
+        statusText.setText(`已领取！\n+${res.reward} 金币 · ${res.count} 项任务（含全清奖励 +${res.bonus || 0}）`);
         claimBtn.destroy();
         if (this.saveInfoText) {
           this.saveInfoText.setText(this._saveInfoLabel());
         }
-        ov.add(this.makeMenuBtn(cx, cursor + 70, '好的', () => this.closeDailyQuest()));
+        ov.add(this.makeMenuBtn(cx, cursor + 60, '好的', () => this.closeDailyQuest()));
       } else if (res.notReady) {
         statusText.setText('还有任务没完成哦～');
       }
     });
     if (claimed || !SaveManager.dailyQuestsReady()) claimBtn.setAlpha(0.45);
     ov.add(claimBtn);
-    ov.add(this.makeMenuBtn(cx, cursor + 134, '稍后再说', () => this.closeDailyQuest()));
+
+    // P1 留存·活跃宝箱：当日游玩 3/5 局各开 1 个宝箱（金币随机 + 随机机库模块，复用 module 系统）
+    const acts = SaveManager.getDailyActs();
+    const chestY = cursor + 118;
+    ov.add(this.add.text(cx, chestY - 24, `活跃宝箱 · 今日已玩 ${acts.count} 局`, {
+      fontFamily: THEME.fontFamily, fontSize: '18px', color: THEME.textGoldLight,
+    }).setOrigin(0.5));
+    const chest3 = new NeonButton(this, cx - 100, chestY, acts.chests[3] ? '第 3 局 ✓' : '第 3 局宝箱', {
+      w: 180, h: 48, fontSize: 16, glow: true,
+      onDown: () => {
+        const res = SaveManager.claimDailyChest(3);
+        if (res.claimed) {
+          chest3.setLabel('第 3 局 ✓');
+          if (this.saveInfoText) this.saveInfoText.setText(this._saveInfoLabel());
+          this.flashToast(`开箱！+${res.coins} 金币 · 模块 ${res.module || ''}`);
+        } else if (res.reason === 'not-enough') {
+          this.flashToast(`再玩 ${Math.max(0, 3 - acts.count)} 局可开第 3 局宝箱`);
+        }
+      },
+    });
+    if (acts.chests[3] || acts.count < 3) chest3.container.setAlpha(0.55);
+    const chest5 = new NeonButton(this, cx + 100, chestY, acts.chests[5] ? '第 5 局 ✓' : '第 5 局宝箱', {
+      w: 180, h: 48, fontSize: 16, glow: true,
+      onDown: () => {
+        const res = SaveManager.claimDailyChest(5);
+        if (res.claimed) {
+          chest5.setLabel('第 5 局 ✓');
+          if (this.saveInfoText) this.saveInfoText.setText(this._saveInfoLabel());
+          this.flashToast(`开箱！+${res.coins} 金币 · 模块 ${res.module || ''}`);
+        } else if (res.reason === 'not-enough') {
+          this.flashToast(`再玩 ${Math.max(0, 5 - acts.count)} 局可开第 5 局宝箱`);
+        }
+      },
+    });
+    if (acts.chests[5] || acts.count < 5) chest5.container.setAlpha(0.55);
+    ov.add([chest3.container, chest5.container]);
+
+    ov.add(this.makeMenuBtn(cx, chestY + 70, '稍后再说', () => this.closeDailyQuest()));
     this.fadeInPanel(ov);
   }
 
   closeDailyQuest() {
     if (this.dailyQuestOverlay) { this.dailyQuestOverlay.destroy(); this.dailyQuestOverlay = null; }
     this.dailyQuestOpen = false;
+  }
+
+  // ---- P1 留存·回归激励（断签召回：金币 500 + 随机模块，7 天冷却）----
+  /** 断签 ≥3 天且冷却结束 → 自动弹「回归礼包」面板 */
+  maybeShowReturnGift() {
+    const st = SaveManager.getReturnGiftStatus();
+    if (st && st.due) this.openReturnGift(st);
+  }
+
+  openReturnGift(st) {
+    if (this.returnGiftOpen) return;
+    this.returnGiftOpen = true;
+    const cx = GAME_WIDTH / 2;
+    const ov = this.add.container(0, 0).setDepth(300);
+    this.returnGiftOverlay = ov;
+    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.8)
+      .setOrigin(0).setInteractive();
+    ov.add(dim);
+    this.addPanel(ov, cx, 250, GAME_HEIGHT - 180, 460);
+    this.addGlowTitle(ov, cx, 340, '回归礼包', THEME.textGoldLight);
+
+    const info = this.add.text(cx, 430, `欢迎回来！已断签 ${(st && st.missDays) || 0} 天\n礼包：500 金币 + 随机机库模块 1 个`, {
+      fontFamily: THEME.fontFamily, fontSize: '20px', color: THEME.textPrimary, align: 'center',
+      wordWrap: { width: 380 },
+    }).setOrigin(0.5);
+    ov.add(info);
+
+    const claimBtn = this.makeMenuBtn(cx - 95, 520, '领取礼包', () => {
+      const res = SaveManager.claimReturnGift();
+      if (res.claimed) {
+        info.setText(`已领取！\n+${res.coins} 金币 · 模块「${res.module || ''}」已入库存`);
+        claimBtn.destroy();
+        if (this.saveInfoText) this.saveInfoText.setText(this._saveInfoLabel());
+        ov.add(this.makeMenuBtn(cx + 95, 520, '好的', () => this.closeReturnGift()));
+      } else {
+        info.setText('礼包尚未就绪～');
+      }
+    });
+    ov.add(claimBtn);
+    ov.add(this.makeMenuBtn(cx, 590, '稍后再说', () => this.closeReturnGift()));
+    this.fadeInPanel(ov);
+  }
+
+  closeReturnGift() {
+    if (this.returnGiftOverlay) { this.returnGiftOverlay.destroy(); this.returnGiftOverlay = null; }
+    this.returnGiftOpen = false;
+  }
+
+  // ---- P1 留存·社交排行（本地历史 Top10 列表面板）----
+  openLeaderboard() {
+    this.leaderboardOpen = true;
+    const cx = GAME_WIDTH / 2;
+    const ov = this.add.container(0, 0).setDepth(300);
+    this.leaderboardOverlay = ov;
+    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.82)
+      .setOrigin(0).setInteractive();
+    ov.add(dim);
+    this.addPanel(ov, cx, 90, GAME_HEIGHT - 110, 470);
+    this.addGlowTitle(ov, cx, 150, '历史排行榜', THEME.textGoldLight);
+
+    const top = SaveManager.getTopScores();
+    const rowH = 54, startY = 210;
+    if (!top.length) {
+      ov.add(this.add.text(cx, 360, '暂无战绩，快去打一局吧！', {
+        fontFamily: THEME.fontFamily, fontSize: '20px', color: THEME.textSecondary,
+      }).setOrigin(0.5));
+    } else {
+      const MODE_LABEL = { normal: '关卡', endless: '无尽', bossrush: 'RUSH', coin_rush: '冲刺', survival: '生存' };
+      top.slice(0, 10).forEach((s, i) => {
+        const y = startY + i * rowH;
+        const rankColor = i === 0 ? THEME.textGoldLight : (i === 1 ? '#cfe8ff' : (i === 2 ? '#ffb070' : THEME.textSecondary));
+        ov.add(this.add.text(cx - 210, y, `${i + 1}`, {
+          fontFamily: THEME.fontFamily, fontSize: '24px', fontStyle: '800', color: rankColor,
+        }).setOrigin(0.5));
+        ov.add(this.add.text(cx - 160, y, `${s.score || 0}`, {
+          fontFamily: THEME.scoreFont, fontSize: '24px', fontStyle: '700', color: THEME.white,
+        }).setOrigin(0, 0.5));
+        const modeName = s.mode === 'endless' ? `无尽 · ${s.levelId || 1}层` : (MODE_LABEL[s.mode] || '关卡');
+        ov.add(this.add.text(cx + 40, y, modeName, {
+          fontFamily: THEME.fontFamily, fontSize: '15px', color: THEME.textSecondary,
+        }).setOrigin(0, 0.5));
+        ov.add(this.add.text(cx + 180, y, s.date || '', {
+          fontFamily: THEME.fontFamily, fontSize: '14px', color: THEME.textDim,
+        }).setOrigin(0, 0.5));
+      });
+    }
+    ov.add(this.makeMenuBtn(cx, GAME_HEIGHT - 70, '关闭', () => this.closeLeaderboard()));
+    this.fadeInPanel(ov);
+  }
+
+  closeLeaderboard() {
+    if (this.leaderboardOverlay) { this.leaderboardOverlay.destroy(); this.leaderboardOverlay = null; }
+    this.leaderboardOpen = false;
   }
 
   // ---- 新手 7 日计划面板（P0 留存：新手成长目标）----

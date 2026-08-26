@@ -1,4 +1,4 @@
-import { SAVE_KEY, DAILY_QUEST_POOL, DIFFICULTIES, PERFORMANCE, NEWBIE_PLAN, UPGRADE_TREE, MODULES, MODULE_SLOTS, MODULE_SHOP, SKIN_PRICE, WEEKLY_LEAGUE, getIsoWeekKey } from '../config/GameConfig.js';
+import { SAVE_KEY, DAILY_QUEST_POOL, DAILY_QUEST_PICK, DAILY_QUEST_ALL_CLEAR_BONUS, DIFFICULTIES, PERFORMANCE, NEWBIE_PLAN, UPGRADE_TREE, MODULES, MODULE_SLOTS, MODULE_SHOP, SKIN_PRICE, WEEKLY_LEAGUE, getIsoWeekKey, CHECKIN_REWARDS, CHECKIN_MAKEUP_COST, RETURN_GIFT, ACTIVE_CHEST } from '../config/GameConfig.js';
 
 /**
  * 存档管理（localStorage）
@@ -54,6 +54,15 @@ const DEFAULT_SAVE = {
   //   week=ISO 周 key（"2026-W34"）；score=本周无尽最高分；rank=本周名次（固定种子伪随机组）；
   //   claimed=是否已结算（周切换自动结算上周奖励后置 true，新周重置 false）
   league: { week: '', score: 0, claimed: false, rank: 0 },
+  // P1 留存·深空爬塔：towerTop=历史最高层数（无尽爬塔 Boss 波通关数，append-only 新字段）
+  towerTop: 0,
+  // P1 留存·每日活跃宝箱：dailyActs={ date: 当天 YYYY-MM-DD, count: 当日游玩局数,
+  //   chests: { 3: 第3局宝箱是否已领, 5: 第5局宝箱是否已领 } }（跨天自动重置）
+  dailyActs: { date: '', count: 0, chests: { 3: false, 5: false } },
+  // P1 留存·回归激励：returnGift={ grantedAt: 最近一次领取回归礼包日期 YYYY-MM-DD }（null=未领过；7 天冷却）
+  returnGift: null,
+  // P1 留存·社交排行（本地）：topScores=[{score, levelId, mode, date}] 最多 10 条，按 score 降序
+  topScores: [],
 };
 
 let cache = null;
@@ -84,6 +93,10 @@ function freshSave() {
     ownedSkins: [],
     noAds: false,
     league: { week: '', score: 0, claimed: false, rank: 0 },
+    towerTop: 0,
+    dailyActs: { date: '', count: 0, chests: { 3: false, 5: false } },
+    returnGift: null,
+    topScores: [],
   };
 }
 
@@ -141,6 +154,22 @@ export const SaveManager = {
           week: '', score: 0, claimed: false, rank: 0,
           ...(parsed.league || {}),
         },
+        // P1 留存·深空爬塔：只新增字段，老存档缺失兜底 0
+        towerTop: Math.max(0, Math.floor(Number(parsed.towerTop) || 0)),
+        // P1 留存·每日活跃宝箱：深合并（含 date 与 chests 子对象），老存档缺失兜底默认
+        dailyActs: {
+          date: '', count: 0, chests: { 3: false, 5: false },
+          ...((parsed.dailyActs) || {}),
+          chests: {
+            3: false, 5: false,
+            ...((parsed.dailyActs && parsed.dailyActs.chests) || {}),
+          },
+        },
+        // P1 留存·回归激励：只新增字段，非法/缺失兜底 null
+        returnGift: (parsed.returnGift && parsed.returnGift.grantedAt)
+          ? { grantedAt: String(parsed.returnGift.grantedAt) } : null,
+        // P1 留存·社交排行（本地）：数组兜底，最多保留 10 条
+        topScores: Array.isArray(parsed.topScores) ? parsed.topScores.slice(0, 10) : [],
       };
       // 勋章计数是派生字段：每次 load 从 levelMedals 重算，老存档/脏数据自动自愈
       cache.medalCount = Object.values(cache.levelMedals || {})
@@ -248,29 +277,95 @@ export const SaveManager = {
     this.save();
   },
 
-  // ---- 每日签到 ----
+  // ---- 每日签到（P1 扩展：7 日循环大奖 + 补签）----
   _todayStr() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  },
+
+  _yesterdayStr() {
+    const y = new Date(Date.now() - 86400000);
+    return `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, '0')}-${String(y.getDate()).padStart(2, '0')}`;
+  },
+
+  /** 连签第 N 天（1~7 循环）：checkinStreak=0（从未签到）时视为第 1 天 */
+  _checkinDayFromStreak(streak) {
+    const s = Math.max(0, Number(streak) || 0);
+    return s === 0 ? 1 : ((s - 1) % 7) + 1;
+  },
+
+  /** 第 N 天奖励金币（CHECKIN_REWARDS[N-1]；第 7 天大奖 800） */
+  _checkinRewardForDay(day) {
+    const d = Math.min(7, Math.max(1, day));
+    return (CHECKIN_REWARDS && CHECKIN_REWARDS[d - 1]) != null ? CHECKIN_REWARDS[d - 1] : 50;
   },
 
   canCheckInToday() {
     return this.load().lastCheckin !== this._todayStr();
   },
 
-  /** 签到：今天未签则发奖并累加连签；返回 { claimed, streak, reward } */
+  /**
+   * 签到：今天未签则发奖并累加连签（7 日循环）。
+   * 第 7 天大奖：800 金币；僚机未满级额外 +1（僚机碎片语义，满级则纯金币）。
+   * 返回 { claimed, streak, day, reward, wingmanUpgraded }
+   */
   checkIn() {
     const s = this.load();
     const today = this._todayStr();
     if (s.lastCheckin === today) return { claimed: false, streak: s.checkinStreak, reward: 0 };
-    const y = new Date(Date.now() - 86400000);
-    const yStr = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, '0')}-${String(y.getDate()).padStart(2, '0')}`;
+    const yStr = this._yesterdayStr();
     s.checkinStreak = (s.lastCheckin === yStr) ? s.checkinStreak + 1 : 1;
     s.lastCheckin = today;
-    const reward = 50 + (s.checkinStreak - 1) * 20;
+    const day = this._checkinDayFromStreak(s.checkinStreak);
+    let reward = this._checkinRewardForDay(day);
+    let wingmanUpgraded = false;
+    if (day === 7) {
+      const up = s.upgrades || {};
+      const max = (UPGRADE_TREE.wingman && UPGRADE_TREE.wingman.max) || 2;
+      if ((up.wingman || 0) < max) {
+        up.wingman = (up.wingman || 0) + 1;
+        wingmanUpgraded = true;
+      }
+    }
     s.coins += reward;
     this.save();
-    return { claimed: true, streak: s.checkinStreak, reward };
+    return { claimed: true, streak: s.checkinStreak, day, reward, wingmanUpgraded };
+  },
+
+  /** 签到循环快照（面板展示）：streak/day/rewards/是否今天已签/可否补签 */
+  getCheckinCycle() {
+    const s = this.load();
+    const streak = s.checkinStreak || 0;
+    const today = this._todayStr();
+    const yStr = this._yesterdayStr();
+    const canMakeup = !!s.lastCheckin && s.lastCheckin !== today && s.lastCheckin !== yStr;
+    return {
+      streak,
+      day: this._checkinDayFromStreak(streak),
+      rewards: CHECKIN_REWARDS ? CHECKIN_REWARDS.slice() : [],
+      checkedToday: s.lastCheckin === today,
+      canMakeup,
+      makeupCost: CHECKIN_MAKEUP_COST || 100,
+    };
+  },
+
+  /**
+   * 补签：断签 ≥1 天时可消耗金币补签 1 天（保留连签进度）。
+   * 补签后 lastCheckin 记为昨天，今天再 checkIn() 即延续连签。
+   * 返回 { claimed, streak, cost } 或 { claimed:false, reason }
+   */
+  makeupCheckIn() {
+    const s = this.load();
+    const today = this._todayStr();
+    const yStr = this._yesterdayStr();
+    if (s.lastCheckin === today) return { claimed: false, reason: 'checked' };
+    if (!s.lastCheckin || s.lastCheckin === yStr) return { claimed: false, reason: 'no-gap' };
+    if ((s.coins || 0) < (CHECKIN_MAKEUP_COST || 100)) return { claimed: false, reason: 'no-coins' };
+    s.coins = Math.max(0, s.coins - (CHECKIN_MAKEUP_COST || 100));
+    s.checkinStreak = (s.checkinStreak || 0) + 1;
+    s.lastCheckin = yStr; // 视作昨天已签到，今天再签到即延续连签
+    this.save();
+    return { claimed: true, streak: s.checkinStreak, cost: CHECKIN_MAKEUP_COST || 100 };
   },
 
   // ---- 每日任务（留存系统 #每日任务）----
@@ -284,15 +379,16 @@ export const SaveManager = {
     return h >>> 0;
   },
 
-  /** 取当日任务（数组）。跨天自动刷新：重置进度与领取状态，按日期种子抽 3 个 */
+  /** 取当日任务（数组）。跨天自动刷新：重置进度与领取状态，按日期种子抽 DAILY_QUEST_PICK 个 */
   getDailyQuests() {
     const s = this.load();
     const today = this._todayStr();
     if (s.dailyQuest.date !== today) {
       const pool = DAILY_QUEST_POOL;
+      const pick = Math.max(1, Number(DAILY_QUEST_PICK) || 4);
       const start = this._dailySeed(today) % pool.length;
       const picked = [];
-      for (let k = 0; k < 3; k++) picked.push(pool[(start + k) % pool.length].metric);
+      for (let k = 0; k < pick; k++) picked.push(pool[(start + k) % pool.length].metric);
       s.dailyQuest = { date: today, claimed: false, progress: {}, picked };
       this.save();
     }
@@ -325,7 +421,7 @@ export const SaveManager = {
     return this.load().dailyQuest.claimed === true;
   },
 
-  /** 领取当日全部任务奖励；未全完成返回 { notReady:true }，已领返回 { claimed:false } */
+  /** 领取当日全部任务奖励（单条金币之和 + 全清奖励）；未全完成返回 { notReady:true }，已领返回 { claimed:false } */
   claimDailyQuests() {
     const s = this.load();
     const today = this._todayStr();
@@ -334,11 +430,13 @@ export const SaveManager = {
     if (dq.claimed) return { claimed: false, reward: 0 };
     const q = this.getDailyQuests();
     if (!q.every((x) => x.done)) return { claimed: false, reward: 0, notReady: true };
-    const reward = q.reduce((sum, x) => sum + x.reward, 0);
+    const base = q.reduce((sum, x) => sum + x.reward, 0);
+    const bonus = Math.max(0, Number(DAILY_QUEST_ALL_CLEAR_BONUS) || 0);
+    const reward = base + bonus;
     s.coins += reward;
     dq.claimed = true;
     this.save();
-    return { claimed: true, reward, count: q.length };
+    return { claimed: true, reward, base, bonus, count: q.length };
   },
 
   // ---- 关卡勋章（P0 留存：重玩动力）----
@@ -578,6 +676,7 @@ export const SaveManager = {
     if (!Array.isArray(s.ownedSkins)) s.ownedSkins = [];
     s.coins = Math.max(0, s.coins - SKIN_PRICE);
     s.ownedSkins.push(`${Number(shipId)}:${id}`);
+    this.addDailyProgress('skins', 1); // P1 留存-每日任务：皮肤购买进度
     this.save();
     return true;
   },
@@ -654,5 +753,147 @@ export const SaveManager = {
     lg.rank = this._leagueRankForScore(lg.score);
     this.save();
     return lg;
+  },
+
+  // ---- P1 留存·深空爬塔（无尽升级）----
+  /** 历史最高爬塔层数（Boss 波通关数）；无记录返回 0 */
+  getTowerTop() {
+    return Math.max(0, Math.floor(Number(this.load().towerTop) || 0));
+  },
+
+  /** 记录本次爬塔层数（只升不降）；返回更新后的最高层数 */
+  recordTowerTop(floor) {
+    const s = this.load();
+    const f = Math.max(0, Math.floor(Number(floor) || 0));
+    if (f > (Number(s.towerTop) || 0)) {
+      s.towerTop = f;
+      this.save();
+    }
+    return this.getTowerTop();
+  },
+
+  // ---- P1 留存·每日活跃宝箱（当日游玩局数）----
+  /** 当日活跃快照（跨天自动重置）：{ count, chests:{3,5} } */
+  getDailyActs() {
+    const s = this.load();
+    const today = this._todayStr();
+    const da = s.dailyActs || (s.dailyActs = { date: '', count: 0, chests: { 3: false, 5: false } });
+    if (da.date !== today) {
+      da.date = today; da.count = 0; da.chests = { 3: false, 5: false };
+      this.save();
+    }
+    return { count: Math.max(0, Number(da.count) || 0), chests: { 3: !!da.chests[3], 5: !!da.chests[5] } };
+  },
+
+  /** 当日游玩 +1（endGame 每局调一次；跨天自动重置） */
+  addDailyAct() {
+    const s = this.load();
+    const today = this._todayStr();
+    const da = s.dailyActs || (s.dailyActs = { date: '', count: 0, chests: { 3: false, 5: false } });
+    if (da.date !== today) { da.date = today; da.count = 0; da.chests = { 3: false, 5: false }; }
+    da.count = Math.max(0, Number(da.count) || 0) + 1;
+    this.save();
+    return da.count;
+  },
+
+  /**
+   * 领取活跃宝箱：n=3 或 5，当日游玩达到阈值且未领 → 发金币（随机区间）+ 随机机库模块。
+   * 返回 { claimed, coins, module, count } 或 { claimed:false, reason }
+   */
+  claimDailyChest(n) {
+    const n2 = (Number(n) === 3 || Number(n) === 5) ? Number(n) : 0;
+    if (!n2) return { claimed: false, reason: 'bad' };
+    const s = this.load();
+    const today = this._todayStr();
+    const da = s.dailyActs || (s.dailyActs = { date: '', count: 0, chests: { 3: false, 5: false } });
+    if (da.date !== today) { da.date = today; da.count = 0; da.chests = { 3: false, 5: false }; }
+    if (da.chests[n2]) return { claimed: false, reason: 'claimed' };
+    if ((Number(da.count) || 0) < n2) return { claimed: false, reason: 'not-enough' };
+    da.chests[n2] = true;
+    const min = (ACTIVE_CHEST && ACTIVE_CHEST.COINS_MIN) || 50;
+    const max = (ACTIVE_CHEST && ACTIVE_CHEST.COINS_MAX) || 120;
+    const coins = min + Math.floor(Math.random() * Math.max(1, max - min + 1));
+    s.coins = (s.coins || 0) + coins;
+    const mod = this.addRandomModule();
+    this.save();
+    return { claimed: true, coins, module: mod ? mod.key : null, count: da.count };
+  },
+
+  // ---- P1 留存·回归激励（断签召回）----
+  /** 断签天数（距上次签到；从未签到返回 -1，不触发回归礼包） */
+  _missDays() {
+    const s = this.load();
+    if (!s.lastCheckin) return -1;
+    const last = new Date(`${s.lastCheckin}T00:00:00`);
+    const today = new Date(`${this._todayStr()}T00:00:00`);
+    if (Number.isNaN(last.getTime())) return -1;
+    return Math.max(0, Math.round((today - last) / 86400000));
+  },
+
+  /**
+   * 回归礼包状态：断签 ≥ MISS_DAYS 天 且 距上次领取 ≥ COOLDOWN_DAYS 天 → due=true。
+   * 返回 { due, missDays, cooldownLeft, grantedAt }
+   */
+  getReturnGiftStatus() {
+    const s = this.load();
+    const miss = this._missDays();
+    const missDays = miss < 0 ? 0 : miss;
+    const cfg = RETURN_GIFT || { MISS_DAYS: 3, COOLDOWN_DAYS: 7 };
+    let cooldownLeft = 0;
+    let grantedAt = null;
+    if (s.returnGift && s.returnGift.grantedAt) {
+      grantedAt = s.returnGift.grantedAt;
+      const g = new Date(`${grantedAt}T00:00:00`);
+      const today = new Date(`${this._todayStr()}T00:00:00`);
+      if (!Number.isNaN(g.getTime())) {
+        const elapsed = Math.max(0, Math.round((today - g) / 86400000));
+        cooldownLeft = Math.max(0, (cfg.COOLDOWN_DAYS || 7) - elapsed);
+      }
+    }
+    const due = miss >= 0 && miss >= (cfg.MISS_DAYS || 3) && cooldownLeft === 0;
+    return { due, missDays, cooldownLeft, grantedAt };
+  },
+
+  /** 领取回归礼包：金币 + 随机机库模块；领后记 returnGift.grantedAt（7 天冷却）。未到触发条件返回 { claimed:false } */
+  claimReturnGift() {
+    const s = this.load();
+    const st = this.getReturnGiftStatus();
+    if (!st.due) return { claimed: false, reason: 'not-due' };
+    const cfg = RETURN_GIFT || { COINS: 500 };
+    s.coins = (s.coins || 0) + (cfg.COINS || 500);
+    const mod = this.addRandomModule();
+    s.returnGift = { grantedAt: this._todayStr() };
+    this.save();
+    return { claimed: true, coins: cfg.COINS || 500, module: mod ? mod.key : null };
+  },
+
+  // ---- P1 留存·社交排行（本地历史 Top10）----
+  /** 本地历史 Top10（按 score 降序，最多 10 条） */
+  getTopScores() {
+    const s = this.load();
+    return Array.isArray(s.topScores) ? s.topScores.slice(0, 10) : [];
+  },
+
+  /**
+   * 插入一条成绩（按 score 降序，最多 10 条）。
+   * 返回 { entered: 是否入榜, rank: 名次（1 起；未入榜 -1）, list: 入榜后列表 }
+   */
+  addTopScore(entry) {
+    const s = this.load();
+    if (!Array.isArray(s.topScores)) s.topScores = [];
+    const score = Math.max(0, Math.floor(Number(entry && entry.score) || 0));
+    if (score <= 0) return { entered: false, rank: -1, list: this.getTopScores() };
+    const rec = {
+      score,
+      levelId: (entry && entry.levelId != null) ? entry.levelId : 1,
+      mode: (entry && entry.mode) || 'normal',
+      date: (entry && entry.date) || this._todayStr(),
+    };
+    s.topScores.push(rec);
+    s.topScores.sort((a, b) => (Number(b.score) || 0) - (Number(a.score) || 0));
+    if (s.topScores.length > 10) s.topScores.length = 10;
+    this.save();
+    const rank = s.topScores.indexOf(rec) + 1;
+    return { entered: rank > 0, rank: rank > 0 ? rank : -1, list: this.getTopScores() };
   },
 };

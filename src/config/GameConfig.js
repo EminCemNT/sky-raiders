@@ -616,14 +616,23 @@ export const WINGMAN = {
   ],
 };
 
-// 每日任务模板池（留存系统 #每日任务）：每日按日期种子抽 3 个，跨局累计进度，完成领金币。
-// metric 必须与 GameScene/SaveManager 的进度钩子一致：kills / coins / bombs / combos / super。
+// 每日任务模板池（留存系统 #每日任务，P1 扩展）：每日按日期种子抽 DAILY_QUEST_PICK 个，跨局累计进度。
+// 池扩至 10 条；全部完成另有「全清奖励」（DAILY_QUEST_ALL_CLEAR_BONUS）。
+// metric 必须与 GameScene/SaveManager 的进度钩子一致：
+//   kills / coins / bombs / combos / grazes / clears / bossRushClears / endlessWaves / modules / skins。
+export const DAILY_QUEST_PICK = 4;                  // 每日随机抽取任务条数
+export const DAILY_QUEST_ALL_CLEAR_BONUS = 100;     // 全清奖励（单条金币之和外的追加）
 export const DAILY_QUEST_POOL = [
-  { metric: 'kills',  target: 30, desc: '击落 30 架敌机',    reward: 40 },
-  { metric: 'coins',  target: 60, desc: '收集 60 枚金币',    reward: 40 },
-  { metric: 'bombs',  target: 3,  desc: '使用 3 次清屏炸弹', reward: 30 },
-  { metric: 'combos', target: 5,  desc: '触发 5 次元素协同', reward: 50 },
-  { metric: 'super',  target: 2,  desc: '释放 2 次星风暴',   reward: 30 },
+  { metric: 'kills',  target: 30, desc: '击落 30 架敌机',      reward: 40 },
+  { metric: 'coins',  target: 60, desc: '收集 60 枚金币',      reward: 40 },
+  { metric: 'bombs',  target: 3,  desc: '使用 3 次清屏炸弹',   reward: 30 },
+  { metric: 'combos', target: 5,  desc: '触发 5 次元素协同',   reward: 50 },
+  { metric: 'grazes', target: 10, desc: '累计擦弹 10 次',      reward: 40 },
+  { metric: 'clears', target: 1,  desc: '通关任意一关',        reward: 50 },
+  { metric: 'bossRushClears', target: 1, desc: '通关 1 次 Boss Rush', reward: 60 },
+  { metric: 'endlessWaves', target: 10, desc: '无尽模式累计 10 波', reward: 50 },
+  { metric: 'modules', target: 1, desc: '收集 1 个机库模块',   reward: 40 },
+  { metric: 'skins',  target: 1,  desc: '购买 1 个战机皮肤',   reward: 60 },
 ];
 
 // ───────────────────────────────────────────────────────────────
@@ -719,6 +728,65 @@ export function getIsoWeekKey(date = new Date()) {
   d.setUTCDate(d.getUTCDate() + 4 - dayNum);
   return `${d.getUTCFullYear()}-W${String(wk).padStart(2, '0')}`;
 }
+
+// ───────────────────────────────────────────────────────────────
+// P1 留存·深空爬塔（无尽模式升级，纯本地）
+// 无尽模式升级为「深空爬塔」：每 BOSS_EVERY 波一个 Boss（复用 spawnBoss，bossKey 按层数
+// 轮换 BOSS_RUSH 4 Boss）；每波结束 3 选 1 随机增益（局内临时，不入存档）。
+// 消费方：GameScene（爬塔流程）+ WaveSystem（endlessBossEvery/awaitBuff）+ SaveManager（towerTop）。
+// ───────────────────────────────────────────────────────────────
+export const TOWER = {
+  BOSS_EVERY: 10,        // 每 N 波一个 Boss 波（波数 % N === 0 且非第 0 波）
+  BOSS_HP_GROWTH: 0.18,  // 每层 Boss 血量 +18%
+  BOSS_DIFF_GROWTH: 0.15,// 每层 Boss 弹幕难度 +0.15
+};
+
+// 3 选 1 随机增益表（id 与 GameScene.applyTowerBuff 对应，全部走既有机制）：
+//   fireRate  射速 +10%（fireInterval ×0.9，player.setFireRateMul）
+//   extraShot 弹量 +1（player.towerExtraShots，主炮并列弹 +1）
+//   speed     移速 +8%（player.towerSpeedMul ×1.08，getMoveSpeed/拖拽路径消费）
+//   graze     擦弹环 +8（player.towerGrazeExtra +8px，getGrazeCircle 消费）
+//   hp        HP +20（player.maxHp +20 并回复）
+//   coin      金币 +20%（结算 coinMul ×1.2，endGame 消费）
+export const TOWER_BUFFS = [
+  { id: 'fireRate',  name: '射速 +10%', desc: '开火间隔缩短 10%' },
+  { id: 'extraShot', name: '弹量 +1',   desc: '主炮并列弹 +1' },
+  { id: 'speed',     name: '移速 +8%',  desc: '移动速度提升 8%' },
+  { id: 'graze',     name: '擦弹环 +8', desc: '擦弹判定环半径 +8px' },
+  { id: 'hp',        name: 'HP +20',    desc: '生命上限 +20 并回复' },
+  { id: 'coin',      name: '金币 +20%', desc: '本局结算金币 +20%' },
+];
+
+// ───────────────────────────────────────────────────────────────
+// P1 留存·每日签到 7 日循环 + 补签
+// 连签第 N 天（1~7 循环）领 CHECKIN_REWARDS[N-1]；第 7 天大奖（800 金币，僚机未满级额外 +1）。
+// 断签可消耗 CHECKIN_MAKEUP_COST 金币补签 1 天（保留连签进度）。
+// 消费方：SaveManager.checkIn / makeupCheckIn / getCheckinCycle + MenuScene 签到面板。
+// ───────────────────────────────────────────────────────────────
+export const CHECKIN_REWARDS = [50, 60, 70, 80, 90, 100, 800];
+export const CHECKIN_MAKEUP_COST = 100;
+
+// ───────────────────────────────────────────────────────────────
+// P1 留存·回归激励（断签召回）
+// 断签 ≥ MISS_DAYS 天：下次进菜单弹「回归礼包」（金币 + 随机模块），
+// 领后记 returnGift.grantedAt，COOLDOWN_DAYS 天内不再触发。
+// 消费方：SaveManager.getReturnGiftStatus / claimReturnGift + MenuScene 面板。
+// ───────────────────────────────────────────────────────────────
+export const RETURN_GIFT = {
+  MISS_DAYS: 3,      // 断签 ≥3 天触发
+  COINS: 500,        // 回归礼包金币
+  COOLDOWN_DAYS: 7,  // 领取后冷却天数
+};
+
+// ───────────────────────────────────────────────────────────────
+// P1 留存·活跃宝箱（每日游玩局数）
+// 当日游玩 THRESHOLDS 局各开 1 个宝箱（金币随机 + 随机机库模块，复用 module 系统）。
+// 消费方：SaveManager.addDailyAct / getDailyActs / claimDailyChest + MenuScene 每日任务面板。
+// ───────────────────────────────────────────────────────────────
+export const ACTIVE_CHEST = {
+  THRESHOLDS: [3, 5],
+  COINS_MIN: 50, COINS_MAX: 120,
+};
 
 // ───────────────────────────────────────────────────────────────
 // 画质档位（P0 性能三件套）：低端机降级，纯视觉/技术，零业务逻辑。
