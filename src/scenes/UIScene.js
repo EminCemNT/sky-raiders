@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, LEVELS, WEAPONS, SHIPS, WINGMAN, PLAYER } from '../config/GameConfig.js';
+import { SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, LEVELS, WEAPONS, SHIPS, WINGMAN, PLAYER, EVENT_MODES } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
 import { audio } from '../systems/AudioSystem.js';
@@ -25,6 +25,9 @@ export default class UIScene extends Phaser.Scene {
     this.hudData = data || {};
     this.mode = (data && data.mode) || 'normal';
     this._element = (data && data.element) || null;   // 开局战机元素（元素核心轮换指示初始值）
+    // P0 留存-活动轮换：事件模式（金币冲刺/限时生存）HUD 走倒计时文本
+    this._eventMode = this.mode === 'coin_rush' || this.mode === 'survival';
+    this._eventCfg = EVENT_MODES[this.mode] || null;
   }
 
   create() {
@@ -41,7 +44,8 @@ export default class UIScene extends Phaser.Scene {
     // 关卡名 / Boss Rush 标签（右侧信息列整体右对齐留白 70px，避让右上角暂停键，避免小屏重叠）
     const HUD_RIGHT = GAME_WIDTH - 70;
     const lvl = LEVELS.find((l) => l.id === d.levelId) || LEVELS[0];
-    const levelLabel = this.mode === 'bossrush' ? 'BOSS RUSH' : `第 ${lvl.id} 关 · ${lvl.name}`;
+    const levelLabel = this.mode === 'bossrush' ? 'BOSS RUSH'
+      : (this._eventCfg ? this._eventCfg.name : `第 ${lvl.id} 关 · ${lvl.name}`);
     this.levelLabel = this.add.text(HUD_RIGHT, 18, levelLabel, {
       fontFamily: THEME.fontFamily, fontSize: '15px', fontStyle: '700', color: THEME.titleColor,
     }).setOrigin(1, 0).setDepth(100);
@@ -228,8 +232,9 @@ export default class UIScene extends Phaser.Scene {
     this._renderElement(this._element);   // 开局元素指示（元素核心轮换初始值）
 
     // Phase C：关卡开场大字 banner（Stage Banner，Back.easeOut 弹入 + 辉光 + 淡出）
-    const stageName = this.mode === 'bossrush' ? 'BOSS RUSH' : lvl.name;
-    const stageSub = this.mode === 'bossrush' ? '挑战连战' : `STAGE ${lvl.id}`;
+    const stageName = this.mode === 'bossrush' ? 'BOSS RUSH' : (this._eventCfg ? this._eventCfg.name : lvl.name);
+    const stageSub = this.mode === 'bossrush' ? '挑战连战'
+      : (this._eventCfg ? `限时 ${this._eventCfg.duration}s` : `STAGE ${lvl.id}`);
     this.showStageBanner(stageName, stageSub);
   }
 
@@ -381,10 +386,18 @@ export default class UIScene extends Phaser.Scene {
     EventBus.on(EVENTS.POWER_CHANGED, this._onPower);
 
     this._onWave = ({ wave, total, endless }) => {
+      if (this._eventMode) return; // 活动模式：波次文本由 EVENT_TIMER 倒计时接管
       if (this.waveText) this.waveText.setText(endless ? `第 ${wave} 波 · 无尽` : `第 ${wave}/${total} 波`);
       this.flashCenter(`第 ${wave} 波`);
     };
     EventBus.on(EVENTS.WAVE_STARTED, this._onWave);
+
+    // P0 留存-活动轮换：倒计时显示（金币冲刺/限时生存），接管 waveText
+    this._onEventTimer = (e) => {
+      if (!e) return;
+      if (this.waveText) this.waveText.setText(`${e.name} ${e.left}s`);
+    };
+    EventBus.on(EVENTS.EVENT_TIMER, this._onEventTimer);
 
     this._onBossSpawn = (info) => {
       this.bossBar.setVisible(true);
@@ -694,6 +707,7 @@ export default class UIScene extends Phaser.Scene {
     EventBus.off(EVENTS.LIVES_CHANGED, this._onLives);
     EventBus.off(EVENTS.POWER_CHANGED, this._onPower);
     EventBus.off(EVENTS.WAVE_STARTED, this._onWave);
+    EventBus.off(EVENTS.EVENT_TIMER, this._onEventTimer);
     EventBus.off(EVENTS.BOSS_SPAWNED, this._onBossSpawn);
     EventBus.off(EVENTS.BOSS_HP_CHANGED, this._onBossHp);
     EventBus.off(EVENTS.BOSS_DEFEATED, this._onBossDead);

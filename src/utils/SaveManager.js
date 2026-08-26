@@ -1,4 +1,4 @@
-import { SAVE_KEY, DAILY_QUEST_POOL, DIFFICULTIES, PERFORMANCE } from '../config/GameConfig.js';
+import { SAVE_KEY, DAILY_QUEST_POOL, DIFFICULTIES, PERFORMANCE, NEWBIE_PLAN, UPGRADE_TREE } from '../config/GameConfig.js';
 
 /**
  * 存档管理（localStorage）
@@ -35,6 +35,11 @@ const DEFAULT_SAVE = {
   showHitbox: false, // 显示玩家判定点（P1-6：斑鸠/虫姬同款，默认关）
   // 每日任务（留存系统 #每日任务）：date=当天日期 / claimed=是否已领 / progress=各指标进度 / picked=当天抽中的指标
   dailyQuest: { date: '', claimed: false, progress: {}, picked: [] },
+  // P0 留存-关卡勋章：{ [levelId]: ['c1','c3',...] } 达成记勋章；medalCount=累计勋章数（派生字段，读时重算自愈）
+  levelMedals: {},
+  medalCount: 0,
+  // P0 留存-新手 7 日计划：day=当前进行天 / claimed=已领天数集合 / progress=各 metric 累计进度
+  newbiePlan: { day: 1, claimed: {}, progress: {} },
 };
 
 let cache = null;
@@ -56,6 +61,9 @@ function freshSave() {
     },
     bossesDefeated: {},
     dailyQuest: { date: '', claimed: false, progress: {}, picked: [] },
+    levelMedals: {},
+    medalCount: 0,
+    newbiePlan: { day: 1, claimed: {}, progress: {} },
   };
 }
 
@@ -90,7 +98,20 @@ export const SaveManager = {
           ...(parsed.dailyQuest || {}),
           progress: { ...((parsed.dailyQuest && parsed.dailyQuest.progress) || {}) },
         },
+        // P0 留存-关卡勋章：深拷贝防默认对象被写脏；medalCount 为派生字段，统一重算自愈
+        levelMedals: { ...((parsed.levelMedals || {})) },
+        medalCount: 0,
+        // P0 留存-新手 7 日计划：深合并，老存档缺失兜底默认
+        newbiePlan: {
+          day: 1, claimed: {}, progress: {},
+          ...(parsed.newbiePlan || {}),
+          claimed: { ...((parsed.newbiePlan && parsed.newbiePlan.claimed) || {}) },
+          progress: { ...((parsed.newbiePlan && parsed.newbiePlan.progress) || {}) },
+        },
       };
+      // 勋章计数是派生字段：每次 load 从 levelMedals 重算，老存档/脏数据自动自愈
+      cache.medalCount = Object.values(cache.levelMedals || {})
+        .reduce((sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0);
       // 合法性清洗：老存档/脏数据不在 DIFFICULTIES 内则回退 standard
       if (!DIFFICULTIES.some((d) => d.id === cache.selectedDifficulty)) {
         cache.selectedDifficulty = 'standard';
@@ -285,6 +306,100 @@ export const SaveManager = {
     dq.claimed = true;
     this.save();
     return { claimed: true, reward, count: q.length };
+  },
+
+  // ---- 关卡勋章（P0 留存：重玩动力）----
+  /** 某关已达成勋章 id 列表（无则空数组） */
+  getLevelMedals(levelId) {
+    const arr = this.load().levelMedals[levelId];
+    return Array.isArray(arr) ? arr : [];
+  },
+
+  /** 累计勋章数：从 levelMedals 实时重算（派生字段，自愈防脏） */
+  countMedals() {
+    const s = this.load();
+    const n = Object.values(s.levelMedals || {})
+      .reduce((sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0);
+    if (s.medalCount !== n) { s.medalCount = n; this.save(); }
+    return n;
+  },
+
+  /** 记录某关达成勋章（append-only 幂等合并）；返回本关勋章数 */
+  recordLevelMedals(levelId, ids) {
+    const s = this.load();
+    if (!ids || !ids.length) return this.getLevelMedals(levelId).length;
+    const set = new Set(this.getLevelMedals(levelId));
+    ids.forEach((id) => set.add(id));
+    s.levelMedals[levelId] = Array.from(set);
+    this.countMedals(); // 重算 medalCount 并保存
+    return s.levelMedals[levelId].length;
+  },
+
+  // ---- 新手 7 日计划（P0 留存：新手成长目标）----
+  /** 累计计划进度。save=true 立即存盘（机库等无 endGame flush 的场景）；默认由 endGame 统一 flush */
+  addNewbieProgress(metric, n, { save = false } = {}) {
+    if (!n) return;
+    const s = this.load();
+    const np = s.newbiePlan || (s.newbiePlan = { day: 1, claimed: {}, progress: {} });
+    if (!np.progress) np.progress = {};
+    np.progress[metric] = (np.progress[metric] || 0) + n;
+    if (save) this.save();
+  },
+
+  /** 当前计划快照：7 天目标 + 进度 + 状态（isCurrent=当前进行天） */
+  getNewbiePlan() {
+    const s = this.load();
+    const np = s.newbiePlan || (s.newbiePlan = { day: 1, claimed: {}, progress: {} });
+    if (!np.progress) np.progress = {};
+    if (!np.claimed) np.claimed = {};
+    const day = Math.max(1, Number(np.day) || 1);
+    return NEWBIE_PLAN.map((d) => {
+      const progress = Math.min(np.progress[d.metric] || 0, d.target);
+      const claimed = !!(np.claimed && np.claimed[d.day]);
+      const done = progress >= d.target;
+      return { ...d, progress, done, claimed, isCurrent: d.day === day, isFuture: d.day > day };
+    });
+  },
+
+  /** 当日目标是否已达成 */
+  newbieDayDone() {
+    const cur = this.getNewbiePlan().find((x) => x.isCurrent);
+    return cur ? cur.done : false;
+  },
+
+  /**
+   * 领取当前天奖励：目标达成且未领才发奖；第 7 天额外僚机升级 +1（满级改发金币大礼包）。
+   * 返回 { claimed, reward, day, wingmanUpgraded, extraCoins }
+   */
+  claimNewbieDay() {
+    const s = this.load();
+    const np = s.newbiePlan || (s.newbiePlan = { day: 1, claimed: {}, progress: {} });
+    if (!np.claimed) np.claimed = {};
+    const day = Math.max(1, Number(np.day) || 1);
+    const cur = this.getNewbiePlan().find((x) => x.isCurrent);
+    if (!cur) return { claimed: false, reward: 0, day };
+    if (!cur.done) return { claimed: false, reward: 0, day, notReady: true };
+    if (np.claimed[day]) return { claimed: false, reward: 0, day };
+    np.claimed[day] = true;
+    let reward = cur.reward;
+    let wingmanUpgraded = false;
+    let extraCoins = 0;
+    if (day === 7) {
+      const up = s.upgrades || {};
+      const max = (UPGRADE_TREE.wingman && UPGRADE_TREE.wingman.max) || 2;
+      if ((up.wingman || 0) < max) {
+        up.wingman = (up.wingman || 0) + 1;
+        wingmanUpgraded = true;
+      } else {
+        // 满级僚机 → 改发金币大礼包
+        extraCoins = 200;
+        reward += 200;
+      }
+    }
+    s.coins += reward;
+    np.day = day + 1; // 推进到次日
+    this.save();
+    return { claimed: true, reward, day, wingmanUpgraded, extraCoins };
   },
 
   reset() {

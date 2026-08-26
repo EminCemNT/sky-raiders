@@ -273,6 +273,7 @@ export default class HangarScene extends Phaser.Scene {
     SaveManager.deductCoins(cost);
     if (!save.upgrades) save.upgrades = {};
     save.upgrades[row.key] = lvl + 1;
+    SaveManager.addNewbieProgress('hangarUpgrades', 1); // P0 留存-新手计划：D2 机库升级进度（随下方 save 一并落盘）
     SaveManager.save();
 
     this.refresh();

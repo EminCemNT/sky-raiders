@@ -68,6 +68,8 @@ export const EVENTS = {
   USE_SKILL: 'use-skill',                   // 按当前 activeSkill 派发（starstorm 走 useSuper，overdrive 走 useOverdrive）
   SKILL_SWITCHED: 'skill-switched',         // 星风暴 ↔ 过载 轮换，payload = 新技能 id
   OVERDRIVE_STATE: 'overdrive-state',       // 过载激活状态，payload = { active, until, duration }
+  // P0 留存-活动轮换：活动模式倒计时广播，payload = { mode, name, left, total }
+  EVENT_TIMER: 'event-timer',
 };
 
 // 玩家基础属性
@@ -156,6 +158,12 @@ export const LEVELS = [
       silhouette: { kind: 'none', color: 0x0a0f1c, density: 1, speed: 40 },
     },
     boss: { maxHp: 2600, pattern: 'fan', name: '哨兵 Sentinel', color: 0x66ccff },
+    // P0 留存-关卡勋章目标：达成记勋章（数据驱动，append-only，只加不改旧键）
+    challenges: [
+      { id: 'c1', type: 'killRate', target: 0.9, name: '歼灭90%' },
+      { id: 'c2', type: 'timeLimit', target: 60, name: '60秒速通' },
+      { id: 'c3', type: 'singleWeapon', name: '单武器通关' },
+    ],
     wavePlan: [
       { count: 6,  comp: [['small', 'straight', 1]] },
       { count: 8,  comp: [['small', 'straight', 1], ['small', 'sine', 1]] },
@@ -177,6 +185,11 @@ export const LEVELS = [
       silhouette: { kind: 'asteroid', color: 0x0a0604, density: 1, speed: 46 },
     },
     boss: { maxHp: 3300, pattern: 'spiral', name: '粉碎者 Crusher', color: 0xff9a4a },
+    challenges: [
+      { id: 'c1', type: 'killRate', target: 0.85, name: '歼灭85%' },
+      { id: 'c2', type: 'timeLimit', target: 75, name: '75秒速通' },
+      { id: 'c3', type: 'singleWeapon', name: '单武器通关' },
+    ],
     wavePlan: [
       { count: 8,  comp: [['small', 'straight', 1], ['small', 'sine', 1]] },
       { count: 9,  comp: [['small', 'sine', 2], ['mid', 'straight', 1]] },
@@ -199,6 +212,11 @@ export const LEVELS = [
       silhouette: { kind: 'building', color: 0x070414, density: 1, speed: 42 },
     },
     boss: { maxHp: 4200, pattern: 'cross', name: '霸主 Overlord', color: 0x66ff99 },
+    challenges: [
+      { id: 'c1', type: 'killRate', target: 0.8, name: '歼灭80%' },
+      { id: 'c2', type: 'timeLimit', target: 90, name: '90秒速通' },
+      { id: 'c3', type: 'singleWeapon', name: '单武器通关' },
+    ],
     wavePlan: [
       { count: 9,  comp: [['small', 'straight', 1], ['mid', 'straight', 1]] },
       { count: 10, comp: [['small', 'sine', 2], ['mid', 'straight', 1], ['mid', 'dive', 1]] },
@@ -222,6 +240,11 @@ export const LEVELS = [
       silhouette: { kind: 'building', color: 0x0a0408, density: 1, speed: 44 },
     },
     boss: { maxHp: 5600, pattern: 'nova', name: '湮灭者 Annihilator', color: 0xff6a3d },
+    challenges: [
+      { id: 'c1', type: 'killRate', target: 0.75, name: '歼灭75%' },
+      { id: 'c2', type: 'timeLimit', target: 120, name: '120秒速通' },
+      { id: 'c3', type: 'singleWeapon', name: '单武器通关' },
+    ],
     wavePlan: [
       { count: 10, comp: [['small', 'straight', 1], ['small', 'sine', 1], ['mid', 'straight', 1]] },
       { count: 11, comp: [['small', 'sine', 2], ['mid', 'straight', 1], ['mid', 'dive', 1]] },
@@ -470,6 +493,74 @@ export const DAILY_QUEST_POOL = [
   { metric: 'combos', target: 5,  desc: '触发 5 次元素协同', reward: 50 },
   { metric: 'super',  target: 2,  desc: '释放 2 次星风暴',   reward: 30 },
 ];
+
+// ───────────────────────────────────────────────────────────────
+// P0 留存内容组：关卡勋章 / 新手 7 日计划 / 活动轮换
+// 均为"数据驱动 + append-only"：只新增键，不改既有字段。
+// ───────────────────────────────────────────────────────────────
+
+// 关卡勋章阈值（先做展示：累计达到阈值显示高难解锁提示；高难解锁后续接入）
+export const MEDALS = {
+  THRESHOLD: 6,
+  THRESHOLD_LABEL: '高难挑战',
+};
+
+// 新手 7 日计划：每日目标。metric 必须与 GameScene/SaveManager 的进度钩子一致：
+//   clears          通关任意一关（normal 胜利）
+//   hangarUpgrades  机库升级次数（HangarScene.tryUpgrade）
+//   coins           收集金币（GameScene.collectCoin）
+//   bossRushClears  通关 Boss Rush（bossrush 胜利）
+//   endlessWaves    无尽模式撑过波数（endGame 时按 currentWave 累计）
+//   grazes          累计擦弹（GameScene._grantGraze）
+//   levelClears     累计通关关数（normal 胜利）
+export const NEWBIE_PLAN = [
+  { day: 1, metric: 'clears',        target: 1,  desc: '通关任意一关',   reward: 60 },
+  { day: 2, metric: 'hangarUpgrades', target: 1,  desc: '机库升级 1 次',   reward: 60 },
+  { day: 3, metric: 'coins',          target: 20, desc: '收集 20 枚金币',  reward: 60 },
+  { day: 4, metric: 'bossRushClears', target: 1,  desc: '通关 Boss Rush',  reward: 100 },
+  { day: 5, metric: 'endlessWaves',   target: 10, desc: '无尽模式撑过 10 波', reward: 100 },
+  { day: 6, metric: 'grazes',         target: 10, desc: '累计擦弹 10 次',  reward: 80 },
+  { day: 7, metric: 'levelClears',    target: 3,  desc: '累计通关 3 关',   reward: 150 },
+];
+// 第 7 天额外奖励：僚机升级 +1（满级改发金币大礼包）
+export const NEWBIE_DAY7_BONUS = { wingman: 1, coins: 200 };
+
+// 活动轮换（低成本 2 模式）：复用既有 WaveSystem / GameScene 框架。
+// 按 ISO 周号在 EVENT_CYCLE 轮换，周末（六/日）为双倍奖励日。
+export const EVENT_CYCLE = ['coin_rush', 'survival'];
+export const EVENT_MODES = {
+  coin_rush: {
+    id: 'coin_rush', name: '金币冲刺', short: '金币冲刺',
+    duration: 60, coinMul: 2, magnet: true, extraCoinsPerKill: 2,
+    desc: '60 秒限时 · 敌人大量掉金币 · 磁力常驻 · 结算金币×2',
+  },
+  survival: {
+    id: 'survival', name: '限时生存', short: '限时生存',
+    duration: 120, coinPerWave: 8, extraLives: 1,
+    desc: '120 秒无限波 · 撑住越多波金币越多 · 命数+1 补偿',
+  },
+};
+
+/** ISO 8601 周号（周一为一周起点） */
+function _isoWeekNumber(d) {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  return Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+}
+
+/** 当前周活动：按 ISO 周号轮换 EVENT_CYCLE；周末双倍；返回活动配置 + daysLeft（距下次轮换天数） */
+export function getCurrentEvent(date = new Date()) {
+  const week = _isoWeekNumber(date);
+  const id = EVENT_CYCLE[week % EVENT_CYCLE.length];
+  const cfg = EVENT_MODES[id] || EVENT_MODES.coin_rush;
+  const double = (date.getDay() === 0 || date.getDay() === 6);
+  const nextMonday = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  nextMonday.setDate(nextMonday.getDate() + (((8 - date.getDay()) % 7) || 7));
+  const daysLeft = Math.max(1, Math.ceil((nextMonday - date) / 86400000));
+  return { ...cfg, id, double, daysLeft };
+}
 
 // ───────────────────────────────────────────────────────────────
 // 画质档位（P0 性能三件套）：低端机降级，纯视觉/技术，零业务逻辑。

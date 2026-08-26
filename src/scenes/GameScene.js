@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import {
   SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, COLORS, PLAYER, BULLET, LEVELS, BOSS_RUSH, SHIPS, ELEMENTS, WINGMAN,
   DIFFICULTIES, getDifficulty, POWERUP, GRAZE, OVERDRIVE, bossRushScale, PERFORMANCE,
+  EVENT_MODES, getCurrentEvent,
 } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
@@ -40,9 +41,14 @@ export default class GameScene extends Phaser.Scene {
   }
 
   init(data) {
-    this.mode = (data && data.mode) || 'normal'; // 'normal' | 'bossrush' | 'endless'
+    this.mode = (data && data.mode) || 'normal'; // 'normal' | 'bossrush' | 'endless' | 'coin_rush' | 'survival'
     this.levelId = data.levelId || 1;
     this.forceTutorial = !!(data && data.forceTutorial); // 菜单"教程"按钮强制重看
+    // P0 留存-活动轮换：事件模式配置（coin_rush/survival），非事件模式为 null
+    this.eventCfg = (data && data.mode && EVENT_MODES[data.mode]) || null;
+    // P0 留存-关卡勋章：单武器通关判定（局内武器切换次数；开局绑定武器不算切换）
+    this._weaponSwitchCount = 0;
+    this._levelStartTime = 0;
     this.stats = { kills: 0, coins: 0, damageTaken: 0, spawned: 0 };
     this.score = 0;
     this.gameEnded = false;
@@ -73,6 +79,16 @@ export default class GameScene extends Phaser.Scene {
     // 当前关卡（色调 / 难度 / Boss 配置 / 波次表）
     this.level = LEVELS.find((l) => l.id === this.levelId) || LEVELS[0];
     const theme = this.level.theme;
+    // P0 留存-关卡勋章：计时起点（timeLimit 勋章判定）
+    this._levelStartTime = this.time.now;
+    // P0 留存-活动轮换：读取当前活动（双倍奖励日 / 剩余天数透传给 ResultScene 展示）
+    if (this.eventCfg) {
+      const ev = getCurrentEvent();
+      this.eventDouble = !!ev.double;
+      this.eventDaysLeft = ev.daysLeft;
+      this._eventUntil = this.time.now + (this.eventCfg.duration || 60) * 1000;
+      this._eventTimerAcc = 0;
+    }
 
     // P0 四档难度：读存档选择，标准档系数全 1.0（与现状逐字段等价，零回归）
     this.difficultyCfg = getDifficulty(SaveManager.load().selectedDifficulty) || DIFFICULTIES[1];
@@ -114,6 +130,8 @@ export default class GameScene extends Phaser.Scene {
     const save = SaveManager.load();
     // 命数复活：每局命数重置为 START_LIVES；spawn 位置供原地复活复用
     this.lives = PLAYER.START_LIVES;
+    // P0 留存-活动轮换：限时生存命数+1 补偿
+    if (this.eventCfg && this.eventCfg.extraLives) this.lives += this.eventCfg.extraLives;
     this.playerSpawnX = GAME_WIDTH / 2;
     this.playerSpawnY = GAME_HEIGHT - 140;
     this.player = new Player(this, this.playerSpawnX, this.playerSpawnY, this.playerBullets);
@@ -147,6 +165,10 @@ export default class GameScene extends Phaser.Scene {
     // 道具/技能系统状态（#151）— 必须在首个 ENERGY_CHANGED 事件前初始化
     this.energy = 0;
     this.buffs = { shieldUntil: 0, magnetUntil: 0 };
+    // P0 留存-活动轮换：金币冲刺磁力常驻（MAX_SAFE_INTEGER 永不到期；HUD 徽标在下方初始同步处广播）
+    if (this.eventCfg && this.eventCfg.magnet) {
+      this.buffs.magnetUntil = Number.MAX_SAFE_INTEGER;
+    }
     this.wingmanSystem = null; // 僚机集合（在玩家元素绑定后创建，见下方）
 
     // 输入
@@ -155,10 +177,11 @@ export default class GameScene extends Phaser.Scene {
     this.focusKey = this.input.keyboard.addKey('F'); // 第三版③集火指令：切换僚机集火
 
     // 波次系统（Boss Rush 模式不生成普通波次，改为纯 Boss 序列；
-    // endless 复用同一 WaveSystem，开无尽循环 + 难度递增）
+    // endless 复用同一 WaveSystem，开无尽循环 + 难度递增；
+    // 活动模式同样走无尽循环，由 EVENT_TIMER 到期结算）
     this.bossRushIndex = 0;
     if (this.mode !== 'bossrush') {
-      this.waves = new WaveSystem(this, this.levelId, { endless: this.mode === 'endless' });
+      this.waves = new WaveSystem(this, this.levelId, { endless: this.mode === 'endless' || !!this.eventCfg });
     }
     this.boss = null;
 
@@ -225,6 +248,10 @@ export default class GameScene extends Phaser.Scene {
     EventBus.emit(EVENTS.GRAZE_CHANGED, { count: this.grazeCount, chain: this.grazeChain });
     // P2 技能：开局广播当前技能槽，UIScene 按钮标签随之初始化
     EventBus.emit(EVENTS.SKILL_SWITCHED, this.activeSkill);
+    // P0 留存-活动轮换：金币冲刺磁力常驻（UI 已绑定监听后广播徽标）
+    if (this.eventCfg && this.eventCfg.magnet) {
+      EventBus.emit(EVENTS.MAGNET_CHANGED, true, Number.MAX_SAFE_INTEGER);
+    }
 
     this.bombs = PLAYER.START_BOMBS;
 
@@ -237,8 +264,8 @@ export default class GameScene extends Phaser.Scene {
     // 那时 wingmanSystem 还是 null，拿不到 getGroup()）
     this.setupWingmanCollider();
 
-    // 首玩教程：首次进入游戏显示操作引导（Boss Rush / 无尽模式跳过，避免阻塞）；forceTutorial 供菜单"教程"按钮重看
-    if (this.mode !== 'bossrush' && this.mode !== 'endless' && (!SaveManager.get('tutorialDone') || this.forceTutorial)) this.showTutorial();
+    // 首玩教程：首次进入游戏显示操作引导（Boss Rush / 无尽 / 活动模式跳过，避免阻塞）；forceTutorial 供菜单"教程"按钮重看
+    if (this.mode !== 'bossrush' && this.mode !== 'endless' && !this.eventCfg && (!SaveManager.get('tutorialDone') || this.forceTutorial)) this.showTutorial();
 
     // Boss Rush：直接进入 Boss 序列
     if (this.mode === 'bossrush') this.startBossRush();
@@ -434,6 +461,19 @@ export default class GameScene extends Phaser.Scene {
       }
     }
     if (this.gameEnded) return;
+    // P0 留存-活动轮换：倒计时 + 到期结算（复用 endGame，活动模式按规则结算）
+    if (this.eventCfg && this._eventUntil) {
+      const remainMs = this._eventUntil - this.time.now;
+      if (remainMs <= 0) { this.endGame(true); return; }
+      this._eventTimerAcc = (this._eventTimerAcc || 0) + dt;
+      if (this._eventTimerAcc >= 250) {
+        this._eventTimerAcc = 0;
+        EventBus.emit(EVENTS.EVENT_TIMER, {
+          mode: this.mode, name: this.eventCfg.name,
+          left: Math.ceil(remainMs / 1000), total: this.eventCfg.duration,
+        });
+      }
+    }
     if (this.starfield) this.starfield.update(dt);
 
     // 玩家
@@ -722,6 +762,7 @@ export default class GameScene extends Phaser.Scene {
     AchievementManager.reportCoins(this.stats.coins);
     SaveManager.addCoins(1);
     SaveManager.addDailyProgress('coins', 1); // #每日任务：金币收集进度
+    SaveManager.addNewbieProgress('coins', 1); // P0 留存-新手计划：D3 收集金币进度
     EventBus.emit(EVENTS.COIN_COLLECTED, this.stats.coins);
     EventBus.emit(EVENTS.SCORE_CHANGED, 20);
     EventBus.emit(EVENTS.FLOAT_SCORE, { x: coin.x, y: coin.y, amount: 20, special: true });
@@ -821,6 +862,8 @@ export default class GameScene extends Phaser.Scene {
         case 'weapon':
           if (this.player.setWeapon) this.player.setWeapon(def.weapon);
           AchievementManager.reportWeaponUsed(def.weapon);
+          // P0 留存-关卡勋章：拾取武器箱 = 一次武器切换（singleWeapon 勋章要求 0 次）
+          this._weaponSwitchCount = (this._weaponSwitchCount || 0) + 1;
           this._weaponUntil = this.time.now + (def.duration || 15000);
           EventBus.emit(EVENTS.WEAPON_CHANGED, def.weapon, def.duration || 15000);
           break;
@@ -976,6 +1019,13 @@ export default class GameScene extends Phaser.Scene {
     // 成就系统：实时上报击杀（含来源/元素），并同步连击峰值
     AchievementManager.reportKill(meta);
     AchievementManager.reportComboPeak(this.maxCombo);
+    // P0 留存-活动轮换：金币冲刺击杀额外掉金币（池满自动丢弃，不影响玩法）
+    if (this.mode === 'coin_rush' && !meta.noEventCoin) {
+      const n = (this.eventCfg && this.eventCfg.extraCoinsPerKill) || 2;
+      for (let i = 0; i < n; i++) {
+        this.spawnCoin(x + Phaser.Math.Between(-14, 14), y + Phaser.Math.Between(-14, 14));
+      }
+    }
   }
 
   comboMultiplier() {
@@ -1026,6 +1076,7 @@ export default class GameScene extends Phaser.Scene {
     EventBus.emit(EVENTS.SCORE_CHANGED, total);
     EventBus.emit(EVENTS.FLOAT_SCORE, { x, y, amount: total, special: true, label: '擦弹' });
     EventBus.emit(EVENTS.GRAZE_CHANGED, { count: this.grazeCount, chain: this.grazeChain });
+    SaveManager.addNewbieProgress('grazes', 1); // P0 留存-新手计划：D6 擦弹进度
   }
 
   // ---- 僚机子弹工厂（僚机 AI 进阶）----
@@ -1319,7 +1370,12 @@ export default class GameScene extends Phaser.Scene {
     if (this.gameEnded) return;
     this.gameEnded = true;
 
-    // 结算星级
+    // P0 留存-活动轮换：事件模式结算按活动规则（金币冲刺 ×2 / 限时生存 按波次），不计星级/勋章/关卡进度
+    const eventCfg = this.eventCfg;
+    const isEvent = !!eventCfg;
+    const isNormal = this.mode === 'normal';
+
+    // 结算星级（活动模式跳过，stars=0 不触发完美通关类成就）
     const spawned = Math.max(1, this.stats.spawned);
     const killRatio = this.stats.kills / spawned;
     const noDamage = this.stats.damageTaken === 0 ? 1 : Math.max(0, 1 - this.stats.damageTaken / 200);
@@ -1330,8 +1386,9 @@ export default class GameScene extends Phaser.Scene {
     else if (composite >= 0.7) stars = 2;
     else if (composite >= 0.4) stars = 1;
     if (!victory) stars = Math.min(stars, 1);
+    if (isEvent) stars = 0;
 
-    if (victory && this.mode !== 'bossrush') SaveManager.recordLevelStars(this.levelId, stars);
+    if (victory && isNormal) SaveManager.recordLevelStars(this.levelId, stars);
 
     // P0 四档难度结算：得分 ×scoreMul，金币 ×coinMul（标准档全 1.0 = 现状零回归）。
     // 金币在局中已按 1:1 入账；这里仅对正差额（困难/地狱档）补发，休闲/标准档不回退，避免"低难度倒扣金币"的诡异体验。
@@ -1348,6 +1405,24 @@ export default class GameScene extends Phaser.Scene {
       rareDrops: this._rushRareDrops || 0,
     } : null;
     if (rushReward) coinDelta += Math.round(this.stats.coins * (rushReward.coinMul - 1));
+
+    // P0 留存-活动轮换：金币冲刺结算金币 ×2（周末双倍再 ×2）；限时生存按波次给金币
+    let eventReward = null;
+    if (isEvent && victory) {
+      if (this.mode === 'coin_rush') {
+        const mult = (eventCfg.coinMul || 2) * (this.eventDouble ? 2 : 1);
+        const total = Math.round(this.stats.coins * mult);
+        coinDelta = Math.max(0, total - this.stats.coins);
+        eventReward = { kind: 'coin_rush', coins: total, mult, double: !!this.eventDouble };
+      } else if (this.mode === 'survival') {
+        const waves = this.waves ? this.waves.currentWave : 0;
+        const per = eventCfg.coinPerWave || 8;
+        const total = waves * per * (this.eventDouble ? 2 : 1);
+        coinDelta = Math.max(0, total - this.stats.coins);
+        eventReward = { kind: 'survival', waves, per, coins: total, double: !!this.eventDouble };
+      }
+    }
+
     if (coinDelta > 0) SaveManager.addCoins(coinDelta);
     const finalCoins = coinDelta > 0 ? this.stats.coins + coinDelta : this.stats.coins;
 
@@ -1355,7 +1430,37 @@ export default class GameScene extends Phaser.Scene {
     const isNewBest = SaveManager.recordBestScore(scaledScore);
     const bestScore = SaveManager.getBestScore();
 
-    SaveManager.save(); // flush 每日任务进度（addDailyProgress 不立即存盘）
+    // P0 留存-新手计划：跨模式累计进度（与 addDailyProgress 一样不立即存盘，由下方 save() 统一 flush）
+    if (this.mode === 'normal') {
+      if (victory) {
+        SaveManager.addNewbieProgress('clears', 1);      // D1 通关任意关
+        SaveManager.addNewbieProgress('levelClears', 1); // D7 累计通关关数
+      }
+    } else if (this.mode === 'bossrush') {
+      if (victory) SaveManager.addNewbieProgress('bossRushClears', 1); // D4 通关 Boss Rush
+    } else if (this.mode === 'endless') {
+      SaveManager.addNewbieProgress('endlessWaves', this.waves ? this.waves.currentWave : 0); // D5 无尽波次
+    }
+
+    SaveManager.save(); // flush 每日任务/新手计划进度（不立即存盘类进度统一落盘）
+
+    // P0 留存-关卡勋章：普通关胜利后按关卡 challenges 判定达成（killRate 用 stats.kills/spawned；
+    // timeLimit 用耗时；singleWeapon 用局内武器切换次数===0）
+    let achievedMedals = [];
+    if (victory && isNormal) {
+      const lvl = LEVELS.find((l) => l.id === this.levelId);
+      if (lvl && Array.isArray(lvl.challenges) && lvl.challenges.length) {
+        const elapsedSec = (this.time.now - (this._levelStartTime || this.time.now)) / 1000;
+        for (const ch of lvl.challenges) {
+          let ok = false;
+          if (ch.type === 'killRate') ok = (this.stats.kills / spawned) >= (ch.target || 1);
+          else if (ch.type === 'timeLimit') ok = elapsedSec <= (ch.target || 60);
+          else if (ch.type === 'singleWeapon') ok = (this._weaponSwitchCount || 0) === 0;
+          if (ok) achievedMedals.push(ch.id);
+        }
+        if (achievedMedals.length) SaveManager.recordLevelMedals(this.levelId, achievedMedals);
+      }
+    }
 
     const result = {
       victory, stars, score: scaledScore,
@@ -1365,11 +1470,15 @@ export default class GameScene extends Phaser.Scene {
       mode: this.mode, wave: this.waves ? this.waves.currentWave : 0,
       maxCombo: this.maxCombo || 0,   // UI P2：结算页连击峰值面板（纯展示数据透传）
       rushReward,                     // P2 Boss Rush 差异化：{ hangarLv, coinMul, rareDrops }
+      achievedMedals,                 // P0 留存-关卡勋章：本局达成勋章 id 列表
+      eventReward,                    // P0 留存-活动轮换：活动模式结算明细
+      event: eventCfg ? { name: eventCfg.name, short: eventCfg.short, double: !!this.eventDouble, daysLeft: this.eventDaysLeft } : null,
     };
 
-    // 成就评估（#成就）：事件已实时上报，这里做局末兜底评估（无伤/通关/BossRush 等）
+    // 成就评估（#成就）：事件已实时上报，这里做局末兜底评估（无伤/通关/BossRush 等）。
+    // 活动模式胜利不计"通关任意一关/无伤"类成就（victory 仅透传给结算展示，reportRun 按活动压制）
     result.newAchievements = AchievementManager.reportRun({
-      victory,
+      victory: isEvent ? false : victory,
       mode: this.mode,
       stars,
       levelId: this.levelId,

@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, LEVELS, DIFFICULTIES, PERFORMANCE } from '../config/GameConfig.js';
+import { SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, LEVELS, DIFFICULTIES, PERFORMANCE, MEDALS, getCurrentEvent } from '../config/GameConfig.js';
 import { SaveManager } from '../utils/SaveManager.js';
 import { AchievementManager } from '../systems/AchievementManager.js';
 import { createStarfield, MENU_BG_THEME } from '../systems/Starfield.js';
@@ -20,6 +20,7 @@ export default class MenuScene extends Phaser.Scene {
     const cx = GAME_WIDTH / 2;
     // modal 标志位初始化（防御：避免上一次残留导致按钮被错误拦截）
     this.settingsOpen = this.levelSelectOpen = this.achievementsOpen = this.checkinOpen = this.dailyQuestOpen = false;
+    this.eventOpen = this.newbiePlanOpen = false; // P0 留存：本周活动 / 新手计划 面板标志
     // reduced-motion 偏好（子面板动画降级）
     this.reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
@@ -58,7 +59,7 @@ export default class MenuScene extends Phaser.Scene {
     // 教程按钮（重看新手引导，进入第 1 关并强制显示教程）
     new NeonButton(this, cx, 400, '新手教程', {
       stroke: COLORS.accent, fontSize: 22, glow: true, onDown: () => {
-        if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen) return;
+        if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen) return;
         audio.resume(); audio.startBgm(); audio.sfx('ui');
         this.scene.start(SCENES.GAME, { levelId: 1, mode: 'normal', forceTutorial: true });
       },
@@ -68,7 +69,7 @@ export default class MenuScene extends Phaser.Scene {
     new NeonButton(this, cx - 116, 480, '开始游戏', {
       w: 220, fontSize: 24, glow: true,
       onDown: () => {
-        if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen) return;
+        if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen) return;
         audio.resume(); audio.startBgm(); audio.sfx('ui'); this.startGame();
       },
     });
@@ -76,7 +77,7 @@ export default class MenuScene extends Phaser.Scene {
     new NeonButton(this, cx + 116, 480, '无尽模式', {
       w: 220, fontSize: 24, stroke: 0xff8a3d, glow: true,
       onDown: () => {
-        if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen) return;
+        if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen) return;
         audio.resume(); audio.startBgm(); audio.sfx('ui'); this.startEndless();
       },
     });
@@ -85,44 +86,62 @@ export default class MenuScene extends Phaser.Scene {
     new NeonButton(this, cx, 548, '机  库', {
       glow: true,
       onDown: () => {
-        if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen) return;
+        if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen) return;
         this.scene.start('HangarScene');
       },
     });
 
     // 成就按钮
     new NeonButton(this, cx, 616, '成  就', { stroke: COLORS.coin, glow: true, onDown: () => {
-      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen) return;
+      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen) return;
       audio.sfx('ui'); this.openAchievements();
     } });
 
     // 设置按钮
     new NeonButton(this, cx, 680, '设  置', { glow: true, onDown: () => {
-      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen) return;
+      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen) return;
       this.openSettings();
     } });
 
     // Boss Rush 按钮
-    new NeonButton(this, cx, 740, 'BOSS RUSH', { stroke: 0xff5566, glow: true, onDown: () => {
-      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen) return;
+    new NeonButton(this, cx - 116, 736, 'BOSS RUSH', { stroke: 0xff5566, glow: true, onDown: () => {
+      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen) return;
       audio.sfx('ui'); this.scene.start(SCENES.GAME, { mode: 'bossrush' });
     } });
 
+    // P0 留存-活动轮换：本周活动入口（显示当前活动名 + 剩余天数，点开进入对应模式）
+    {
+      const ev = getCurrentEvent();
+      new NeonButton(this, cx + 116, 736, `本周活动·${ev.short}`, { w: 220, fontSize: 18, stroke: 0xffd54a, glow: true, onDown: () => {
+        if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen) return;
+        audio.sfx('ui'); this.openEvent();
+      } });
+      this.add.text(cx + 116, 772, `剩余 ${ev.daysLeft} 天 · ${ev.double ? '今日双倍奖励' : '周末双倍奖励'}`, {
+        fontFamily: THEME.fontFamily, fontSize: '13px', color: ev.double ? THEME.textGold : THEME.textDim,
+      }).setOrigin(0.5).setAlpha(0.9);
+    }
+
     // 选择关卡按钮
     new NeonButton(this, cx, 800, '选择关卡', { glow: true, onDown: () => {
-      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen) return;
+      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen) return;
       audio.sfx('ui'); this.openLevelSelect();
     } });
 
     // 每日签到按钮（主动点击才弹，避免自动弹窗挡住"开始游戏"）
-    new NeonButton(this, cx, 864, '每日签到', { stroke: COLORS.coin, glow: true, onDown: () => {
-      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen) return;
+    new NeonButton(this, cx - 116, 864, '每日签到', { stroke: COLORS.coin, glow: true, onDown: () => {
+      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen) return;
       audio.sfx('ui'); this.openCheckIn();
+    } });
+
+    // P0 留存-新手计划按钮（挂到签到旁）
+    new NeonButton(this, cx + 116, 864, '新手计划', { stroke: 0x7cffa0, glow: true, onDown: () => {
+      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen) return;
+      audio.sfx('ui'); this.openNewbiePlan();
     } });
 
     // 每日任务按钮（留存系统：击杀/金币/炸弹等每日目标，完成领金币）
     new NeonButton(this, cx, 928, '每日任务', { stroke: COLORS.accent, glow: true, onDown: () => {
-      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.dailyQuestOpen) return;
+      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.dailyQuestOpen || this.eventOpen || this.newbiePlanOpen) return;
       audio.sfx('ui'); this.openDailyQuest();
     } });
 
@@ -163,10 +182,10 @@ export default class MenuScene extends Phaser.Scene {
     this.scene.start(SCENES.GAME, { mode: 'endless', levelId: 1 });
   }
 
-  /** 底部存档信息文案（金币 / 最高分 / 已解锁关卡），三处共用保持一致 */
+  /** 底部存档信息文案（金币 / 最高分 / 勋章 / 已解锁关卡），多处共用保持一致 */
   _saveInfoLabel() {
     const sv = SaveManager.load();
-    return `金币 ${sv.coins}   ·   最高分 ${sv.bestScore || 0}   ·   已解锁第 ${sv.unlockedLevel} 关`;
+    return `金币 ${sv.coins}   ·   最高分 ${sv.bestScore || 0}   ·   勋章 ${SaveManager.countMedals()}   ·   已解锁第 ${sv.unlockedLevel} 关`;
   }
 
   // ---- 设置面板（P0 音量设置）----
@@ -293,6 +312,18 @@ export default class MenuScene extends Phaser.Scene {
         st.setStrokeStyle(2, s < stars ? THEME.starFillStroke : THEME.starEmptyStroke);
         c.add(st);
       }
+      // P0 留存-关卡勋章：卡片右下角显示该关 3 个勋章槽位（达成=金勋章，未达成=暗锁，只做展示）
+      {
+        const medals = SaveManager.getLevelMedals(lvl.id);
+        const chs = Array.isArray(lvl.challenges) ? lvl.challenges.slice(0, 3) : [];
+        chs.forEach((m, mi) => {
+          const achieved = medals.includes(m.id);
+          const mx = cardW / 2 - 22 - (chs.length - 1 - mi) * 30;
+          const icon = this.add.image(mx, cardH / 2 - 26, achieved ? 'icon_medal' : 'icon_lock').setScale(0.5);
+          if (!achieved) icon.setAlpha(0.35);
+          c.add(icon);
+        });
+      }
       if (unlocked) {
         c.setSize(cardW, cardH).setInteractive({
           hitArea: new Phaser.Geom.Rectangle(-cardW / 2, -cardH / 2, cardW, cardH),
@@ -314,7 +345,19 @@ export default class MenuScene extends Phaser.Scene {
       ov.add(c);
     });
 
-    ov.add(this.makeMenuBtn(cx, startY + LEVELS.length * (cardH + gap) - 4, '关闭', () => this.closeLevelSelect()));
+    // P0 留存-关卡勋章：累计勋章数 + 阈值解锁提示（先做展示，高难解锁后续接入）
+    {
+      const totalMedals = SaveManager.countMedals();
+      const totalPossible = LEVELS.length * 3;
+      const hit = totalMedals >= MEDALS.THRESHOLD;
+      ov.add(this.add.text(cx, startY + LEVELS.length * (cardH + gap) - 16,
+        `累计勋章 ${totalMedals}/${totalPossible} 枚${hit ? `  ·  已达 ${MEDALS.THRESHOLD} 枚，${MEDALS.THRESHOLD_LABEL}即将解锁` : `  ·  再 ${MEDALS.THRESHOLD - totalMedals} 枚解锁${MEDALS.THRESHOLD_LABEL}`}`, {
+        fontFamily: THEME.fontFamily, fontSize: '16px',
+        color: hit ? THEME.textGoldLight : THEME.textSecondary,
+      }).setOrigin(0.5));
+    }
+
+    ov.add(this.makeMenuBtn(cx, startY + LEVELS.length * (cardH + gap) + 30, '关闭', () => this.closeLevelSelect()));
     this.fadeInPanel(ov);
   }
 
@@ -487,6 +530,126 @@ export default class MenuScene extends Phaser.Scene {
   closeDailyQuest() {
     if (this.dailyQuestOverlay) { this.dailyQuestOverlay.destroy(); this.dailyQuestOverlay = null; }
     this.dailyQuestOpen = false;
+  }
+
+  // ---- 新手 7 日计划面板（P0 留存：新手成长目标）----
+  openNewbiePlan() {
+    this.newbiePlanOpen = true;
+    const cx = GAME_WIDTH / 2;
+    const ov = this.add.container(0, 0).setDepth(300);
+    this.newbiePlanOverlay = ov;
+    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.78)
+      .setOrigin(0).setInteractive();
+    ov.add(dim);
+    this.addPanel(ov, cx, 60, GAME_HEIGHT - 36, 472);
+    this.addGlowTitle(ov, cx, 92, '新手计划', THEME.titleColor);
+
+    const list = SaveManager.getNewbiePlan();
+    const rowH = 74, startY = 156;
+    list.forEach((d, i) => {
+      const y = startY + i * rowH;
+      const isActive = d.isCurrent && !d.claimed;
+      const c = this.add.container(cx, y);
+      const bg = this.add.rectangle(0, 0, 440, 66, d.claimed ? THEME.achBg : (isActive ? THEME.btnBg : THEME.lockedBg), 0.96)
+        .setStrokeStyle(2, isActive ? THEME.titleColor : (d.claimed ? 0x2f6f96 : THEME.lockedStroke));
+      c.add(bg);
+      const titleColor = d.claimed ? THEME.textSuccess : (isActive ? THEME.white : THEME.textDisabled);
+      c.add(this.add.text(-208, -20, `D${d.day} ${d.desc}`, {
+        fontFamily: THEME.fontFamily, fontSize: '18px', fontStyle: '700', color: titleColor,
+      }).setOrigin(0, 0.5));
+      const rewardTxt = d.day === 7 ? `+${d.reward}金币+僚机` : `+${d.reward}金币`;
+      c.add(this.add.text(208, -20, rewardTxt, {
+        fontFamily: THEME.fontFamily, fontSize: '14px', color: THEME.textGold,
+      }).setOrigin(1, 0.5));
+      // 进度条
+      const barW = 392, barX = -barW / 2, barY = 12;
+      const track = this.add.rectangle(barX, barY, barW, 8, THEME.trackBg)
+        .setOrigin(0, 0.5).setStrokeStyle(1, THEME.trackStroke);
+      const ratio = d.target ? Math.min(1, d.progress / d.target) : 0;
+      const fill = this.add.rectangle(barX, barY, barW * ratio, 8, (d.claimed || d.done) ? THEME.success : THEME.trackFill)
+        .setOrigin(0, 0.5);
+      const status = d.claimed ? '已领取' : (d.done ? '可领取' : `${d.progress}/${d.target}`);
+      const statusColor = d.claimed ? THEME.textSuccess : (d.done ? THEME.textGold : THEME.textSecondary);
+      c.add(this.add.text(208, barY, status, {
+        fontFamily: THEME.fontFamily, fontSize: '14px', fontStyle: '700', color: statusColor,
+      }).setOrigin(1, 0.5));
+      c.add([track, fill]);
+      ov.add(c);
+    });
+
+    const claimable = list.some((d) => d.isCurrent && d.done);
+    const claimBtn = this.makeMenuBtn(cx, startY + list.length * rowH + 16, '领取当日奖励', () => {
+      const res = SaveManager.claimNewbieDay();
+      if (res.claimed) {
+        this.closeNewbiePlan();
+        this.openNewbiePlan();
+        if (this.saveInfoText) this.saveInfoText.setText(this._saveInfoLabel());
+        this.flashToast(res.day === 7
+          ? `第 7 天奖励！+${res.reward} 金币 · 僚机升级${res.wingmanUpgraded ? ' +1' : '（已满级改发金币）'}`
+          : `领取 D${res.day} 奖励 · +${res.reward} 金币`);
+      } else {
+        this.flashToast('当日目标还没完成哦～');
+      }
+    });
+    if (!claimable) claimBtn.setAlpha(0.45);
+    ov.add(claimBtn);
+    ov.add(this.makeMenuBtn(cx, startY + list.length * rowH + 78, '关闭', () => this.closeNewbiePlan()));
+    this.fadeInPanel(ov);
+  }
+
+  closeNewbiePlan() {
+    if (this.newbiePlanOverlay) { this.newbiePlanOverlay.destroy(); this.newbiePlanOverlay = null; }
+    this.newbiePlanOpen = false;
+  }
+
+  // ---- 本周活动面板（P0 留存：活动轮换）----
+  openEvent() {
+    this.eventOpen = true;
+    const cx = GAME_WIDTH / 2;
+    const ov = this.add.container(0, 0).setDepth(300);
+    this.eventOverlay = ov;
+    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.78)
+      .setOrigin(0).setInteractive();
+    ov.add(dim);
+    this.addPanel(ov, cx, 160, GAME_HEIGHT - 160, 470);
+    this.addGlowTitle(ov, cx, 240, '本周活动', THEME.titleColor);
+
+    const ev = getCurrentEvent();
+    ov.add(this.add.text(cx, 356, ev.name, {
+      fontFamily: THEME.fontFamily, fontSize: '40px', fontStyle: '800',
+      color: ev.double ? THEME.textGoldLight : THEME.titleBright,
+    }).setOrigin(0.5).setShadow(0, 0, THEME.titleShadow, 16, true, true));
+    ov.add(this.add.text(cx, 420, ev.desc, {
+      fontFamily: THEME.fontFamily, fontSize: '18px', color: THEME.textPrimary, align: 'center',
+      wordWrap: { width: 400 },
+    }).setOrigin(0.5));
+    ov.add(this.add.text(cx, 500, `剩余 ${ev.daysLeft} 天 · ${ev.double ? '今日双倍奖励' : '周末双倍奖励'}`, {
+      fontFamily: THEME.fontFamily, fontSize: '18px',
+      color: ev.double ? THEME.textGold : THEME.textSecondary,
+    }).setOrigin(0.5));
+
+    ov.add(this.makeMenuBtn(cx, 590, `进入${ev.short}`, () => {
+      audio.sfx('ui');
+      this.scene.start(SCENES.GAME, { mode: ev.id });
+    }));
+    ov.add(this.makeMenuBtn(cx, 670, '关闭', () => this.closeEvent()));
+    this.fadeInPanel(ov);
+  }
+
+  closeEvent() {
+    if (this.eventOverlay) { this.eventOverlay.destroy(); this.eventOverlay = null; }
+    this.eventOpen = false;
+  }
+
+  /** 顶部轻提示（领奖/提示用），不阻塞交互 */
+  flashToast(msg) {
+    const t = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60, msg, {
+      fontFamily: THEME.fontFamily, fontSize: '22px', fontStyle: '800', color: THEME.textGoldLight,
+    }).setOrigin(0.5).setDepth(400).setShadow(0, 0, '#000000', 8, true, true).setAlpha(0);
+    this.tweens.add({
+      targets: t, alpha: 1, y: '-=16', duration: 260, yoyo: true, hold: 1000,
+      onComplete: () => t.destroy(),
+    });
   }
 
   makeSlider(ov, cx, y, label, type) {

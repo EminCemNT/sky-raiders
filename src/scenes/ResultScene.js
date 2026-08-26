@@ -38,9 +38,13 @@ export default class ResultScene extends Phaser.Scene {
     // 半透明遮罩
     this.add.rectangle(cx, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.55);
 
-    // 标题
-    const title = r.mode === 'endless' ? '无尽挑战结束' : (r.victory ? '关卡通过' : '任务失败');
-    const titleColor = r.mode === 'endless' ? THEME.titleColor : (r.victory ? THEME.titleColor : THEME.textRed);
+    // 标题（P0 留存-活动轮换：事件模式专属标题）
+    const title = r.mode === 'endless' ? '无尽挑战结束'
+      : r.mode === 'coin_rush' ? '金币冲刺结束'
+      : r.mode === 'survival' ? '限时生存结束'
+      : (r.victory ? '关卡通过' : '任务失败');
+    const titleColor = r.mode === 'endless' || r.mode === 'coin_rush' || r.mode === 'survival'
+      ? THEME.titleColor : (r.victory ? THEME.titleColor : THEME.textRed);
     this.add.text(cx, 200, title, {
       fontFamily: THEME.fontFamily, fontSize: '48px', fontStyle: '800', color: titleColor,
     }).setOrigin(0.5).setShadow(0, 0, titleColor, 20, true, true);
@@ -83,6 +87,23 @@ export default class ResultScene extends Phaser.Scene {
         label: 'Boss Rush 奖励',
         value: `机库 Lv${rr.hangarLv} · 金币×${coinMulTxt} · 稀有${rr.rareDrops || 0}`,
       });
+    }
+    // P0 留存-活动轮换：活动模式结算明细（金币冲刺 ×N / 限时生存 波次→金币）
+    if (r.eventReward) {
+      const er = r.eventReward;
+      if (er.kind === 'coin_rush') {
+        lines.push({ label: '活动金币', value: `金币×${er.mult} 结算 +${er.coins}${er.double ? ' · 双倍日' : ''}` });
+      } else if (er.kind === 'survival') {
+        lines.push({ label: '生存结算', value: `${er.waves} 波 × ${er.per} 金币 = +${er.coins}${er.double ? ' · 双倍日' : ''}` });
+      }
+    }
+    // P0 留存-关卡勋章：本局达成勋章（normal 胜利展示）
+    if (r.mode === 'normal' && r.victory && r.achievedMedals && r.achievedMedals.length) {
+      const names = (lvl.challenges || [])
+        .filter((c) => r.achievedMedals.includes(c.id))
+        .map((c) => c.name)
+        .join(' / ');
+      lines.push({ label: '本局勋章', value: names });
     }
     lines.push({ label: '最高分', value: r.bestScore ?? 0 });
     const dataStartY = 400;
@@ -131,10 +152,18 @@ export default class ResultScene extends Phaser.Scene {
       color: peak >= 20 ? THEME.textGold : THEME.titleColor,
     }).setOrigin(1, 0.5);
 
-    // 按钮：无尽模式 -> 再来一局（仍进无尽）；胜利且可解锁 -> 下一关；其余 -> 重来/菜单
+    // 按钮：无尽模式 -> 再来一局（仍进无尽）；活动模式 -> 再战一次（仍进本周活动）；
+    // 胜利且可解锁 -> 下一关；其余 -> 重来/菜单
     if (r.mode === 'endless') {
       this.makeButton(cx, btnY, '再来一局', () => {
         this.scene.start(SCENES.GAME, { mode: 'endless', levelId: 1 });
+      });
+      this.makeButton(cx, btnY + 80, '返回菜单', () => {
+        this.scene.start(SCENES.MENU);
+      });
+    } else if (r.mode === 'coin_rush' || r.mode === 'survival') {
+      this.makeButton(cx, btnY, '再战一次', () => {
+        this.scene.start(SCENES.GAME, { mode: r.mode });
       });
       this.makeButton(cx, btnY + 80, '返回菜单', () => {
         this.scene.start(SCENES.MENU);
