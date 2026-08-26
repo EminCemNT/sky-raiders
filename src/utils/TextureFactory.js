@@ -54,7 +54,13 @@ export function generateAll(scene) {
   drawEnemySmall(g); g.generateTexture('enemy_small', 32, 30);
   drawEnemyMid(g); g.generateTexture('enemy_mid', 48, 44);
   drawEnemyDiver(g); g.generateTexture('enemy_diver', 36, 40);
+  // P1 战斗扩展·新敌型纹理（append-only 新 key，不改既有 key）
+  drawEnemyTurret(g); g.generateTexture('enemy_turret', 32, 30);
+  drawEnemyKamikaze(g); g.generateTexture('enemy_kamikaze', 32, 32);
+  drawEnemySummoner(g); g.generateTexture('enemy_summoner', 36, 40);
+  drawEnemyShield(g); g.generateTexture('enemy_shield', 36, 40);
   drawBoss(g); g.generateTexture('boss', 160, 140);
+  drawBossShield(g); g.generateTexture('boss_shield', 36, 36);
   drawCoin(g); g.generateTexture('coin', 22, 22);
   drawItemShield(g); g.generateTexture('item_shield', 26, 26);
   drawItemMagnet(g); g.generateTexture('item_magnet', 26, 26);
@@ -769,6 +775,125 @@ function drawEnemyDiver(g) {
   g.strokeTriangle(18, 3, 12, 34, 24, 34);
   g.lineStyle(1.5, 0xff9af2, 0.9);
   g.strokeTriangle(18, 3, 12, 34, 24, 34);
+}
+
+// ─── P1 地面炮台：宽底座 + 炮管（橙棕，32×30）──────────────────
+function drawEnemyTurret(g) {
+  g.clear();
+  // 底座外发光
+  g.fillStyle(0xffaa3a, 0.2);
+  g.fillRect(0, 12, 32, 18);
+  // 宽底座
+  g.fillStyle(0x2a1a08, 1);
+  g.fillRect(2, 16, 28, 12);
+  g.fillStyle(0x6a4a1a, 1);
+  g.fillRect(4, 18, 24, 8);
+  // 炮座 + 炮管
+  g.fillStyle(0x8a5a1a, 1);
+  g.fillRect(8, 6, 16, 12);
+  g.fillGradientStyle(0xffd080, 0xffaa3a, 0xffaa3a, 0x8a4a0a, 1);
+  g.fillRect(13, 2, 6, 14);
+  g.fillStyle(0xffe2a0, 0.9);
+  g.fillRect(14.5, 2, 2, 10);
+  // 两侧弹药点
+  g.fillStyle(0xffe14a, 0.9);
+  g.fillCircle(9, 22, 2);
+  g.fillCircle(23, 22, 2);
+  g.lineStyle(1.5, 0xffaa3a, 0.8);
+  g.strokeRect(8, 6, 16, 12);
+  g.strokeRect(13, 2, 6, 14);
+}
+
+// ─── P1 自爆机：红色尖头弹体 + 黄色警示芯（32×32）─────────────
+function drawEnemyKamikaze(g) {
+  g.clear();
+  // 外发光
+  g.fillStyle(0xff5a3c, 0.25);
+  g.fillTriangle(2, 30, 30, 30, 16, 2);
+  // 尖头弹体
+  g.fillGradientStyle(0xffb0a0, 0xff5a3c, 0x8a1a2a, 0x5a0a1a, 1);
+  g.fillTriangle(6, 28, 26, 28, 16, 6);
+  // 警示芯（黄圈白点）
+  g.fillStyle(0xffe14a, 1);
+  g.fillCircle(16, 18, 4.5);
+  g.fillStyle(0xffffff, 0.95);
+  g.fillCircle(16, 18, 1.8);
+  g.lineStyle(1.5, 0xffe14a, 0.9);
+  g.strokeCircle(16, 18, 4.5);
+  // 尾焰槽（两侧小翼）
+  g.fillStyle(0x8a1a2a, 1);
+  g.fillTriangle(8, 24, 12, 30, 14, 24);
+  g.fillTriangle(24, 24, 20, 30, 18, 24);
+  g.lineStyle(2, 0xff5a3c, 0.8);
+  g.strokeTriangle(6, 28, 26, 28, 16, 6);
+}
+
+// ─── P1 召唤机：紫色菱形 + 光环 + 金色召唤芯（36×40）──────────
+function drawEnemySummoner(g) {
+  g.clear();
+  const cx = 18, cy = 20;
+  // 外光环
+  g.fillStyle(0x9a6fd6, 0.22);
+  g.fillCircle(cx, cy, 16);
+  g.lineStyle(2, 0xc9bfff, 0.7);
+  g.strokeCircle(cx, cy, 12);
+  // 菱形机体
+  g.fillGradientStyle(0xc9bfff, 0x9a6fd6, 0x5a3a8a, 0x3a1a6a, 1);
+  g.fillPoints([{ x: cx, y: 4 }, { x: 32, y: cy }, { x: cx, y: 36 }, { x: 4, y: cy }], true);
+  // 召唤核心（金）
+  g.fillStyle(0xffe14a, 1);
+  g.fillCircle(cx, cy, 4.5);
+  g.fillStyle(0xffffff, 0.95);
+  g.fillCircle(cx, cy, 1.8);
+  g.lineStyle(1.5, 0xffe14a, 0.9);
+  g.strokeCircle(cx, cy, 4.5);
+  g.lineStyle(2, 0x9a6fd6, 0.8);
+  g.strokePoints([{ x: cx, y: 4 }, { x: 32, y: cy }, { x: cx, y: 36 }, { x: 4, y: cy }], true);
+}
+
+// ─── P1 护盾机：青蓝圆盘 + 前方护盾弧（36×40）─────────────────
+function drawEnemyShield(g) {
+  g.clear();
+  const cx = 18, cy = 20;
+  // 机体圆盘
+  g.fillStyle(0x0a3a55, 1);
+  g.fillCircle(cx, cy, 13);
+  g.fillStyle(0x4ad1ff, 0.5);
+  g.fillCircle(cx, cy, 10);
+  g.fillStyle(0x2a7a9a, 1);
+  g.fillCircle(cx, cy, 7);
+  g.fillStyle(0x9fe8ff, 1);
+  g.fillCircle(cx, cy, 3);
+  // 前方护盾弧（下方，朝向玩家）
+  g.lineStyle(3, 0x9fe8ff, 0.95);
+  g.beginPath();
+  g.arc(cx, cy + 6, 14, 0.3, Math.PI - 0.3, false);
+  g.strokePath();
+  g.lineStyle(1.5, 0xffffff, 0.7);
+  g.strokeCircle(cx, cy, 13);
+}
+
+// ─── P1 Boss 护盾部位：六边形徽章 + 内芯（近白基底，可 tint 关卡色，36×36）──
+function drawBossShield(g) {
+  g.clear();
+  const R = 14, cx = 18, cy = 18;
+  const pts = [];
+  for (let i = 0; i < 6; i++) {
+    const a = (Math.PI / 3) * i - Math.PI / 2;
+    pts.push({ x: cx + Math.cos(a) * R, y: cy + Math.sin(a) * R });
+  }
+  // 外发光（ADD 白，tint 后呈关卡色光晕）
+  g.fillStyle(0xffffff, 0.12);
+  g.fillPoints(pts.map((p) => ({ x: cx + (p.x - cx) * 1.15, y: cy + (p.y - cy) * 1.15 })), true);
+  // 徽章体（近白基底）
+  g.fillStyle(0xdfe8f5, 1);
+  g.fillPoints(pts, true);
+  g.fillStyle(0xffffff, 1);
+  g.fillCircle(cx, cy, 8);
+  g.fillStyle(0xcfe0f0, 1);
+  g.fillCircle(cx, cy, 4);
+  g.lineStyle(2, 0xffffff, 0.9);
+  g.strokePoints(pts, true);
 }
 
 // ─── 玩家脉冲弹：青白核心 + 外层柔晕（P3：辉光壳 +10%，亮芯收窄 30%）────

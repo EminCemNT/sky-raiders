@@ -20,6 +20,15 @@ const TYPES = {
   small: { tex: 'enemy_small', hp: 20, score: 100, coin: 0.35, speed: 130, fireRate: 0,    color: 0xff5a6e },
   mid:   { tex: 'enemy_mid',   hp: 60, score: 300, coin: 0.6,  speed: 90,  fireRate: 1400, color: 0xff8a3d },
   diver: { tex: 'enemy_diver', hp: 35, score: 200, coin: 0.45, speed: 150, fireRate: 0,    color: 0xff3df0, defaultMode: 'dive' },
+  // P1 战斗扩展·新敌型（append-only）：
+  //   turret   地面炮台（固定底部两侧，发 aimed 弹，HP 中）
+  //   kamikaze 自爆机（高速冲玩家，靠近自爆 AoE）
+  //   summoner 召唤机（定期召唤 small）
+  //   shield   护盾机（正面护盾挡玩家弹，从侧/后打才掉血；弹幕慢）
+  turret:   { tex: 'enemy_turret',   hp: 70, score: 350, coin: 0.5, speed: 0,   fireRate: 1600, color: 0xffaa3a, defaultMode: 'turret' },
+  kamikaze: { tex: 'enemy_kamikaze', hp: 30, score: 250, coin: 0.3, speed: 270, fireRate: 0,    color: 0xff5a3c, defaultMode: 'kamikaze' },
+  summoner: { tex: 'enemy_summoner', hp: 90, score: 450, coin: 0.6, speed: 70,  fireRate: 0,    color: 0x9a6fd6, defaultMode: 'straight' },
+  shield:   { tex: 'enemy_shield',   hp: 55, score: 300, coin: 0.5, speed: 85,  fireRate: 1800, color: 0x4ad1ff, defaultMode: 'straight' },
 };
 
 export default class Enemy extends Phaser.Physics.Arcade.Sprite {
@@ -64,8 +73,16 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     // 难度：关卡系数（HP 线性、速度略增）再乘难度档系数（标准档全 1.0 = 现状）
     this.hp = Math.round(t.hp * difficulty * hpMul);
     this.maxHp = this.hp;
+    // P1 新敌型默认移动模式：显式传 'straight'/缺省时回退到型号默认（仅限新类型，diver 等旧行为零改动）
+    if (t.defaultMode && (typeKey === 'turret' || typeKey === 'kamikaze' || typeKey === 'summoner' || typeKey === 'shield')
+      && (!moveMode || moveMode === 'straight')) {
+      moveMode = t.defaultMode;
+    }
     this.moveMode = moveMode;
     this.firePattern = firePattern || 'straight';
+    // P1 护盾机：正面护盾标志 + 盾宽（GameScene overlap 吸收玩家弹用）
+    this.hasFrontShield = typeKey === 'shield';
+    this.shieldWidth = 26;
     this._t = 0;
     this._baseX = x;
     this._lastFire = this.scene.time.now;
@@ -80,12 +97,18 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     this._dotMul = 1;   // P0 战机被动系数复位（防对象池复用残留）
     this._slowMul = 1;
     this._reactUntil = 0;   // 元素连锁反应冷却复位
+    this._summonAt = 0;     // P1 召唤机定时复位
     this.clearTint();
 
-    if (!this.thruster) {
-      this.thruster = VFX.attachEnemyThruster(this.scene, this, this.getColor());
+    // P1 地面炮台无尾焰（固定底座，不喷气）
+    if (this.typeKey === 'turret') {
+      if (this.thruster) VFX.setEmitterActive(this.thruster, false);
     } else {
-      VFX.setEmitterActive(this.thruster, true);
+      if (!this.thruster) {
+        this.thruster = VFX.attachEnemyThruster(this.scene, this, this.getColor());
+      } else {
+        VFX.setEmitterActive(this.thruster, true);
+      }
     }
     return this;
   }
@@ -118,22 +141,32 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
       ? (((ELEMENTS.ice && ELEMENTS.ice.slow) || 0.5) * (this._slowMul || 1)) : 1;
     this._t += dt * slow;
 
-    // 移动模式
-    switch (this.moveMode) {
-      case 'sine':
-        this.x = this._baseX + Math.sin(this._t * 0.003) * 90 * slow;
-        this.setVelocity(0, this._baseVy * slow);
-        break;
-      case 'dive':
-        if (this._t > 800) this.setVelocityY(this._baseVy * 2.2 * slow);
-        else this.setVelocity(0, this._baseVy * slow);
-        break;
-      default:
-        this.setVelocity(0, this._baseVy * slow); // straight
-        break;
+    // 移动模式（P1 特殊敌型优先；其余走 moveMode 既有分支）
+    if (this.typeKey === 'kamikaze') {
+      this._updateKamikaze(time, dt);
+    } else if (this.typeKey === 'turret') {
+      // 地面炮台：固定不动（出生即定位在底部两侧）
+      this.setVelocity(0, 0);
+    } else {
+      switch (this.moveMode) {
+        case 'sine':
+          this.x = this._baseX + Math.sin(this._t * 0.003) * 90 * slow;
+          this.setVelocity(0, this._baseVy * slow);
+          break;
+        case 'dive':
+          if (this._t > 800) this.setVelocityY(this._baseVy * 2.2 * slow);
+          else this.setVelocity(0, this._baseVy * slow);
+          break;
+        default:
+          this.setVelocity(0, this._baseVy * slow); // straight
+          break;
+      }
     }
 
-    // 敌人开火（仅 mid+）
+    // P1 召唤机：定期召唤 small（数据驱动，复用 scene.spawnEnemy）
+    if (this.typeKey === 'summoner') this._updateSummoner(time);
+
+    // 敌人开火（仅 fireRate>0 型号：mid / turret / shield）
     if (this.def.fireRate > 0 && time - this._lastFire > this.def.fireRate) {
       this.fireAtPlayer();
       this._lastFire = time;
@@ -143,6 +176,43 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     if (this.y > GAME_HEIGHT + 60 || this.x < -80 || this.x > GAME_WIDTH + 80) {
       this.recycle();
     }
+  }
+
+  /** P1 自爆机：高速冲向玩家，靠近自爆 AoE */
+  _updateKamikaze(time, dt) {
+    const p = this.scene.player;
+    if (!p || !p.active) { this.setVelocity(0, this._baseVy); return; }
+    const slow = (time < this._slowUntil)
+      ? (((ELEMENTS.ice && ELEMENTS.ice.slow) || 0.5) * (this._slowMul || 1)) : 1;
+    const spd = (this.def.speed || 270) * (1 + (this.difficulty - 1) * 0.4)
+      * (this.scene.difficultyCfg ? this.scene.difficultyCfg.speedMul : 1) * slow;
+    const ang = Phaser.Math.Angle.Between(this.x, this.y, p.x, p.y);
+    this.scene.physics.velocityFromRotation(ang, spd, this.body.velocity);
+    // 靠近玩家自爆 AoE（先于撞机 overlap 触发的半径，避免双重受击）
+    const d2 = Phaser.Math.Distance.Squared(this.x, this.y, p.x, p.y);
+    if (d2 < 60 * 60) this._kamikazeBoom();
+  }
+
+  /** P1 自爆演出：AoE 伤害玩家 + 自身消失（不计击杀得分，纯进攻型敌机） */
+  _kamikazeBoom() {
+    const scene = this.scene;
+    if (scene.playerHit) scene.playerHit(25);
+    if (scene.requestHitStop) scene.requestHitStop(90);
+    VFX.explosionLayered(scene, this.x, this.y, this.getColor(), { scale: 1.2, tier: 'mid' });
+    this._dying = true;
+    this.recycle();
+  }
+
+  /** P1 召唤机：每 ~2.2s 在身前召唤一只 small（继承当前难度） */
+  _updateSummoner(time) {
+    if (!this._summonAt) this._summonAt = time + 1500;
+    if (time < this._summonAt) return;
+    this._summonAt = time + 2200;
+    this.scene.spawnEnemy(
+      Phaser.Math.Clamp(this.x + Phaser.Math.Between(-24, 24), 30, GAME_WIDTH - 30),
+      this.y + 34,
+      'small', 'straight', this.difficulty,
+    );
   }
 
   fireAtPlayer() {
@@ -175,10 +245,118 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
       case 'burst':    // 五发向下散射弧
         for (let i = -2; i <= 2; i++) spawnBullet(Math.PI / 2 + i * 0.18);
         break;
+      // ── P1 战斗扩展·新弹幕（append-only）──
+      case 'aimed':    // 瞄准弹：朝玩家当前方向单发（turret 炮台用）
+        spawnBullet(aim);
+        break;
+      case 'ring': {   // 环弹：n 发圆周（缓缓自转）
+        const n = 10;
+        this._bulletAng = (this._bulletAng || 0) + 0.25;
+        for (let i = 0; i < n; i++) spawnBullet((Math.PI * 2 / n) * i + this._bulletAng);
+        break;
+      }
+      case 'wall':     // 墙弹：横向一排向下直落
+        this._fireWall();
+        break;
+      case 'laserSweep':  // 激光扫射（蓄力 → 扫射 beam）
+        this._laserSweep();
+        break;
+      case 'spiral': { // 螺旋弹：角度持续递增
+        const arms = 2, per = 2;
+        this._bulletAng = (this._bulletAng || 0) + 0.32;
+        for (let a = 0; a < arms; a++) {
+          const base = this._bulletAng + Math.PI * a;
+          for (let i = 0; i < per; i++) spawnBullet(base + i * 0.14);
+        }
+        break;
+      }
+      case 'petal': {  // 花瓣弹：多臂对称
+        const arms = 3;
+        this._bulletAng = (this._bulletAng || 0) + 0.26;
+        for (let a = 0; a < arms; a++) {
+          const base = this._bulletAng + (Math.PI * 2 / arms) * a;
+          spawnBullet(base + 0.16);
+          spawnBullet(base - 0.16);
+        }
+        break;
+      }
       default:         // straight：朝玩家直射
         spawnBullet(aim);
         break;
     }
+  }
+
+  /** P1 墙弹：横向一排向下直落（复用 enemyBullets 池） */
+  _fireWall() {
+    const scene = this.scene;
+    if (!scene.enemyBullets) return;
+    const n = 7;
+    const gap = GAME_WIDTH / (n + 1);
+    const spd = BULLET.ENEMY_SPEED * (this.difficulty || 1) * 0.85;
+    for (let i = 1; i <= n; i++) {
+      const b = scene.enemyBullets.get(gap * i, this.y + 16, 'bullet_enemy');
+      if (!b) continue;
+      b.setActive(true).setVisible(true);
+      b.body.enable = true;
+      b.eHoming = false;
+      b.setVelocity(0, 0);
+      b.body.velocity.set(0, spd);
+      if (scene.enemyTrail) scene.enemyTrail.emitParticleAt(b.x, b.y);
+    }
+  }
+
+  /** P1 激光扫射：短暂蓄力警示 → 扫射 beam（视觉复用矩形光柱，命中判定点相交单次受击） */
+  _laserSweep() {
+    const scene = this.scene;
+    const sx = this.x, sy = this.y + 16;
+    const warn = scene.add.circle(sx, sy, 18, 0xff4455, 0.22)
+      .setStrokeStyle(2, 0xff4455, 0.8).setDepth(16);
+    if (PREFERS_REDUCED) {
+      warn.setAlpha(0.5);
+    } else {
+      const spin = () => {
+        if (!warn.active) return;
+        warn.setScale(1 + 0.3 * Math.sin(scene.time.now * 0.02));
+        scene.time.delayedCall(40, spin);
+      };
+      spin();
+    }
+    scene.time.delayedCall(420, () => {
+      if (warn.active) warn.destroy();
+      if (!this.active) return;
+      const beam = scene.add.rectangle(sx, sy, 10, 260, 0xff5a3c, 0.5)
+        .setOrigin(0.5, 0).setDepth(16);
+      const glow = scene.add.rectangle(sx, sy, 18, 260, 0xffa07a, 0.22)
+        .setOrigin(0.5, 0).setDepth(15).setBlendMode(Phaser.BlendModes.ADD);
+      beam._isSweep = true;
+      if (PREFERS_REDUCED) {
+        beam.setRotation(-0.4);
+        scene.time.delayedCall(160, () => { if (beam.active) { beam.destroy(); glow.destroy(); } });
+        return;
+      }
+      const dur = 720;
+      const t0 = scene.time.now;
+      const tick = () => {
+        if (!beam.active) return;
+        const p = (scene.time.now - t0) / dur;
+        if (p >= 1) { if (beam.active) { beam.destroy(); glow.destroy(); } return; }
+        const ang = Phaser.Math.DegToRad(-60 + 120 * p);
+        beam.setRotation(ang);
+        glow.setRotation(ang);
+        // 命中判定：beam 线段与玩家判定圈相交 → 单次受击（玩家无敌帧天然防连击）
+        if (scene.player && scene.player.active) {
+          const hc = scene.player.getHitCircle();
+          const tipX = sx + Math.sin(ang) * 260;
+          const tipY = sy + Math.cos(ang) * 260;
+          if (!beam._hitDone && _distToSegment(hc.x, hc.y, sx, sy, tipX, tipY) < hc.r + 6) {
+            beam._hitDone = true;
+            scene.playerHit(10);
+          }
+        }
+        scene.time.delayedCall(16, tick);
+      };
+      tick();
+    });
   }
 
   /** 受伤，返回是否死亡 */
@@ -302,6 +480,7 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.setActive(false).setVisible(false);
     if (this.body) { this.body.enable = false; this.setVelocity(0, 0); }
     this._dying = false; this.setScale(1, 1); this.angle = 0;  // P1-7 复位死亡演出状态，保障对象池复用
+    this.hasFrontShield = false;  // P1 护盾机复位，防对象池复用残留
   }
 
   destroy(fromScene) {
@@ -309,4 +488,15 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.thruster = null;
     super.destroy(fromScene);
   }
+}
+
+/** P1 激光扫射命中辅助：点到线段最近距离（beam 扫掠判定用） */
+function _distToSegment(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  let t = len2 ? ((px - ax) * dx + (py - ay) * dy) / len2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  const cx = ax + t * dx, cy = ay + t * dy;
+  const ox = px - cx, oy = py - cy;
+  return Math.sqrt(ox * ox + oy * oy);
 }

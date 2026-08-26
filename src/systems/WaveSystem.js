@@ -109,17 +109,39 @@ export default class WaveSystem {
 
   spawnOne() {
     if (!this.scene.spawnEnemy) return;
-    const x = Phaser.Math.Between(40, GAME_WIDTH - 40);
+    let x = Phaser.Math.Between(40, GAME_WIDTH - 40);
     let typeKey = 'small';
     let moveMode = 'straight';
+    let firePattern = null;
     if (this._comp && this._comp.length) {
-      // 按权重抽取 [type, mode, weight]
+      // 归一化 comp 条目：支持 [type, mode, weight, pattern] 元组 或 { typeKey, mode, pattern, weight } 对象
+      const norm = (entry) => {
+        if (Array.isArray(entry)) {
+          return {
+            typeKey: entry[0] || 'small',
+            mode: entry[1] || 'straight',
+            weight: entry[2] != null ? entry[2] : 1,
+            pattern: entry[3] || null,
+          };
+        }
+        return {
+          typeKey: entry.typeKey || entry.type || 'small',
+          mode: entry.mode || 'straight',
+          weight: entry.weight != null ? entry.weight : 1,
+          pattern: entry.pattern || null,
+        };
+      };
+      const entries = this._comp.map(norm);
       let total = 0;
-      for (const [, , w] of this._comp) total += w;
+      for (const e of entries) total += e.weight;
       let r = Math.random() * total;
-      for (const [t, m, w] of this._comp) {
-        if ((r -= w) <= 0) { typeKey = t; moveMode = m; break; }
+      let picked = entries[0];
+      for (const e of entries) {
+        if ((r -= e.weight) <= 0) { picked = e; break; }
       }
+      typeKey = picked.typeKey;
+      moveMode = picked.mode;
+      firePattern = picked.pattern;
     } else {
       // 兜底：程序化随机（波次越高越难）；无尽模式 mid 占比上限略高
       const cap = this.endless ? 0.6 : 0.5;
@@ -129,14 +151,33 @@ export default class WaveSystem {
       moveMode = modes[Phaser.Math.Between(0, modes.length - 1)];
     }
     // 难度系数传给敌人，作用到 HP / 速度
-    // C3 敌机弹幕差异化：按型号分配 firePattern（small 直击 / mid 多形态 / diver 偶发追踪）
-    let firePattern = 'straight';
-    if (typeKey === 'mid') {
-      const pats = ['straight', 'spread', 'tracking', 'burst'];
-      firePattern = pats[Phaser.Math.Between(0, pats.length - 1)];
-    } else if (typeKey === 'diver') {
-      firePattern = Math.random() < 0.5 ? 'tracking' : 'straight';
+    // C3 敌机弹幕差异化：wavePlan 未显式指定 pattern 时按型号兜底
+    // P1 新敌型默认 pattern：turret=aimed / summoner=ring / shield=spread
+    if (!firePattern) {
+      if (typeKey === 'mid') {
+        const pats = ['straight', 'spread', 'tracking', 'burst'];
+        firePattern = pats[Phaser.Math.Between(0, pats.length - 1)];
+      } else if (typeKey === 'diver') {
+        firePattern = Math.random() < 0.5 ? 'tracking' : 'straight';
+      } else if (typeKey === 'turret') {
+        firePattern = 'aimed';
+      } else if (typeKey === 'summoner') {
+        firePattern = 'ring';
+      } else if (typeKey === 'shield') {
+        firePattern = 'spread';
+      } else {
+        firePattern = 'straight';
+      }
     }
-    this.scene.spawnEnemy(x, -40, typeKey, moveMode, this.getDifficulty(), firePattern);
+    // P1 地面炮台：固定在地图底部两侧（出生即定位，moveMode='turret' 静止）
+    let y = -40;
+    if (typeKey === 'turret') {
+      const side = Math.random() < 0.5 ? -1 : 1;
+      x = side < 0
+        ? Phaser.Math.Between(44, Math.floor(GAME_WIDTH * 0.38))
+        : Phaser.Math.Between(Math.ceil(GAME_WIDTH * 0.62), GAME_WIDTH - 44);
+      y = GAME_HEIGHT - Phaser.Math.Between(110, 170);
+    }
+    this.scene.spawnEnemy(x, y, typeKey, moveMode, this.getDifficulty(), firePattern);
   }
 }

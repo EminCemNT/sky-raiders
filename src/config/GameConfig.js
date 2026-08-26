@@ -70,6 +70,9 @@ export const EVENTS = {
   OVERDRIVE_STATE: 'overdrive-state',       // 过载激活状态，payload = { active, until, duration }
   // P0 留存-活动轮换：活动模式倒计时广播，payload = { mode, name, left, total }
   EVENT_TIMER: 'event-timer',
+  // P1 战斗扩展·超载状态 / 聚焦模式（append-only）
+  OVERCHARGE_STATE: 'overcharge-state',     // 超载状态/蓄力进度，payload = { active, until, duration, p, graze }
+  FOCUS_TOGGLE: 'focus-toggle',             // 移动端聚焦按钮切换（无 payload）
 };
 
 // 玩家基础属性
@@ -138,6 +141,24 @@ export const GRAZE = {
 //   FIRE_MUL  射速倍率（0.5 = 射速间隔减半，即射速翻倍）
 export const OVERDRIVE = { DURATION: 6000, FIRE_MUL: 0.5 };
 
+// 超载状态（P1 战斗扩展）：与技能槽独立——连续拾取 3 个 P 或连续擦弹 5 次（30s 窗口）触发。
+//   P_STACK      连续拾取 P 数量阈值
+//   GRAZE_STACK  连续擦弹次数阈值
+//   WINDOW       计数窗口（ms）：窗口内连续达成才累计
+//   DURATION     超载持续时间（ms）
+//   FIRE_MUL     射速倍率（1.3 = 射速 ×1.3，作用在射速上；间隔 ×(1/1.3)）
+//   SCORE_MUL    得分倍率（1.2 = 得分 ×1.2）
+// 消费方：GameScene（触发/状态机）+ Player（getEffectiveFireInterval 射速）+ UIScene（HUD）。
+// 局内临时状态，不入存档（SaveManager 零改动）。
+export const OVERCHARGE = { P_STACK: 3, GRAZE_STACK: 5, WINDOW: 30000, DURATION: 5000, FIRE_MUL: 1.3, SCORE_MUL: 1.2 };
+
+// 聚焦模式（P1 战斗扩展）：按住 Shift（或移动端专用按钮）进入。
+//   SPEED_MUL  移速倍率（0.45 = 移速 ×0.45）
+//   FIRE_MUL   射速倍率（0.8 = 射速 ×0.8，间隔 ×(1/0.8)；以伤害 +20% 补偿）
+//   DMG_MUL    伤害倍率（1.2 = 玩家弹伤害 +20%）
+// 消费方：Player（聚焦状态/伤害/射速/移速/判定点显式显示）。
+export const FOCUS = { SPEED_MUL: 0.45, FIRE_MUL: 0.8, DMG_MUL: 1.2 };
+
 // 关卡制（Sky Force 风格：分关，每关有波次 + Boss）
 // 每关字段说明：
 //   difficulty 难度系数（作用到敌人 HP/速度、Boss 弹速）
@@ -157,7 +178,7 @@ export const LEVELS = [
       cloudTint: 0x9fd8ff,
       silhouette: { kind: 'none', color: 0x0a0f1c, density: 1, speed: 40 },
     },
-    boss: { maxHp: 2600, pattern: 'fan', name: '哨兵 Sentinel', color: 0x66ccff },
+    boss: { maxHp: 2600, pattern: 'fan', name: '哨兵 Sentinel', color: 0x66ccff, shieldHp: 0 },
     // P0 留存-关卡勋章目标：达成记勋章（数据驱动，append-only，只加不改旧键）
     challenges: [
       { id: 'c1', type: 'killRate', target: 0.9, name: '歼灭90%' },
@@ -184,7 +205,7 @@ export const LEVELS = [
       cloudTint: 0xd68f4a,
       silhouette: { kind: 'asteroid', color: 0x0a0604, density: 1, speed: 46 },
     },
-    boss: { maxHp: 3300, pattern: 'spiral', name: '粉碎者 Crusher', color: 0xff9a4a },
+    boss: { maxHp: 3300, pattern: 'spiral', name: '粉碎者 Crusher', color: 0xff9a4a, shieldHp: 80 },
     challenges: [
       { id: 'c1', type: 'killRate', target: 0.85, name: '歼灭85%' },
       { id: 'c2', type: 'timeLimit', target: 75, name: '75秒速通' },
@@ -196,8 +217,8 @@ export const LEVELS = [
       { count: 10, comp: [['small', 'straight', 1], ['small', 'dive', 2], ['mid', 'sine', 1]] },
       { count: 10, comp: [['small', 'sine', 2], ['mid', 'straight', 1], ['mid', 'dive', 1]] },
       { count: 11, comp: [['small', 'dive', 2], ['mid', 'straight', 1], ['mid', 'sine', 2], ['diver', 'dive', 1]] },
-      { count: 12, comp: [['small', 'sine', 2], ['mid', 'dive', 2], ['mid', 'straight', 1], ['diver', 'dive', 1]] },
-      { count: 13, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['mid', 'sine', 1], ['mid', 'dive', 1], ['diver', 'dive', 1]] },
+      { count: 12, comp: [['small', 'sine', 2], ['mid', 'dive', 2], ['mid', 'straight', 1], ['diver', 'dive', 1], ['turret', 'turret', 1, 'aimed']] },
+      { count: 13, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['mid', 'sine', 1], ['mid', 'dive', 1], ['diver', 'dive', 1], ['kamikaze', 'kamikaze', 1, 'straight']] },
     ],
   },
   {
@@ -211,7 +232,7 @@ export const LEVELS = [
       cloudTint: 0x9a6fd6,
       silhouette: { kind: 'building', color: 0x070414, density: 1, speed: 42 },
     },
-    boss: { maxHp: 4200, pattern: 'cross', name: '霸主 Overlord', color: 0x66ff99 },
+    boss: { maxHp: 4200, pattern: 'cross', name: '霸主 Overlord', color: 0x66ff99, shieldHp: 120 },
     challenges: [
       { id: 'c1', type: 'killRate', target: 0.8, name: '歼灭80%' },
       { id: 'c2', type: 'timeLimit', target: 90, name: '90秒速通' },
@@ -223,9 +244,9 @@ export const LEVELS = [
       { count: 11, comp: [['small', 'dive', 2], ['mid', 'sine', 2], ['mid', 'straight', 1]] },
       { count: 12, comp: [['small', 'sine', 2], ['mid', 'dive', 2], ['mid', 'straight', 1]] },
       { count: 12, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['mid', 'sine', 2]] },
-      { count: 13, comp: [['small', 'dive', 2], ['mid', 'sine', 2], ['mid', 'straight', 2], ['diver', 'dive', 1]] },
-      { count: 14, comp: [['small', 'sine', 2], ['mid', 'dive', 2], ['mid', 'straight', 1], ['mid', 'sine', 1], ['diver', 'dive', 1]] },
-      { count: 16, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['small', 'sine', 1], ['mid', 'dive', 1], ['mid', 'sine', 1], ['diver', 'dive', 1]] },
+      { count: 13, comp: [['small', 'dive', 2], ['mid', 'sine', 2], ['mid', 'straight', 2], ['diver', 'dive', 1], ['turret', 'turret', 1, 'aimed']] },
+      { count: 14, comp: [['small', 'sine', 2], ['mid', 'dive', 2], ['mid', 'straight', 1], ['mid', 'sine', 1], ['diver', 'dive', 1], ['summoner', 'straight', 1, 'ring']] },
+      { count: 16, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['small', 'sine', 1], ['mid', 'dive', 1], ['mid', 'sine', 1], ['diver', 'dive', 1], ['kamikaze', 'kamikaze', 1, 'straight']] },
     ],
   },
   {
@@ -239,7 +260,7 @@ export const LEVELS = [
       cloudTint: 0xd66a7a,
       silhouette: { kind: 'building', color: 0x0a0408, density: 1, speed: 44 },
     },
-    boss: { maxHp: 5600, pattern: 'nova', name: '湮灭者 Annihilator', color: 0xff6a3d },
+    boss: { maxHp: 5600, pattern: 'nova', name: '湮灭者 Annihilator', color: 0xff6a3d, shieldHp: 150 },
     challenges: [
       { id: 'c1', type: 'killRate', target: 0.75, name: '歼灭75%' },
       { id: 'c2', type: 'timeLimit', target: 120, name: '120秒速通' },
@@ -252,9 +273,9 @@ export const LEVELS = [
       { count: 13, comp: [['small', 'sine', 2], ['mid', 'dive', 2], ['mid', 'straight', 1], ['diver', 'dive', 1]] },
       { count: 14, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['mid', 'sine', 2], ['diver', 'dive', 1]] },
       { count: 15, comp: [['small', 'dive', 2], ['mid', 'sine', 2], ['mid', 'straight', 2], ['diver', 'dive', 1]] },
-      { count: 16, comp: [['small', 'sine', 2], ['mid', 'dive', 2], ['mid', 'straight', 1], ['mid', 'sine', 1], ['diver', 'dive', 2]] },
-      { count: 18, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['small', 'sine', 1], ['mid', 'dive', 1], ['mid', 'sine', 1], ['diver', 'dive', 2]] },
-      { count: 20, comp: [['small', 'sine', 2], ['mid', 'dive', 2], ['mid', 'straight', 1], ['mid', 'sine', 1], ['diver', 'dive', 3]] },
+      { count: 16, comp: [['small', 'sine', 2], ['mid', 'dive', 2], ['mid', 'straight', 1], ['mid', 'sine', 1], ['diver', 'dive', 2], ['turret', 'turret', 1, 'aimed']] },
+      { count: 18, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['small', 'sine', 1], ['mid', 'dive', 1], ['mid', 'sine', 1], ['diver', 'dive', 2], ['summoner', 'straight', 1, 'ring'], ['kamikaze', 'kamikaze', 1, 'straight']] },
+      { count: 20, comp: [['small', 'sine', 2], ['mid', 'dive', 2], ['mid', 'straight', 1], ['mid', 'sine', 1], ['diver', 'dive', 3], ['shield', 'straight', 1, 'spread'], ['kamikaze', 'kamikaze', 1, 'straight']] },
     ],
   },
 ];

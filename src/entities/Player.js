@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { PLAYER, BULLET, GAME_WIDTH, GAME_HEIGHT, EVENTS, POWERUP, GRAZE, MODULES } from '../config/GameConfig.js';
+import { PLAYER, BULLET, GAME_WIDTH, GAME_HEIGHT, EVENTS, POWERUP, GRAZE, MODULES, FOCUS } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
 import { audio } from '../systems/AudioSystem.js';
@@ -53,6 +53,12 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
 
     // 局内火力(P)拾取成长（P1）：独立于机库升级，拾取 +1 / 受击 -1，0~4
     this.powerLevel = 0;
+
+    // P1 聚焦模式：按住 Shift（或移动端按钮）进入 —— 移速 ×0.45 / 射速 ×0.8（伤害 +20% 补偿）/
+    // 判定点显式显示。局内临时状态，不入存档。
+    this.focusing = false;
+    // P1 超载射速：射速间隔倍率（1/1.3 ≈ 0.77 = 射速 ×1.3），与 overdrive 技能槽独立叠加
+    this.overchargeFireMul = null;
 
     // 当前武器（B/C 武器系统）：'pulse'(默认主炮) | 'missile'(追踪导弹) | 'laser' | 'bomb'
     this.weapon = 'pulse';
@@ -122,9 +128,11 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     return this;
   }
 
-  /** 模块加持后的最大移动速度（键盘路径用） */
+  /** 模块加持后的最大移动速度（键盘路径用）；P1 聚焦模式下移速 ×0.45 */
   getMoveSpeed() {
-    return Math.round(PLAYER.SPEED * (this.moduleSpeedMul || 1));
+    const base = Math.round(PLAYER.SPEED * (this.moduleSpeedMul || 1));
+    if (this.focusing && FOCUS.SPEED_MUL) return Math.round(base * FOCUS.SPEED_MUL);
+    return base;
   }
 
   /** 每帧：移动 + 开火 */
@@ -133,8 +141,9 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     if (pointer && pointer.isDown) {
       const tx = Phaser.Math.Clamp(pointer.worldX, 20, GAME_WIDTH - 20);
       const ty = Phaser.Math.Clamp(pointer.worldY - 40, 40, GAME_HEIGHT - 20);
-      // 引擎模块移速加成：同时作用于拖动插值系数（保守封顶，不破坏手感）
-      const k = Math.min(0.35 * (this.moduleSpeedMul || 1), 0.55);
+      // 引擎模块移速加成 + P1 聚焦减速：同时作用于拖动插值系数（保守封顶，不破坏手感）
+      const spdMul = this.focusing ? (FOCUS.SPEED_MUL || 1) : 1;
+      const k = Math.min(0.35 * (this.moduleSpeedMul || 1) * spdMul, 0.55);
       this.x = Phaser.Math.Linear(this.x, tx, k);
       this.y = Phaser.Math.Linear(this.y, ty, k);
     } else if (cursors) {
@@ -147,8 +156,8 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
       this.setVelocity(vx, vy);
     }
 
-    // 自动开火
-    if (time - this._lastFire >= this.fireInterval) {
+    // 自动开火（P1：实际射速 = fireInterval × 超载/聚焦倍率，见 getEffectiveFireInterval）
+    if (time - this._lastFire >= this.getEffectiveFireInterval()) {
       this.fire();
       this._lastFire = time;
     }
@@ -176,10 +185,15 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
       this.setAlpha(1);
     }
 
-    // P1-6 判定点跟随玩家 + 显隐同步（每帧读内存存档缓存，开销可忽略）
-    if (this.hitboxDot) this.hitboxDot.setPosition(this.x, this.y).setVisible(SaveManager.load().showHitbox);
+    // P1-6 判定点跟随玩家 + 显隐同步（每帧读内存存档缓存，开销可忽略）；
+    // P1 聚焦模式下强制显式显示判定圈（复用 showHitbox 的判定圈，聚焦时更亮）
+    const showDot = SaveManager.load().showHitbox || this.focusing;
+    if (this.hitboxDot) {
+      this.hitboxDot.setPosition(this.x, this.y).setVisible(showDot);
+      this.hitboxDot.setAlpha(this.focusing ? 0.55 : 0.3);
+    }
     // P2 擦弹环：与判定点同位置同显隐（reduced-motion 下本就静态，无额外动效）
-    if (this.grazeRing) this.grazeRing.setPosition(this.x, this.y).setVisible(SaveManager.load().showHitbox);
+    if (this.grazeRing) this.grazeRing.setPosition(this.x, this.y).setVisible(showDot);
     // 战机皮肤 aura 跟随 + alpha 呼吸（待机微动，纯视觉；reduced-motion 下常量）
     if (this.aura) {
       this.aura.setPosition(this.x, this.y);
@@ -215,6 +229,9 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
 
   /** 发射单发子弹（按 pattern 描述配置贴图/速度/伤害/body） */
   _emitBullet(p) {
+    // P1 聚焦模式：伤害 +20% + 弹幕更集中（侧向速度 ×0.4，弹道收拢）
+    const dmgMul = (this.focusing && FOCUS.DMG_MUL) ? FOCUS.DMG_MUL : 1;
+    const focusSpread = this.focusing ? 0.4 : 1;
     // 中央脉冲弹按战斗机元素替换元素纹理 key（苍鹰 thunder→bullet_thunder 等）；
     // 其余弹型保持原 key。逻辑 key 不变，伤害/body/命中判定零改动。
     const baseKey = p.bulletKey || 'bullet_pulse';
@@ -234,21 +251,21 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     b.element = this.shipElement;          // B6：子弹携带战斗机元素属性
     const bw = b.width, bh = b.height;
     if (key === 'bullet_missile') {
-      b.damage = BULLET.MISSILE_DMG;
+      b.damage = BULLET.MISSILE_DMG * dmgMul;
       b.homing = true;
       b.body.setSize(bw * 0.6, bh * 0.6);
-      b.setVelocity(p.vx, -BULLET.MISSILE_SPEED);
+      b.setVelocity((p.vx || 0) * focusSpread, -BULLET.MISSILE_SPEED);
     } else if (key === 'bullet_bomb') {
       // B5 元素炸弹：向上抛，命中/到达屏顶后 AOE 爆炸（逻辑在 GameScene）
-      b.damage = BULLET.BOMB_DMG;
+      b.damage = BULLET.BOMB_DMG * dmgMul;
       b.isBomb = true;
       b.explodeRadius = BULLET.BOMB_RADIUS;
       b.element = this.shipElement;
       b.body.setSize(bw, bh);
-      b.setVelocity(p.vx || 0, -BULLET.BOMB_SPEED);
+      b.setVelocity((p.vx || 0) * focusSpread, -BULLET.BOMB_SPEED);
     } else {
-      b.damage = BULLET.PLAYER_DMG;
-      b.setVelocity(p.vx, -BULLET.PLAYER_SPEED);
+      b.damage = BULLET.PLAYER_DMG * dmgMul;
+      b.setVelocity(p.vx * focusSpread, -BULLET.PLAYER_SPEED);
       if (key === 'bullet_pulse') b.body.setSize(bw * 0.6, bh * 0.7);
       else b.body.setSize(bw * 0.7, bh * 0.7);
     }
@@ -418,6 +435,39 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     this.fireMul = (mul && mul !== 1) ? mul : null;
     this._recalcFireInterval();
     return this.fireInterval;
+  }
+
+  /**
+   * P1 聚焦模式：切换聚焦状态。
+   * 效果（均在 getEffectiveFireInterval / getMoveSpeed / _emitBullet 生效）：
+   *   移速 ×FOCUS.SPEED_MUL / 射速 ×FOCUS.FIRE_MUL（伤害 +DMG_MUL 补偿）/ 弹幕更集中 / 判定点显式显示。
+   * 与 overdrive 技能槽、超载独立叠加。
+   */
+  setFocusing(f) {
+    f = !!f;
+    if (this.focusing === f) return;
+    this.focusing = f;
+  }
+
+  /**
+   * P1 超载射速倍率：mul 为"射速间隔倍率"（1/1.3 ≈ 0.77 = 射速 ×1.3）。
+   * 仅影响 getEffectiveFireInterval，不改 fireInterval 属性（与 overdrive 槽独立，互不覆盖）。
+   */
+  setOverchargeMul(mul) {
+    this.overchargeFireMul = (mul && mul !== 1) ? mul : null;
+    return this.getEffectiveFireInterval();
+  }
+
+  /**
+   * P1 实际开火间隔（ms）：fireInterval（基础/火力/模块/过载）再叠乘 超载 × 聚焦。
+   * 保留 fireInterval 属性为既有机制（qa_p2 overdrive 断言 140→70 依赖其不变），
+   * 超载/聚焦作为"有效射速"独立叠加，互不冲突。
+   */
+  getEffectiveFireInterval() {
+    let v = this.fireInterval;
+    if (this.overchargeFireMul && this.overchargeFireMul !== 1) v *= this.overchargeFireMul;
+    if (this.focusing && FOCUS.FIRE_MUL) v *= (1 / FOCUS.FIRE_MUL);
+    return Math.max(45, Math.round(v));
   }
 
   takeDamage(n) {

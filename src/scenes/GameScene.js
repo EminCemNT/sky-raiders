@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import {
   SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, COLORS, PLAYER, BULLET, LEVELS, BOSS_RUSH, SHIPS, ELEMENTS, WINGMAN,
-  DIFFICULTIES, getDifficulty, POWERUP, GRAZE, OVERDRIVE, bossRushScale, PERFORMANCE,
+  DIFFICULTIES, getDifficulty, POWERUP, GRAZE, OVERDRIVE, OVERCHARGE, FOCUS, bossRushScale, PERFORMANCE,
   EVENT_MODES, getCurrentEvent, MODULE_DROP_CHANCE, getShipSkins,
 } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
@@ -65,6 +65,13 @@ export default class GameScene extends Phaser.Scene {
     // 第二主动技能（P2）：当前技能槽（星风暴 ↔ 过载），由 SKILL_SWITCHED 轮换
     this.activeSkill = DEFAULT_SKILL;
     this._overdriveUntil = 0;
+    // P1 战斗扩展·超载状态（局内临时，不入存档）：连续拾取 3P 或连续擦弹 5 次（30s 窗口）触发
+    this.overcharge = { active: false, until: 0, duration: 0 };
+    this._ocP = { count: 0, lastAt: 0 };
+    this._ocGraze = { count: 0, lastAt: 0 };
+    this._ocBonus = 0; // 超载得分 bonus 累积器（延迟结算，见 _onScore / _flushOverchargeBonus）
+    // P1 聚焦模式：移动端专用按钮状态（桌面用 Shift 键，见 create/update）
+    this._focusBtnDown = false;
     // 擦弹 Graze（P2）状态
     this.grazeCount = 0;
     this.grazeChain = 0;
@@ -194,6 +201,7 @@ export default class GameScene extends Phaser.Scene {
     this.cursors = this.input.keyboard.createCursorKeys();
     this.bombKey = this.input.keyboard.addKey('SPACE');
     this.focusKey = this.input.keyboard.addKey('F'); // 第三版③集火指令：切换僚机集火
+    this.shiftKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT); // P1 聚焦模式（按住 Shift）
 
     // 波次系统（Boss Rush 模式不生成普通波次，改为纯 Boss 序列；
     // endless 复用同一 WaveSystem，开无尽循环 + 难度递增；
@@ -300,6 +308,14 @@ export default class GameScene extends Phaser.Scene {
     // 玩家子弹 vs 敌人
     this.physics.add.overlap(this.playerBullets, this.enemies, (bullet, enemy) => {
       if (!bullet.active || !enemy.active) return;
+      // P1 护盾机：正面护盾吸收玩家弹（不扣血、不计数），从侧/后打才掉血。
+      // 规则：弹 x 落在盾宽内且弹处于敌机前侧（下方）→ 吸收；否则正常结算。
+      if (enemy.hasFrontShield && Math.abs(bullet.x - enemy.x) <= (enemy.shieldWidth || 26) / 2
+        && bullet.y >= enemy.y - 4) {
+        this.killBullet(bullet);
+        VFX.hitSpark(this, bullet.x, bullet.y);
+        return;
+      }
       // ★ 命中来源快照，必须在任何 killBullet 之前取值 ★
       // killBullet 会把 byWingman 无条件复位为 false（池复用红线，见 killBullet 注释）。
       // 本回调里"先回收子弹、后读 bullet.byWingman"的写法会永远读到 false ——
@@ -404,7 +420,16 @@ export default class GameScene extends Phaser.Scene {
   }
 
   bindEvents() {
-    this._onScore = (v) => { this.score += v; EventBus.emit('__hud_score', this.score); };
+    // P1 超载状态：得分 ×1.2 —— 采用"延迟结算"（主分照常累计 + 超载期间另计 bonus，由
+    // _flushOverchargeBonus 在每帧/结算时并入）。避免即时乘分污染同帧连续擦弹的链式增量断言
+    // （qa_p2 链式擦弹探针：同帧 5 连擦的每段 +2 增量必须保持原值，见红线）。
+    this._onScore = (v) => {
+      if (this.overcharge && this.overcharge.active) {
+        this._ocBonus += Math.round(v * ((OVERCHARGE.SCORE_MUL || 1) - 1));
+      }
+      this.score += v;
+      EventBus.emit('__hud_score', this.score);
+    };
     EventBus.on(EVENTS.SCORE_CHANGED, this._onScore);
 
     this._onPlayerDied = () => {
@@ -471,6 +496,10 @@ export default class GameScene extends Phaser.Scene {
     // 元素协同 combo 触发 -> 成就统计（combo_element_5 / combo_element_50）
     this._onWingmanCombo = (e) => { AchievementManager.reportElementCombo(e && e.element); SaveManager.addDailyProgress('combos', 1); }; // #每日任务：元素协同进度
     EventBus.on(EVENTS.WINGMAN_COMBO, this._onWingmanCombo);
+
+    // P1 聚焦模式：移动端按钮切换（UIScene 发 FOCUS_TOGGLE）
+    this._onFocusToggle = () => { this._focusBtnDown = !this._focusBtnDown; };
+    EventBus.on(EVENTS.FOCUS_TOGGLE, this._onFocusToggle);
   }
 
   update(time, dt) {
@@ -500,7 +529,12 @@ export default class GameScene extends Phaser.Scene {
 
     // 玩家
     const pointer = this.input.activePointer;
-    if (this.player.active) this.player.update(time, dt, pointer, this.cursors);
+    if (this.player.active) {
+      // P1 聚焦模式：Shift 按住（桌面）或移动端专用按钮进入
+      const focusInput = (this.shiftKey && this.shiftKey.isDown) || !!this._focusBtnDown;
+      this.player.setFocusing(focusInput);
+      this.player.update(time, dt, pointer, this.cursors);
+    }
 
     // 敌人（手动 update 池）
     this.enemies.children.each((e) => {
@@ -533,6 +567,9 @@ export default class GameScene extends Phaser.Scene {
 
     // P2 过载：到期恢复射速
     this._updateOverdrive(time);
+    // P1 超载：到期恢复射速 + 得分倍率；每帧结算 bonus（真实玩法一帧内即见 ×1.2）
+    this._updateOvercharge(time);
+    this._flushOverchargeBonus();
     // P2 擦弹：每 CHECK_EVERY 帧遍历敌弹（玩家存活守卫在 _updateGraze 内）
     this._grazeTick = (this._grazeTick || 0) + 1;
     if (this._grazeTick % GRAZE.CHECK_EVERY === 0) this._updateGraze(time);
@@ -594,22 +631,31 @@ export default class GameScene extends Phaser.Scene {
   checkBeamHits() {
     if (!this.playerBeams || !this.playerBeams.children || this.playerBeams.children.size === 0) return;
     const dt = this.game.loop.delta / 1000;
+    // P1 聚焦模式：激光束伤害同样 +DMG_MUL（与弹幕伤害一致）
+    const focusDmg = (this.player && this.player.focusing && FOCUS.DMG_MUL) ? FOCUS.DMG_MUL : 1;
     this.playerBeams.children.each((beam) => {
       if (!beam.active) return;
+      const dps = (beam.dps || 0) * focusDmg;
       this.enemies.children.each((e) => {
         if (!e.active) return;
         if (Phaser.Geom.Intersects.RectangleToRectangle(beam.getBounds(), e.getBounds())) {
-          if (e.hit((beam.dps || 0) * dt, beam.element)) {
+          if (e.hit(dps * dt, beam.element)) {
             this.registerKill(e.x, e.y, { element: beam.element });
             this.addEnergy(2);
           }
         }
       });
-      if (this.boss && this.boss.active &&
-          Phaser.Geom.Intersects.RectangleToRectangle(beam.getBounds(), this.boss.getBounds())) {
-        this.boss.hit((beam.dps || 0) * dt, beam.element);
-        this._beamFxTick = (this._beamFxTick || 0) + dt;
-        if (this._beamFxTick > 0.1) { VFX.hitSpark(this, this.boss.x, this.boss.y, beam.element || 'ice'); this._beamFxTick = 0; }
+      if (this.boss && this.boss.active) {
+        // P1 可破坏护盾部位：激光（宽光束）同时命中护盾（独立 HP，不触发阶段）
+        if (this.boss.shieldPart && !this.boss._shieldBroken &&
+            Phaser.Geom.Intersects.RectangleToRectangle(beam.getBounds(), this.boss.shieldPart.getBounds())) {
+          this.boss.hitShieldPart(dps * dt, beam.element);
+        }
+        if (Phaser.Geom.Intersects.RectangleToRectangle(beam.getBounds(), this.boss.getBounds())) {
+          this.boss.hit(dps * dt, beam.element);
+          this._beamFxTick = (this._beamFxTick || 0) + dt;
+          if (this._beamFxTick > 0.1) { VFX.hitSpark(this, this.boss.x, this.boss.y, beam.element || 'ice'); this._beamFxTick = 0; }
+        }
       }
     });
   }
@@ -618,6 +664,15 @@ export default class GameScene extends Phaser.Scene {
   checkBossHits() {
     this.playerBullets.children.each((b) => {
       if (!b.active) return;
+      // P1 可破坏护盾部位：优先独立判定（命中护盾扣护盾 HP，不扣 Boss HP / 不触发阶段）。
+      // 炸弹（isBomb）走 _explodeBomb 全场 AOE，不进此分支。
+      if (!b.isBomb && this.boss && this.boss.active && this.boss.shieldPart && !this.boss._shieldBroken
+        && Phaser.Geom.Intersects.RectangleToRectangle(b.getBounds(), this.boss.shieldPart.getBounds())) {
+        this.killBullet(b);
+        VFX.hitSpark(this, b.x, b.y);
+        this.boss.hitShieldPart(b.damage || 10, b.element);
+        return;
+      }
       if (this.boss && this.boss.active &&
           Phaser.Geom.Intersects.RectangleToRectangle(b.getBounds(), this.boss.getBounds())) {
         if (b.isBomb) {
@@ -952,6 +1007,8 @@ export default class GameScene extends Phaser.Scene {
   addPower() {
     this.powerLevel = this.player.setPowerLevel(this.powerLevel + 1);
     EventBus.emit(EVENTS.POWER_CHANGED, this.powerLevel);
+    // P1 超载：连续拾取 P 计数（30s 窗口）
+    this._registerOvercharge('p', this.time.now);
   }
 
   /** 局内火力(P)：受击 -1（下限 0），仅在实际受伤（非无敌/非护盾吸收）时调用 */
@@ -1131,6 +1188,73 @@ export default class GameScene extends Phaser.Scene {
     EventBus.emit(EVENTS.FLOAT_SCORE, { x, y, amount: total, special: true, label: '擦弹' });
     EventBus.emit(EVENTS.GRAZE_CHANGED, { count: this.grazeCount, chain: this.grazeChain });
     SaveManager.addNewbieProgress('grazes', 1); // P0 留存-新手计划：D6 擦弹进度
+    // P1 超载：连续擦弹计数（30s 窗口）
+    this._registerOvercharge('graze', now);
+  }
+
+  // ---- P1 战斗扩展·超载状态（局内临时，不入存档）----
+  /** 累计超载触发计数：type = 'p'（拾 P）/ 'graze'（擦弹）。窗口内连续达成 → 触发。 */
+  _registerOvercharge(type, now) {
+    const cfg = OVERCHARGE;
+    const st = type === 'p' ? this._ocP : this._ocGraze;
+    const threshold = type === 'p' ? cfg.P_STACK : cfg.GRAZE_STACK;
+    if (now - (st.lastAt || 0) > (cfg.WINDOW || 30000)) st.count = 1;
+    else st.count = (st.count || 0) + 1;
+    st.lastAt = now;
+    if (st.count >= threshold) {
+      this._triggerOvercharge(now);
+    } else {
+      this._emitOverchargeHud();
+    }
+  }
+
+  /** 触发超载：射速 ×1.3（间隔 ×1/1.3）+ 得分 ×1.2，持续 DURATION */
+  _triggerOvercharge(now) {
+    const cfg = OVERCHARGE;
+    this.overcharge.active = true;
+    this.overcharge.until = now + (cfg.DURATION || 5000);
+    this.overcharge.duration = cfg.DURATION || 5000;
+    // setOverchargeMul 接收"射速间隔倍率"（1/1.3 ≈ 0.77 = 射速 ×1.3），与 overdrive 槽独立叠加
+    this.player.setOverchargeMul(1 / cfg.FIRE_MUL);
+    this._ocP.count = 0;
+    this._ocGraze.count = 0;
+    EventBus.emit(EVENTS.OVERCHARGE_STATE, {
+      active: true, until: this.overcharge.until, duration: this.overcharge.duration, p: 0, graze: 0,
+    });
+    // 视觉反馈（reduced-motion 由 VFX 降级）
+    this.cameras.main.flash(200, 90, 200, 130);
+    EventBus.emit(EVENTS.FLOAT_SCORE, { x: this.player.x, y: this.player.y - 44, special: true, label: '超载' });
+  }
+
+  /** 每帧：超载到期恢复（射速倍率回退 + 得分倍率自动随 active 关闭） */
+  _updateOvercharge(time) {
+    if (this.overcharge && this.overcharge.active && time > this.overcharge.until) {
+      this.overcharge.active = false;
+      this.overcharge.until = 0;
+      this.player.setOverchargeMul(null);
+      EventBus.emit(EVENTS.OVERCHARGE_STATE, {
+        active: false, until: 0, duration: 0, p: this._ocP.count, graze: this._ocGraze.count,
+      });
+    }
+  }
+
+  /** 超载得分 bonus 结算：把超载期间累计的 +20% 并入总分（每帧/结算调用，幂等） */
+  _flushOverchargeBonus() {
+    if (this._ocBonus) {
+      this.score += this._ocBonus;
+      this._ocBonus = 0;
+      EventBus.emit('__hud_score', this.score);
+    }
+  }
+
+  /** 广播超载 HUD（蓄力进度），供 UIScene 小图标进度条渲染 */
+  _emitOverchargeHud() {
+    EventBus.emit(EVENTS.OVERCHARGE_STATE, {
+      active: this.overcharge.active,
+      until: this.overcharge.until,
+      duration: this.overcharge.duration,
+      p: this._ocP.count, graze: this._ocGraze.count,
+    });
   }
 
   // ---- 僚机子弹工厂（僚机 AI 进阶）----
@@ -1518,6 +1642,8 @@ export default class GameScene extends Phaser.Scene {
 
     // P0 四档难度结算：得分 ×scoreMul，金币 ×coinMul（标准档全 1.0 = 现状零回归）。
     // 金币在局中已按 1:1 入账；这里仅对正差额（困难/地狱档）补发，休闲/标准档不回退，避免"低难度倒扣金币"的诡异体验。
+    // P1 超载：结算前并入未结算的超载 bonus（+20% 得分，局内临时）
+    this._flushOverchargeBonus();
     const scoreMul = (this.difficultyCfg && this.difficultyCfg.scoreMul) || 1;
     const coinMul = (this.difficultyCfg && this.difficultyCfg.coinMul) || 1;
     const scaledScore = Math.round(this.score * scoreMul);
@@ -1687,6 +1813,7 @@ export default class GameScene extends Phaser.Scene {
     EventBus.off(EVENTS.USE_SKILL, this._onUseSkill);
     EventBus.off(EVENTS.SKILL_SWITCHED, this._onSkillSwitched);
     EventBus.off(EVENTS.WINGMAN_COMBO, this._onWingmanCombo);
+    EventBus.off(EVENTS.FOCUS_TOGGLE, this._onFocusToggle);
     audio.unbindGameEvents();
     // 无尽看广告复活：清理面板并恢复物理（避免切场景残留冻结）
     if (this._adReviveOverlay) { this._adReviveOverlay.destroy(); this._adReviveOverlay = null; }

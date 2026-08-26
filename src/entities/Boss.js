@@ -42,6 +42,24 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
     this._crackPaths = [];
     this._syncPhaseVisuals();
 
+    // P1 战斗扩展·可破坏护盾部位：独立小对象（跟随 Boss 移动，受弹 hit 判定独立，
+    // 不触发 Boss 阶段）。config.shieldHp 0 = 无盾（如 sentinel）；盾破后 3s 无盾 +
+    // 弹幕增强（更密 + 全弹幕朝玩家）。
+    this.shieldPart = null;
+    this._shieldPartHp = 0;
+    this._shieldPartMaxHp = 0;
+    this._shieldBroken = false;
+    this._shieldBrokenUntil = 0;
+    const shieldHp = Number(config.shieldHp) || 0;
+    if (shieldHp > 0) {
+      this._shieldPartHp = shieldHp;
+      this._shieldPartMaxHp = shieldHp;
+      this.shieldPart = scene.add.image(this.x, this.y, 'boss_shield')
+        .setDepth(this.depth + 2)
+        .setTint(this.color);
+      this._syncShieldPart();
+    }
+
     this._entering = true;
     this._t = 0;
     this._lastFire = 0;
@@ -135,6 +153,13 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
     this._drawPhaseFx();
   }
 
+  /** 护盾部位跟随 Boss + 显隐（盾破期间隐藏） */
+  _syncShieldPart() {
+    if (!this.shieldPart) return;
+    this.shieldPart.setPosition(this.x, this.y - 8);
+    this.shieldPart.setVisible(!this._shieldBroken);
+  }
+
   update(time, dt) {
     if (!this.active) return;
     this._t += dt;
@@ -147,6 +172,15 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
       } else {
         this.fxG.setAlpha(1);
       }
+    }
+
+    // P1 可破坏护盾部位：3s 无盾窗口结束自动恢复 → 再同步位置/显隐（恢复当帧即显示）
+    if (this.shieldPart) {
+      if (this._shieldBroken && time > this._shieldBrokenUntil) {
+        this._shieldBroken = false;
+        this._shieldPartHp = this._shieldPartMaxHp;
+      }
+      this._syncShieldPart();
     }
 
     if (!this._entering) {
@@ -170,15 +204,32 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
       case 'spiral': this._patternSpiral(); break;
       case 'cross': this._patternCross(); break;
       case 'nova': this._patternNova(); break;
+      // P1 几何/扩展弹幕（append-only）
+      case 'aimed': this._patternAimed(); break;
+      case 'wall': this._patternWall(); break;
+      case 'laserSweep': this._patternLaserSweep(); break;
+      case 'petal': this._patternPetal(); break;
       default: this._patternFan(); break;
     }
+    // P1 盾破期间：弹幕增强（额外瞄准弹雨，全弹幕朝玩家）
+    if (this._shieldBroken) this._patternShieldBurst();
+  }
+
+  /** 盾破期间弹幕密度系数（>1 = 更密集；无盾时 1.4） */
+  _density() {
+    return this._shieldBroken ? 1.4 : 1;
   }
 
   /** 发射单发子弹并染上 Boss 配色，便于视觉区分 */
   spawnBullet(angle, speed) {
+    this.spawnBulletAt(this.x, this.y + 40, angle, speed);
+  }
+
+  /** 在任意坐标发射单发敌弹（P1：wall 等需多 x 布局的弹幕） */
+  spawnBulletAt(x, y, angle, speed) {
     const scene = this.scene;
     if (!scene.enemyBullets) return;
-    const b = scene.enemyBullets.get(this.x, this.y + 40, 'bullet_enemy');
+    const b = scene.enemyBullets.get(x, y, 'bullet_enemy');
     if (!b) return;
     b.setActive(true).setVisible(true);
     b.body.enable = true;
@@ -189,7 +240,7 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
 
   // 半圆扇形（基础弹幕）：向下半圆铺开
   _patternFan() {
-    const n = 10 + this.phase * 4;
+    const n = Math.round((10 + this.phase * 4) * this._density());
     const spread = Math.PI;
     for (let i = 0; i < n; i++) {
       const ang = (spread / (n - 1)) * i;
@@ -199,7 +250,7 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
 
   // 环状齐射（360° 环，缓缓自转）
   _patternRing() {
-    const n = 12 + this.phase * 4;
+    const n = Math.round((12 + this.phase * 4) * this._density());
     const off = this._t * 0.0006;
     for (let i = 0; i < n; i++) {
       const ang = (Math.PI * 2 / n) * i + off;
@@ -210,7 +261,7 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
   // 旋转螺旋：每发自转一个角度，阶段越高臂越多、越密
   _patternSpiral() {
     const arms = 2 + this.phase;       // 3 / 4 / 5 条螺旋臂
-    const per = 3 + this.phase;        // 每条臂子弹数
+    const per = Math.round((3 + this.phase) * this._density());        // 每条臂子弹数
     this._spiralAng += 0.3 + this.phase * 0.08;
     for (let a = 0; a < arms; a++) {
       const base = this._spiralAng + (Math.PI * 2 / arms) * a;
@@ -226,7 +277,7 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
     const base = (player && player.active)
       ? Phaser.Math.Angle.Between(this.x, this.y, player.x, player.y)
       : Math.PI / 2;
-    const n = 4 + this.phase * 2;
+    const n = Math.round((4 + this.phase * 2) * this._density());
     const spread = 0.5 + this.phase * 0.25;
     for (let i = 0; i < n; i++) {
       const ang = base + (spread / Math.max(1, n - 1)) * i - spread / 2;
@@ -242,7 +293,7 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
   // 新星弹幕（第4关 Boss「湮灭者」finale 形态）：环弹铺底 + 朝玩家瞄准爆发，
   // 阶段2 起追加反向旋转臂。复用 spawnBullet / bulletSpeed，不与现有 pattern 耦合。
   _patternNova() {
-    const n = 16 + this.phase * 4;
+    const n = Math.round((16 + this.phase * 4) * this._density());
     for (let i = 0; i < n; i++) {
       const ang = (Math.PI * 2 / n) * i;
       this.spawnBullet(ang, this.bulletSpeed * 0.7);
@@ -262,6 +313,127 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
         const ang = this._novaAng + (Math.PI / 2) * i;
         this.spawnBullet(ang, this.bulletSpeed * 0.9);
       }
+    }
+  }
+
+  // P1 瞄准弹幕：朝玩家扇射（turret 式 / 盾破增强共用）
+  _patternAimed() {
+    const player = this.scene.player;
+    const base = (player && player.active)
+      ? Phaser.Math.Angle.Between(this.x, this.y, player.x, player.y)
+      : Math.PI / 2;
+    const n = Math.round((3 + this.phase) * this._density());
+    const spread = 0.35 + this.phase * 0.1;
+    for (let i = 0; i < n; i++) {
+      const ang = base + (spread / Math.max(1, n - 1)) * i - spread / 2;
+      this.spawnBullet(ang, this.bulletSpeed);
+    }
+  }
+
+  // P1 墙弹：横向一排向下直落
+  _patternWall() {
+    const n = Math.round(7 * this._density());
+    const gap = GAME_WIDTH / (n + 1);
+    for (let i = 1; i <= n; i++) {
+      this.spawnBulletAt(gap * i, this.y + 40, Math.PI / 2, this.bulletSpeed * 0.85);
+    }
+  }
+
+  // P1 花瓣弹：多臂对称（每臂两侧花瓣，缓缓自转）
+  _patternPetal() {
+    const arms = 3 + this.phase;
+    const per = 2 + Math.floor(this.phase / 2);
+    this._petalAng = (this._petalAng || 0) + 0.28;
+    for (let a = 0; a < arms; a++) {
+      const base = this._petalAng + (Math.PI * 2 / arms) * a;
+      for (let i = 0; i < per; i++) {
+        const off = (i % 2 === 0 ? 1 : -1) * 0.15 * (1 + Math.floor(i / 2));
+        this.spawnBullet(base + off, this.bulletSpeed * 0.72);
+      }
+    }
+  }
+
+  // P1 盾破增强弹雨：全弹幕朝玩家（额外瞄准弹 + 更密）
+  _patternShieldBurst() {
+    const player = this.scene.player;
+    const base = (player && player.active)
+      ? Phaser.Math.Angle.Between(this.x, this.y, player.x, player.y)
+      : Math.PI / 2;
+    const n = 3 + this.phase;
+    for (let i = 0; i < n; i++) {
+      const ang = base + (i - (n - 1) / 2) * 0.13;
+      this.spawnBullet(ang, this.bulletSpeed * 1.08);
+    }
+  }
+
+  // P1 激光扫射（Boss 版）：短暂蓄力警示 → 扫射 beam（复用视觉 beam_glow/矩形光柱）
+  _patternLaserSweep() {
+    const scene = this.scene;
+    const sx = this.x, sy = this.y + 40;
+    // 蓄力警示（reduced-motion 静态圆）
+    const warn = scene.add.circle(sx, sy, 22, 0xff4455, 0.22)
+      .setStrokeStyle(2, 0xff4455, 0.8).setDepth(this.depth + 2);
+    if (PREFERS_REDUCED) {
+      warn.setAlpha(0.5);
+    } else {
+      const spin = () => {
+        if (!warn.active) return;
+        warn.setScale(1 + 0.3 * Math.sin(scene.time.now * 0.02));
+        scene.time.delayedCall(40, spin);
+      };
+      spin();
+    }
+    scene.time.delayedCall(420, () => {
+      if (warn.active) warn.destroy();
+      if (!this.active) return;
+      const beam = scene.add.rectangle(sx, sy, 12, 420, 0xff5a3c, 0.5)
+        .setOrigin(0.5, 0).setDepth(this.depth + 1);
+      const glow = scene.add.rectangle(sx, sy, 20, 420, 0xffa07a, 0.22)
+        .setOrigin(0.5, 0).setDepth(this.depth).setBlendMode(Phaser.BlendModes.ADD);
+      beam._isSweep = true;
+      if (PREFERS_REDUCED) {
+        beam.setRotation(-0.4);
+        scene.time.delayedCall(160, () => { if (beam.active) { beam.destroy(); glow.destroy(); } });
+        return;
+      }
+      const dur = 720;
+      const t0 = scene.time.now;
+      const tick = () => {
+        if (!beam.active) return;
+        const p = (scene.time.now - t0) / dur;
+        if (p >= 1) { if (beam.active) { beam.destroy(); glow.destroy(); } return; }
+        const ang = Phaser.Math.DegToRad(-60 + 120 * p);
+        beam.setRotation(ang);
+        glow.setRotation(ang);
+        // 命中判定：beam 线段与玩家判定圈相交 → 单次受击（玩家无敌帧天然防连击）
+        if (scene.player && scene.player.active) {
+          const hc = scene.player.getHitCircle();
+          const tipX = sx + Math.sin(ang) * 420;
+          const tipY = sy + Math.cos(ang) * 420;
+          if (!beam._hitDone && _distToSegment(hc.x, hc.y, sx, sy, tipX, tipY) < hc.r + 6) {
+            beam._hitDone = true;
+            scene.playerHit(10);
+          }
+        }
+        scene.time.delayedCall(16, tick);
+      };
+      tick();
+    });
+  }
+
+  /** P1 可破坏护盾部位受击：独立 HP，不触发 Boss 阶段；盾破 → 3s 无盾 + 弹幕增强 */
+  hitShieldPart(dmg) {
+    if (!this.shieldPart || this._shieldBroken) return;
+    this._shieldPartHp = Math.max(0, this._shieldPartHp - dmg);
+    VFX.hitSpark(this.scene, this.shieldPart.x, this.shieldPart.y);
+    if (this._shieldPartHp <= 0) {
+      this._shieldBroken = true;
+      this._shieldBrokenUntil = this.scene.time.now + 3000;
+      VFX.explosion(this.scene, this.shieldPart.x, this.shieldPart.y, this.color, 1.2);
+      this._syncShieldPart();
+      this.scene.cameras.main.flash(120, 80, 60, 140);
+      EventBus.emit(EVENTS.FLOAT_SCORE, { x: this.shieldPart.x, y: this.shieldPart.y, special: true, label: '护盾击破' });
+      audio.sfx('explosionMid');
     }
   }
 
@@ -341,7 +513,19 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
     this.setActive(false);
     this.scene.time.delayedCall(800, () => {
       if (this.fxG) { this.fxG.destroy(); this.fxG = null; }
+      if (this.shieldPart) { this.shieldPart.destroy(); this.shieldPart = null; }
       this.destroy();
     });
   }
+}
+
+/** P1 激光扫射命中辅助：点到线段最近距离（beam 扫掠判定用） */
+function _distToSegment(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  let t = len2 ? ((px - ax) * dx + (py - ay) * dy) / len2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  const cx = ax + t * dx, cy = ay + t * dy;
+  const ox = px - cx, oy = py - cy;
+  return Math.sqrt(ox * ox + oy * oy);
 }

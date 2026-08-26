@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, LEVELS, WEAPONS, SHIPS, WINGMAN, PLAYER, EVENT_MODES } from '../config/GameConfig.js';
+import { SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, LEVELS, WEAPONS, SHIPS, WINGMAN, PLAYER, EVENT_MODES, OVERCHARGE } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
 import { audio } from '../systems/AudioSystem.js';
@@ -154,6 +154,11 @@ export default class UIScene extends Phaser.Scene {
 
     // 僚机状态指示（第三版起步）：数量 / 元素 / 武器等级 / 重生倒计时
     this._buildWingmanHud();
+
+    // P1 超载 HUD（小图标 + 进度条：蓄力进度 / 激活倒计时）
+    this._buildOverchargeHud();
+    // P1 聚焦模式：移动端专用按钮（桌面用 Shift 键）
+    this._buildFocusButton();
 
     this.skillKey = this.input.keyboard.addKey('F');
     this.skillSwitchKey = this.input.keyboard.addKey('Q');   // P2：Q 切换星风暴 ↔ 过载
@@ -325,6 +330,59 @@ export default class UIScene extends Phaser.Scene {
       if (s.focus && s.focus.active) txt += ' · 集火';
       this.wmCountText.setText(txt);
     };
+  }
+
+  /** P1 超载 HUD：小图标 + 进度条（左下发；蓄力进度青 / 激活倒计时金） */
+  _buildOverchargeHud() {
+    const x = 20, y = GAME_HEIGHT - 58;
+    this.ocBg = this.add.rectangle(x, y, 92, 20, 0x0a1a2a, 0.9)
+      .setStrokeStyle(1, 0x2a4a6a, 0.9).setDepth(101).setVisible(false);
+    this.ocFill = this.add.rectangle(x - 44 + 2, y, 88, 14, 0x33ccff, 0.9)
+      .setOrigin(0, 0.5).setDepth(102).setVisible(false);
+    this.ocLabel = this.add.text(x, y - 18, '超载', {
+      fontFamily: THEME.fontFamily, fontSize: '11px', fontStyle: '700', color: THEME.textGold,
+    }).setDepth(101).setVisible(false);
+    this.ocText = this.add.text(x + 94, y, '', {
+      fontFamily: THEME.fontFamily, fontSize: '10px', color: THEME.textMuted,
+    }).setDepth(101).setVisible(false);
+    this._ocActiveUntil = 0;
+    this._ocActiveDur = OVERCHARGE.DURATION || 5000;
+    this._lastOc = null;
+  }
+
+  /** P1 聚焦模式：移动端专用按钮（点击切换，桌面 Shift 键无需此按钮） */
+  _buildFocusButton() {
+    const x = 52, y = GAME_HEIGHT - 124;
+    this._focusOn = false;
+    this.focusBtn = this.add.circle(x, y, 24, 0x0a2a44, 0.92)
+      .setStrokeStyle(2, 0x33ccff, 0.8).setDepth(105).setInteractive({ useHandCursor: true });
+    this.focusBtnTxt = this.add.text(x, y, '聚', {
+      fontFamily: THEME.fontFamily, fontSize: '17px', fontStyle: '700', color: '#9fe8ff',
+    }).setOrigin(0.5).setDepth(106);
+    this.focusBtn.on('pointerdown', () => {
+      audio.sfx('ui');
+      this._focusOn = !this._focusOn;
+      EventBus.emit(EVENTS.FOCUS_TOGGLE);
+      this.focusBtn.setStrokeStyle(2, this._focusOn ? 0xffd54a : 0x33ccff, this._focusOn ? 1 : 0.8);
+      this.focusBtnTxt.setColor(this._focusOn ? '#ffe9a0' : '#9fe8ff');
+    });
+  }
+
+  /** P1 渲染超载进度条：激活 → 剩余时长 / 蓄力 → max(P/3, graze/5) */
+  _renderOverchargeBar() {
+    if (!this.ocFill || !this.ocBg) return;
+    let ratio = 0;
+    if (this._ocActiveUntil && this._ocActiveUntil > 0) {
+      const left = Math.max(0, this._ocActiveUntil - this.time.now);
+      ratio = Phaser.Math.Clamp(left / (this._ocActiveDur || 5000), 0, 1);
+      this.ocFill.setFillStyle(0xffd54a, 0.9);
+    } else {
+      const cfg = OVERCHARGE;
+      const s = this._lastOc || {};
+      ratio = Phaser.Math.Clamp(Math.max((s.p || 0) / (cfg.P_STACK || 3), (s.graze || 0) / (cfg.GRAZE_STACK || 5)), 0, 1);
+      this.ocFill.setFillStyle(0x33ccff, 0.9);
+    }
+    this.ocFill.setSize(Math.max(0, 88 * ratio), 14);
   }
 
   /** 渲染玩家元素指示（元素核心轮换用）：无元素隐藏，有元素显示彩色「元素 · X」 */
@@ -538,6 +596,35 @@ export default class UIScene extends Phaser.Scene {
 
     // 僚机状态指示（第三版起步）
     EventBus.on(EVENTS.WINGMAN_STATUS, this._onWmStatus);
+
+    // P1 超载状态：HUD 小图标 + 进度条（蓄力进度 / 激活倒计时）
+    this._onOverchargeState = (s) => {
+      if (!this.ocFill) return;
+      const cfg = OVERCHARGE;
+      this._lastOc = s || {};
+      if (s && s.active) {
+        this.ocBg.setVisible(true); this.ocFill.setVisible(true);
+        this.ocLabel.setVisible(true).setText('超载').setColor(THEME.textGold);
+        this.ocText.setVisible(true).setText('');
+        this._ocActiveUntil = s.until || 0;
+        this._ocActiveDur = s.duration || cfg.DURATION || 5000;
+      } else {
+        const p = (s && s.p) || 0, g = (s && s.graze) || 0;
+        const total = Math.max(p / (cfg.P_STACK || 3), g / (cfg.GRAZE_STACK || 5));
+        if (total > 0) {
+          this.ocBg.setVisible(true); this.ocFill.setVisible(true);
+          this.ocLabel.setVisible(true).setText(`超载 ${Math.min(100, Math.round(total * 100))}%`).setColor(THEME.textCyan);
+          this.ocText.setVisible(true).setText(`${p}P ${g}擦`);
+          this._ocActiveUntil = 0;
+        } else {
+          this.ocBg.setVisible(false); this.ocFill.setVisible(false);
+          this.ocLabel.setVisible(false); this.ocText.setVisible(false);
+          this._ocActiveUntil = 0;
+        }
+      }
+      this._renderOverchargeBar();
+    };
+    EventBus.on(EVENTS.OVERCHARGE_STATE, this._onOverchargeState);
   }
 
   update() {
@@ -584,6 +671,8 @@ export default class UIScene extends Phaser.Scene {
         this._lowHpBorder.setVisible(false);
       }
     }
+    // P1 超载激活倒计时：进度条随剩余时长收缩
+    if (this._ocActiveUntil && this._ocActiveUntil > 0) this._renderOverchargeBar();
   }
 
   updateEnergy(val, max) {
@@ -723,5 +812,6 @@ export default class UIScene extends Phaser.Scene {
     EventBus.off(EVENTS.OVERDRIVE_STATE, this._onOverdriveState);
     EventBus.off(EVENTS.ACHIEVEMENT_UNLOCKED, this._onAchUnlock);
     EventBus.off(EVENTS.WINGMAN_STATUS, this._onWmStatus);
+    EventBus.off(EVENTS.OVERCHARGE_STATE, this._onOverchargeState);
   }
 }
