@@ -16,6 +16,8 @@ export const ITEMS = {
   power:          { tex: 'item_power',        label: '火力P', kind: 'power', desc: '局内火力 +1（最多 4 级）' },
   // 元素核心（二段反应 enabler）：拾取后按 火→冰→雷→火 轮换战机元素
   element_core:   { tex: 'item_element',      label: '元素核心', kind: 'element', desc: '轮换战机元素(火→冰→雷)' },
+  // P0 机库模块养成：Boss 低概率掉落的模块箱，拾取后随机入库存（机库面板装备/合成）
+  module:         { tex: 'item_module',       label: '模块', kind: 'module', desc: '获得随机机库模块（武器/装甲/引擎）' },
 };
 
 // 普通敌人掉"非金币道具"的基础概率

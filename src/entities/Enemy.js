@@ -40,6 +40,9 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     this._stunUntil = 0;
     this._dotUntil = 0;
     this._dotTick = 0;
+    // P0 战机专属被动系数（默认 1 = 无加成；applyElement 时按 scene.shipPassive 写入）
+    this._dotMul = 1;
+    this._slowMul = 1;
     // 元素连锁反应（二段反应）冷却截止时刻
     this._reactUntil = 0;
   }
@@ -74,6 +77,8 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     this._stunUntil = 0;
     this._dotUntil = 0;
     this._dotTick = 0;
+    this._dotMul = 1;   // P0 战机被动系数复位（防对象池复用残留）
+    this._slowMul = 1;
     this._reactUntil = 0;   // 元素连锁反应冷却复位
     this.clearTint();
 
@@ -91,7 +96,8 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     // B6 火元素 DoT（灼烧）
     if (time < this._dotUntil) {
       const dps = (ELEMENTS.fire && ELEMENTS.fire.dot) || 10;
-      this.hp -= dps * dt / 1000;
+      // P0 战机被动：赤焰灼烧伤害 ×1.25（_dotMul 默认 1 = 无加成）
+      this.hp -= dps * (this._dotMul || 1) * dt / 1000;
       this._dotTick += dt;
       if (this._dotTick > 150) { VFX.hitSpark(this.scene, this.x, this.y, 'fire'); this._dotTick = 0; }
       if (this.hp <= 0) { this.die(); return; }
@@ -107,8 +113,9 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
       this.setVelocity(0, this._baseVy);
     }
 
-    // B6 冰元素减速：放大时间步 + 速度
-    const slow = (time < this._slowUntil) ? ((ELEMENTS.ice && ELEMENTS.ice.slow) || 0.5) : 1;
+    // B6 冰元素减速：放大时间步 + 速度。P0 战机被动：寒霜减速强度 ×0.8（因子更小 = 减速更强）
+    const slow = (time < this._slowUntil)
+      ? (((ELEMENTS.ice && ELEMENTS.ice.slow) || 0.5) * (this._slowMul || 1)) : 1;
     this._t += dt * slow;
 
     // 移动模式
@@ -212,18 +219,25 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     });
   }
 
-  /** 附加元素状态（B6）：火=灼烧 / 冰=减速 / 雷=麻痹 */
+  /** 附加元素状态（B6）：火=灼烧 / 冰=减速 / 雷=麻痹。P0 战机被动在系数处乘 selectedShip.passive */
   applyElement(key) {
     if (!key || !ELEMENTS[key]) return;
     const now = this.scene.time.now;
     const cfg = ELEMENTS[key];
+    // P0 战机专属被动：由 GameScene.create 从 selectedShip 写入 scene.shipPassive（无则空对象 = 零加成）
+    const passive = (this.scene && this.scene.shipPassive) || {};
     this._elem = key;
     if (key === 'fire') {
       this._dotUntil = now + (cfg.duration || 3000);
+      // 赤焰：灼烧伤害 +25%
+      this._dotMul = (passive.element === 'fire' && passive.dotMul) || 1;
     } else if (key === 'ice') {
       this._slowUntil = now + (cfg.duration || 3000);
+      // 寒霜：减速强度 +20%（slowMul<1 = 敌人更慢）
+      this._slowMul = (passive.element === 'ice' && passive.slowMul) || 1;
     } else if (key === 'thunder') {
-      this._stunUntil = now + (cfg.stun || 1100);
+      // 苍鹰：雷麻痹强度 +15%（现机制命中必定身，乘在定身时长上）
+      this._stunUntil = now + ((cfg.stun || 1100) * ((passive.element === 'thunder' && passive.stunMul) || 1));
     }
     // 元素染色反馈
     this.setTint(cfg.color || 0xffffff);

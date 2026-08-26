@@ -59,6 +59,8 @@ export function generateAll(scene) {
   drawItemWeaponBomb(g); g.generateTexture('item_weapon_bomb', 26, 26);
   drawItemPower(g); g.generateTexture('item_power', 26, 26);
   drawItemElement(g); g.generateTexture('item_element', 26, 26);
+  // P0 机库模块养成：模块箱（青蓝科技方盒 + 三槽位点，白色基底便于品质染色复用）
+  drawItemModule(g); g.generateTexture('item_module', 26, 26);
   // UI 矢量图标（取代跨端字形不一致的 emoji：🏅/🔒，append-only 新增 key）
   drawIconMedal(g); g.generateTexture('icon_medal', 26, 26);
   drawIconLock(g); g.generateTexture('icon_lock', 26, 26);
@@ -502,6 +504,33 @@ function drawItemElement(g) {
   g.fillCircle(cx, cy, 4);
   g.lineStyle(1.5, 0xffffff, 0.65);
   g.strokeCircle(cx, cy, R);
+}
+
+// ─── 道具：模块箱（P0 机库模块，青蓝方盒 + 菱形核心 + 三槽位点）──────
+function drawItemModule(g) {
+  g.clear();
+  // 外发光
+  g.fillStyle(0x66ccff, 0.25);
+  g.fillRoundedRect(1, 1, 24, 24, 5);
+  // 方盒底（白基色，便于 setTint 按品质染色）
+  g.fillStyle(0xdfeaf5, 1);
+  g.fillRoundedRect(2, 2, 22, 22, 5);
+  g.lineStyle(2, 0x66ccff, 0.95);
+  g.strokeRoundedRect(2, 2, 22, 22, 5);
+  // 菱形核心（模块插槽图标）
+  g.fillStyle(0x3aa0d8, 1);
+  g.fillPoints([
+    { x: 13, y: 7 }, { x: 17, y: 13 }, { x: 13, y: 19 }, { x: 9, y: 13 },
+  ], true);
+  g.fillStyle(0xffffff, 0.95);
+  g.fillCircle(13, 13, 2.2);
+  // 三槽位点（武器/装甲/引擎暗示）
+  g.fillStyle(0xffd54a, 1);
+  g.fillCircle(7, 6, 1.3);
+  g.fillStyle(0x7cffa0, 1);
+  g.fillCircle(19, 6, 1.3);
+  g.fillStyle(0xff8aa0, 1);
+  g.fillCircle(13, 21, 1.3);
 }
 
 // ─── UI 图标：成就勋章（金牌 + 五角星，霓虹描边） ─────────────

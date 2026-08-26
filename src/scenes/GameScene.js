@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import {
   SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, COLORS, PLAYER, BULLET, LEVELS, BOSS_RUSH, SHIPS, ELEMENTS, WINGMAN,
   DIFFICULTIES, getDifficulty, POWERUP, GRAZE, OVERDRIVE, bossRushScale, PERFORMANCE,
-  EVENT_MODES, getCurrentEvent,
+  EVENT_MODES, getCurrentEvent, MODULE_DROP_CHANCE,
 } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
@@ -137,12 +137,15 @@ export default class GameScene extends Phaser.Scene {
     this.player = new Player(this, this.playerSpawnX, this.playerSpawnY, this.playerBullets);
     this.player.setFirepower(save.upgrades.firepower || 0);
     this.player.setPowerLevel(this.powerLevel); // 局内火力(P)从 0 起步
-    this.player.maxHp = PLAYER.MAX_HP + (save.upgrades.hull || 0) * 20;
+    // P0 机库模块养成：装甲模块生命上限加成叠加在既有 hull 升级之上（Player 构造时已应用模块）
+    this.player.maxHp = PLAYER.MAX_HP + (save.upgrades.hull || 0) * 20 + (this.player.moduleHpBonus || 0);
     this.player.hp = this.player.maxHp;
 
     // C2 战机武器绑定：从机库所选战机读取默认武器 + 元素属性
     const shipIdx = (save.selectedShip != null) ? save.selectedShip : 0;
     const ship = (SHIPS && SHIPS[shipIdx]) ? SHIPS[shipIdx] : (SHIPS ? SHIPS[0] : null);
+    // P0 战机专属被动：Enemy.applyElement 按此系数乘元素效果（无 passive = 零加成）
+    this.shipPassive = (ship && ship.passive) || null;
     if (ship) {
       this.player.defaultWeapon = ship.weapon || 'pulse';
       this.player.shipElement = ship.element || null;
@@ -818,6 +821,14 @@ export default class GameScene extends Phaser.Scene {
       }
       return rareCount;
     }
+    // P0 机库模块养成：低概率追加模块掉落（玩家拾取后入库存，机库面板可装备/合成）
+    if (Math.random() < (MODULE_DROP_CHANCE || 0)) {
+      this.spawnItem(
+        Phaser.Math.Clamp(x + Phaser.Math.Between(-40, 40), 30, GAME_WIDTH - 30),
+        Phaser.Math.Clamp(y + Phaser.Math.Between(-10, 40), 30, GAME_HEIGHT - 200),
+        'module',
+      );
+    }
     return 0;
   }
 
@@ -855,6 +866,10 @@ export default class GameScene extends Phaser.Scene {
           break;
         case 'power':
           this.addPower();
+          break;
+        case 'module':
+          // P0 机库模块养成：Boss 掉落的模块 → 随机入库存（机库面板装备/合成）
+          SaveManager.addRandomModule();
           break;
         case 'element':
           this.rotatePlayerElement();   // 元素核心：火→冰→雷→火 轮换

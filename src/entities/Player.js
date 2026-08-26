@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { PLAYER, BULLET, GAME_WIDTH, GAME_HEIGHT, EVENTS, POWERUP, GRAZE } from '../config/GameConfig.js';
+import { PLAYER, BULLET, GAME_WIDTH, GAME_HEIGHT, EVENTS, POWERUP, GRAZE, MODULES } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
 import { audio } from '../systems/AudioSystem.js';
@@ -81,6 +81,13 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     this.wingmanLevel = up.wingman || 0;
     this.wingmen = this.wingmanLevel;
 
+    // P0 机库模块养成：读存档三槽模块，应用射速/HP/移速/擦弹环加成（并行系统，不影响既有 upgrades）
+    this.moduleFireMul = 1;
+    this.moduleHpBonus = 0;
+    this.moduleSpeedMul = 1;
+    this.moduleGrazeExtra = 0;
+    this.applyModules((SaveManager.load().modules) || {});
+
     // 尾焰粒子（增强版）
     this.thruster = VFX.attachPlayerThruster(scene, this);
 
@@ -89,11 +96,35 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
       .setStrokeStyle(2, 0xff6677, 0.95).setDepth(22)
       .setVisible(SaveManager.load().showHitbox);
 
-    // P2 擦弹环：判定圈外的半透明青环（半径 = 判定圈 + GRAZE.RING_EXTRA）。
+    // P2 擦弹环：判定圈外的半透明青环（半径 = 判定圈 + GRAZE.RING_EXTRA + 引擎模块擦弹环加成）。
     // 纯视觉调试层，与 hitboxDot 同步显隐；不参与任何碰撞/擦弹判定。
-    this.grazeRing = scene.add.circle(this.x, this.y, PLAYER.HITBOX_RADIUS + GRAZE.RING_EXTRA, 0x33ffff, 0.10)
+    this.grazeRing = scene.add.circle(this.x, this.y, this.getGrazeCircle().r, 0x33ffff, 0.10)
       .setStrokeStyle(1, 0x33ffff, 0.35).setDepth(21)
       .setVisible(SaveManager.load().showHitbox);
+  }
+
+  /**
+   * P0 机库模块养成：读存档三槽模块应用加成。
+   *   weapon → 射速间隔倍率（_recalcFireInterval 消费）
+   *   armor  → 生命上限加成（GameScene 设 maxHp 时消费）
+   *   engine → 移速倍率（getMoveSpeed / update 消费）+ 擦弹环额外半径（getGrazeCircle 消费）
+   */
+  applyModules(modules) {
+    const m = modules || {};
+    const weaponDef = MODULES[m.weapon];
+    const armorDef = MODULES[m.armor];
+    const engineDef = MODULES[m.engine];
+    this.moduleFireMul = (weaponDef && weaponDef.fireIntervalMul) || 1;
+    this.moduleHpBonus = (armorDef && armorDef.hpBonus) || 0;
+    this.moduleSpeedMul = (engineDef && engineDef.speedMul) || 1;
+    this.moduleGrazeExtra = (engineDef && engineDef.grazeExtra) || 0;
+    this._recalcFireInterval();
+    return this;
+  }
+
+  /** 模块加持后的最大移动速度（键盘路径用） */
+  getMoveSpeed() {
+    return Math.round(PLAYER.SPEED * (this.moduleSpeedMul || 1));
   }
 
   /** 每帧：移动 + 开火 */
@@ -102,10 +133,12 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     if (pointer && pointer.isDown) {
       const tx = Phaser.Math.Clamp(pointer.worldX, 20, GAME_WIDTH - 20);
       const ty = Phaser.Math.Clamp(pointer.worldY - 40, 40, GAME_HEIGHT - 20);
-      this.x = Phaser.Math.Linear(this.x, tx, 0.35);
-      this.y = Phaser.Math.Linear(this.y, ty, 0.35);
+      // 引擎模块移速加成：同时作用于拖动插值系数（保守封顶，不破坏手感）
+      const k = Math.min(0.35 * (this.moduleSpeedMul || 1), 0.55);
+      this.x = Phaser.Math.Linear(this.x, tx, k);
+      this.y = Phaser.Math.Linear(this.y, ty, k);
     } else if (cursors) {
-      const v = PLAYER.SPEED;
+      const v = this.getMoveSpeed();
       let vx = 0, vy = 0;
       if (cursors.left.isDown) vx = -v;
       else if (cursors.right.isDown) vx = v;
@@ -351,10 +384,14 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     return this.powerLevel;
   }
 
-  /** 射速 = 机库火力减免 + 局内火力(P)减免（叠加，下限 55ms 防失控） */
+  /** 射速 = 机库火力减免 + 局内火力(P)减免 + 武器模块倍率（叠加，下限 45ms 防失控） */
   _recalcFireInterval() {
     const base = Math.max(70, PLAYER.FIRE_INTERVAL - (this.firepower || 0) * 8);
     this.fireInterval = Math.max(55, base - (this.powerLevel || 0) * POWERUP.FIRE_RATE_GAIN);
+    // P0 机库模块：武器模块射速倍率（×0.95/×0.88 = 更快）。无模块时 moduleFireMul=1，零 diff。
+    if (this.moduleFireMul && this.moduleFireMul !== 1) {
+      this.fireInterval = Math.max(45, Math.round(this.fireInterval * this.moduleFireMul));
+    }
     // 过载（P2）：射速倍率作用在最终间隔上（0.5 = 翻倍），下限 45ms 防失控。
     // mul 为 null/1 时零 diff，与历史行为完全一致。
     if (this.fireMul && this.fireMul !== 1) {
@@ -402,9 +439,9 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     return { x: this.x, y: this.y, r: PLAYER.HITBOX_RADIUS };
   }
 
-  /** 擦弹环（P2）：判定圈外的擦弹判定半径（r = 判定圈 + RING_EXTRA = 24） */
+  /** 擦弹环（P2）：判定圈外的擦弹判定半径（r = 判定圈 + RING_EXTRA + 引擎模块擦弹环加成） */
   getGrazeCircle() {
-    return { x: this.x, y: this.y, r: PLAYER.HITBOX_RADIUS + GRAZE.RING_EXTRA };
+    return { x: this.x, y: this.y, r: PLAYER.HITBOX_RADIUS + GRAZE.RING_EXTRA + (this.moduleGrazeExtra || 0) };
   }
 
   kill() {

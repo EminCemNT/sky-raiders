@@ -385,11 +385,54 @@ export const WEAPONS = {
 
 // 战机（C2 武器绑定）：每架绑定默认武器 + 元素属性
 // 机库选择 selectedShip（索引）后，开局即装备该战机的武器与元素。
+// passive（P0 机库模块·战机专属被动，append-only 新增字段）：在 Enemy.applyElement 处按所选战机乘元素系数。
+//   element 匹配的元素 key；dotMul 火伤系数 / slowMul 减速因子系数（<1 = 减速更强）/ stunMul 雷定身时长系数。
 export const SHIPS = [
-  { id: 0, name: '苍鹰', weapon: 'pulse',  element: 'thunder', tint: 0x66ccff, desc: '均衡机枪机·雷麻痹' },
-  { id: 1, name: '赤焰', weapon: 'missile', element: 'fire',  tint: 0xff7a3a, desc: '导弹机·火灼烧' },
-  { id: 2, name: '寒霜', weapon: 'laser',   element: 'ice',   tint: 0x9ff0ff, desc: '激光机·冰减速' },
+  { id: 0, name: '苍鹰', weapon: 'pulse',  element: 'thunder', tint: 0x66ccff, desc: '均衡机枪机·雷麻痹',
+    passive: { element: 'thunder', name: '雷暴', desc: '麻痹时长 +15%', stunMul: 1.15 } },
+  { id: 1, name: '赤焰', weapon: 'missile', element: 'fire',  tint: 0xff7a3a, desc: '导弹机·火灼烧',
+    passive: { element: 'fire', name: '烈焰', desc: '灼烧伤害 +25%', dotMul: 1.25 } },
+  { id: 2, name: '寒霜', weapon: 'laser',   element: 'ice',   tint: 0x9ff0ff, desc: '激光机·冰减速',
+    passive: { element: 'ice', name: '极寒', desc: '减速强度 +20%', slowMul: 0.8 } },
 ];
+
+// ───────────────────────────────────────────────────────────────
+// P0 机库模块养成系统（与既有 UPGRADE_TREE 金币升级并行，不替代）
+// 三槽（weapon 武器 / armor 装甲 / engine 引擎），每槽装 1 模块。
+// 品质：common(白, ×1) → rare(蓝, ×1.3)；合成：2 个同名同品质 → 1 个高一级品质（同槽）。
+// 模块定义 append-only：新增只加 key，不改既有 key 的字段。
+// 消费方：SaveManager（存档/合成/购买/装备）、Player（加成生效）、HangarScene（面板 UI）、
+//         GameScene.spawnBossDrops（Boss 低概率掉落）。
+// ───────────────────────────────────────────────────────────────
+export const MODULE_SLOTS = [
+  { key: 'weapon', name: '武器' },
+  { key: 'armor',  name: '装甲' },
+  { key: 'engine', name: '引擎' },
+];
+
+export const MODULE_QUALITY = {
+  common: { key: 'common', name: '普通', color: 0xe8eef5, mul: 1,   order: 0 },
+  rare:   { key: 'rare',   name: '稀有', color: 0x5aa7ff, mul: 1.3, order: 1 },
+};
+
+// 模块商店定价（金币）
+export const MODULE_SHOP = { common: 500, rare: 1200 };
+
+// Boss 击败后低概率追加模块掉落的概率
+export const MODULE_DROP_CHANCE = 0.15;
+
+// 模块效果字段说明：
+//   weapon: fireIntervalMul（射速间隔倍率，<1 = 射速更快）
+//   armor:  hpBonus（生命上限加成，相对基础 100 血保守）
+//   engine: speedMul（移速倍率） / grazeExtra（擦弹环额外半径 px）
+export const MODULES = {
+  weapon_common: { key: 'weapon_common', slot: 'weapon', quality: 'common', name: '速射核心', effect: '射速间隔 ×0.95', fireIntervalMul: 0.95 },
+  weapon_rare:   { key: 'weapon_rare',   slot: 'weapon', quality: 'rare',   name: '极速核心', effect: '射速间隔 ×0.88', fireIntervalMul: 0.88 },
+  armor_common:  { key: 'armor_common',  slot: 'armor',  quality: 'common', name: '装甲板',   effect: '生命上限 +20', hpBonus: 20 },
+  armor_rare:    { key: 'armor_rare',    slot: 'armor',  quality: 'rare',   name: '重装装甲', effect: '生命上限 +40', hpBonus: 40 },
+  engine_common: { key: 'engine_common', slot: 'engine', quality: 'common', name: '推进器',   effect: '移速 ×1.1', speedMul: 1.1 },
+  engine_rare:   { key: 'engine_rare',   slot: 'engine', quality: 'rare',   name: '擦弹环',   effect: '擦弹环半径 +6', grazeExtra: 6 },
+};
 
 // ───────────────────────────────────────────────────────────────
 // 僚机 AI 进阶（第一版：编队跟随 + 智能走位 + 武器/火力进化）

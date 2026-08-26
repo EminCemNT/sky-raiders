@@ -1,4 +1,4 @@
-import { SAVE_KEY, DAILY_QUEST_POOL, DIFFICULTIES, PERFORMANCE, NEWBIE_PLAN, UPGRADE_TREE } from '../config/GameConfig.js';
+import { SAVE_KEY, DAILY_QUEST_POOL, DIFFICULTIES, PERFORMANCE, NEWBIE_PLAN, UPGRADE_TREE, MODULES, MODULE_SLOTS, MODULE_SHOP } from '../config/GameConfig.js';
 
 /**
  * 存档管理（localStorage）
@@ -40,6 +40,10 @@ const DEFAULT_SAVE = {
   medalCount: 0,
   // P0 留存-新手 7 日计划：day=当前进行天 / claimed=已领天数集合 / progress=各 metric 累计进度
   newbiePlan: { day: 1, claimed: {}, progress: {} },
+  // P0 机库模块养成：modules=三槽已装模块（{weapon: moduleKey|null, armor, engine}）；moduleInv=库存数组（[{key, slot, quality}]）。
+  // 只新增字段、不改旧字段：既有 upgrades 升级逻辑完全保留，模块是并行系统。
+  modules: { weapon: null, armor: null, engine: null },
+  moduleInv: [],
 };
 
 let cache = null;
@@ -64,6 +68,8 @@ function freshSave() {
     levelMedals: {},
     medalCount: 0,
     newbiePlan: { day: 1, claimed: {}, progress: {} },
+    modules: { weapon: null, armor: null, engine: null },
+    moduleInv: [],
   };
 }
 
@@ -108,6 +114,9 @@ export const SaveManager = {
           claimed: { ...((parsed.newbiePlan && parsed.newbiePlan.claimed) || {}) },
           progress: { ...((parsed.newbiePlan && parsed.newbiePlan.progress) || {}) },
         },
+        // P0 机库模块养成：三槽深合并（老存档缺失兜底 null）+ 库存数组兜底 []；模块都是 {key,slot,quality} 引用式数据，无需更深拷贝
+        modules: { weapon: null, armor: null, engine: null, ...((parsed.modules) || {}) },
+        moduleInv: Array.isArray(parsed.moduleInv) ? parsed.moduleInv : [],
       };
       // 勋章计数是派生字段：每次 load 从 levelMedals 重算，老存档/脏数据自动自愈
       cache.medalCount = Object.values(cache.levelMedals || {})
@@ -400,6 +409,109 @@ export const SaveManager = {
     np.day = day + 1; // 推进到次日
     this.save();
     return { claimed: true, reward, day, wingmanUpgraded, extraCoins };
+  },
+
+  // ---- P0 机库模块养成（只新增字段，不碰既有 upgrades 逻辑）----
+  /** 模块 key 是否合法（定义在 MODULES） */
+  _isModule(key) {
+    return !!(key && MODULES[key]);
+  },
+
+  /** 按 key 加入库存。合法模块返回 true。 */
+  addModule(key) {
+    const s = this.load();
+    const def = MODULES[key];
+    if (!def) return false;
+    if (!Array.isArray(s.moduleInv)) s.moduleInv = [];
+    s.moduleInv.push({ key, slot: def.slot, quality: def.quality });
+    this.save();
+    return true;
+  },
+
+  /** 随机模块：85% common / 15% rare，随机槽位；返回 { key } 或 null */
+  addRandomModule() {
+    const slots = MODULE_SLOTS.map((x) => x.key);
+    const slot = slots[Math.floor(Math.random() * slots.length)];
+    const quality = (Math.random() < 0.85) ? 'common' : 'rare';
+    const key = `${slot}_${quality}`;
+    this.addModule(key);
+    return { key };
+  },
+
+  /**
+   * 购买随机模块：按品质定价（MODULE_SHOP.common=500 / rare=1200），金币不足返回 null。
+   * @param {string} quality 'common' | 'rare'
+   */
+  buyRandomModule(quality) {
+    const q = (quality === 'rare') ? 'rare' : 'common';
+    const price = MODULE_SHOP[q];
+    const s = this.load();
+    if (s.coins < price) return null;
+    s.coins = Math.max(0, s.coins - price);
+    this.save();
+    const slots = MODULE_SLOTS.map((x) => x.key);
+    const slot = slots[Math.floor(Math.random() * slots.length)];
+    const key = `${slot}_${q}`;
+    this.addModule(key);
+    return { key, price };
+  },
+
+  /** 装备模块：库存取出放入对应槽位；同槽位已装模块退回库存。返回是否成功 */
+  equipModule(key) {
+    const s = this.load();
+    const def = MODULES[key];
+    if (!def) return false;
+    const idx = (s.moduleInv || []).findIndex((m) => m && m.key === key);
+    if (idx < 0) return false;
+    const [mod] = s.moduleInv.splice(idx, 1);
+    if (!s.modules) s.modules = { weapon: null, armor: null, engine: null };
+    const prev = s.modules[def.slot];
+    if (prev && MODULES[prev]) {
+      s.moduleInv.push({ key: prev, slot: def.slot, quality: MODULES[prev].quality });
+    }
+    s.modules[def.slot] = key;
+    this.save();
+    return true;
+  },
+
+  /** 卸下模块：槽位模块退回库存。无模块返回 false */
+  unequipModule(slot) {
+    const s = this.load();
+    if (!s.modules || !s.modules[slot]) return false;
+    const key = s.modules[slot];
+    if (!MODULES[key]) { s.modules[slot] = null; this.save(); return true; }
+    if (!Array.isArray(s.moduleInv)) s.moduleInv = [];
+    s.moduleInv.push({ key, slot, quality: MODULES[key].quality });
+    s.modules[slot] = null;
+    this.save();
+    return true;
+  },
+
+  /** 库存中某槽 common 模块数量 */
+  countCommonModules(slot) {
+    return (this.load().moduleInv || []).filter((m) => m && m.slot === slot && m.quality === 'common').length;
+  },
+
+  /**
+   * 合成：2 个同槽同名同品质（common）模块 → 1 个同槽高一级品质（rare）。
+   * 数量不足返回 null；成功返回 { key }。
+   */
+  craftModule(slot) {
+    const s = this.load();
+    const inv = Array.isArray(s.moduleInv) ? s.moduleInv : [];
+    const commons = inv.filter((m) => m && m.slot === slot && m.quality === 'common');
+    if (commons.length < 2) return null;
+    let removed = 0;
+    for (let i = inv.length - 1; i >= 0 && removed < 2; i--) {
+      if (inv[i] && inv[i].slot === slot && inv[i].quality === 'common') {
+        inv.splice(i, 1);
+        removed++;
+      }
+    }
+    const key = `${slot}_rare`;
+    inv.push({ key, slot, quality: 'rare' });
+    this.save();
+    return { key };
   },
 
   reset() {
