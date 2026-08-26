@@ -43,6 +43,14 @@ export function generateAll(scene) {
   const g = scene.make.graphics({ x: 0, y: 0, add: false });
 
   drawPlayer(g); g.generateTexture('player', 48, 54);
+  // P2 体验细节·皮肤装饰：3 战机 × 3 皮肤纹理（append-only，原 player 纹理不动）
+  // key = player_skin_{shipId}_{skinId}，全部 48×54 与原机同尺寸，保证 physics body 不漂移
+  for (let shipId = 0; shipId < 3; shipId++) {
+    for (let skinId = 0; skinId < 3; skinId++) {
+      drawPlayerSkin(g, shipId, skinId);
+      g.generateTexture(`player_skin_${shipId}_${skinId}`, 48, 54);
+    }
+  }
   drawEnemySmall(g); g.generateTexture('enemy_small', 32, 30);
   drawEnemyMid(g); g.generateTexture('enemy_mid', 48, 44);
   drawEnemyDiver(g); g.generateTexture('enemy_diver', 36, 40);
@@ -139,6 +147,89 @@ function drawPlayer(g) {
   g.strokeTriangle(24, 14, 1, 47, 19, 44);
   g.strokeTriangle(24, 14, 47, 47, 29, 44);
   g.lineStyle(2, C.neonPlayer, 0.95);
+  g.strokeTriangle(24, 3, 14, 50, 34, 50);
+}
+
+// ─── P2 皮肤装饰：战机皮肤调色板（shipId -> [皮肤0, 皮肤1, 皮肤2]）──────
+// 与 drawPlayer 同几何（48×54），仅换配色 + 纹样（variant），生成 player_skin_{shipId}_{skinId}。
+const SKIN_PALETTES = [
+  [ // 苍鹰：青蓝 / 曜金 / 绯红
+    { light: 0xcfeeff, mid: 0x66ccff, deep: 0x1a5a8a, wing: 0x3aa0d8, neon: 0x9ff0ff, core: 0xeaffff, cockpit: 0x0a2a44, tip: 0xffffff, glow: 0x66ccff, variant: 0 },
+    { light: 0xfff3c8, mid: 0xffd54a, deep: 0x9a6a10, wing: 0xd9a92a, neon: 0xffe9a0, core: 0xfff8dc, cockpit: 0x3a2a08, tip: 0xffffff, glow: 0xffd54a, variant: 1 },
+    { light: 0xffd0d8, mid: 0xff5566, deep: 0x8a1a2a, wing: 0xd93a4a, neon: 0xffb3bd, core: 0xffe6ea, cockpit: 0x3a0a14, tip: 0xffffff, glow: 0xff5566, variant: 2 },
+  ],
+  [ // 赤焰：橙 / 银白 / 墨紫
+    { light: 0xffd9a0, mid: 0xff7a3a, deep: 0x9a3a10, wing: 0xd95a2a, neon: 0xffc266, core: 0xfff0c0, cockpit: 0x2a1406, tip: 0xfff3d0, glow: 0xff7a3a, variant: 0 },
+    { light: 0xffffff, mid: 0xdfeaf5, deep: 0x8a9aa8, wing: 0xaec4d4, neon: 0xf4fbff, core: 0xffffff, cockpit: 0x2a3642, tip: 0xffffff, glow: 0xdfeaf5, variant: 1 },
+    { light: 0xd8c8f0, mid: 0x9a6fd6, deep: 0x4a2a7a, wing: 0x7a4fb0, neon: 0xc9bfff, core: 0xe8dcff, cockpit: 0x1c0f33, tip: 0xffffff, glow: 0x9a6fd6, variant: 2 },
+  ],
+  [ // 寒霜：冰蓝 / 玄黑 / 翠绿
+    { light: 0xd8f4ff, mid: 0x9ff0ff, deep: 0x2a7a9a, wing: 0x55b8d8, neon: 0xc9f8ff, core: 0xf0fbff, cockpit: 0x0a2a3a, tip: 0xffffff, glow: 0x9ff0ff, variant: 0 },
+    { light: 0xcfd4da, mid: 0x55606a, deep: 0x1c2026, wing: 0x3a424c, neon: 0x9aa4ae, core: 0xe4e8ec, cockpit: 0x0a0c10, tip: 0xffffff, glow: 0x55606a, variant: 1 },
+    { light: 0xd8ffea, mid: 0x7cffa0, deep: 0x1a7a3a, wing: 0x42c96e, neon: 0xc0ffd4, core: 0xf0fff6, cockpit: 0x0a2a16, tip: 0xffffff, glow: 0x7cffa0, variant: 2 },
+  ],
+];
+
+/** 程序化绘制战机皮肤：几何同 drawPlayer，配色/纹样按 (shipId, skinId) 变化 */
+function drawPlayerSkin(g, shipId, skinId) {
+  const pal = (SKIN_PALETTES[shipId] && SKIN_PALETTES[shipId][skinId]) || SKIN_PALETTES[0][0];
+  const v = pal.variant || 0;
+  g.clear();
+  // 外发光（柔光晕，按皮肤主色）
+  g.fillStyle(pal.glow, 0.16);
+  g.fillTriangle(24, -2, 2, 52, 46, 52);
+  // 后掠翼（翼根深、翼尖亮）
+  g.fillStyle(pal.wing, 1);
+  g.fillTriangle(24, 14, 1, 47, 19, 44);
+  g.fillTriangle(24, 14, 47, 47, 29, 44);
+  // 纹样差异：曜金/银白/玄黑 款翼上追加亮色装饰条（v1）
+  if (v === 1) {
+    g.fillStyle(pal.neon, 0.55);
+    g.fillRect(4, 36, 14, 3);
+    g.fillRect(30, 36, 14, 3);
+  }
+  // 翼尖亮点
+  g.fillStyle(pal.tip, 0.9);
+  g.fillCircle(4, 46, 1.8);
+  g.fillCircle(44, 46, 1.8);
+  // 主机身（体积渐变：浅->深）
+  g.fillGradientStyle(pal.light, pal.mid, pal.mid, pal.deep, 1);
+  g.fillTriangle(24, 3, 14, 50, 34, 50);
+  // 机腹加深色阴影带
+  g.fillStyle(pal.deep, 0.45);
+  g.fillTriangle(24, 30, 16, 50, 32, 50);
+  // 中线细长能量核心（亮）
+  g.fillStyle(pal.core, 1);
+  g.fillRoundedRect(22.5, 10, 3, 30, 1.5);
+  g.fillStyle(0xffffff, 0.9);
+  g.fillRoundedRect(23.5, 12, 1, 22, 0.5);
+  // 座舱
+  g.fillStyle(pal.cockpit, 1);
+  g.fillEllipse(24, 24, 13, 17);
+  g.fillStyle(pal.neon, 1);
+  g.fillEllipse(24, 22, 8, 12);
+  // 座舱玻璃白高光点
+  g.fillStyle(0xffffff, 0.95);
+  g.fillEllipse(21, 18, 3, 5);
+  // 纹样差异：绯红/墨紫/翠绿 款机首追加 V 形装饰线（v2）
+  if (v === 2) {
+    g.fillStyle(pal.neon, 0.6);
+    g.fillTriangle(24, 8, 18, 15, 22, 15);
+    g.fillTriangle(24, 8, 30, 15, 26, 15);
+  }
+  // 双喷口（内白外彩双圈）
+  g.fillStyle(pal.mid, 1);
+  g.fillCircle(16, 50, 4.2);
+  g.fillCircle(32, 50, 4.2);
+  g.fillStyle(0xffffff, 1);
+  g.fillCircle(16, 50, 1.8);
+  g.fillCircle(32, 50, 1.8);
+  // 双层描边：外发光(宽,低透) + 主霓虹(细,亮)
+  g.lineStyle(3, pal.neon, 0.28);
+  g.strokeTriangle(24, 3, 14, 50, 34, 50);
+  g.strokeTriangle(24, 14, 1, 47, 19, 44);
+  g.strokeTriangle(24, 14, 47, 47, 29, 44);
+  g.lineStyle(2, pal.neon, 0.95);
   g.strokeTriangle(24, 3, 14, 50, 34, 50);
 }
 

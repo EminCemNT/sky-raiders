@@ -274,8 +274,8 @@ class AudioSystem {
     this._echoTail(Math.min(0.5, t.bodyDur + t.tailDur), 0.10, 0.09, 0.3);
   }
 
-  /** 播放一个音效 */
-  sfx(name) {
+  /** 播放一个音效。arg 为可选参数（如 comboUp 传入连击数 n，随 n 音高爬升） */
+  sfx(name, arg) {
     if (!this.enabled) return;
     switch (name) {
       case 'shoot':
@@ -364,6 +364,37 @@ class AudioSystem {
         this._tone(440, 'sawtooth', 0.3, 0.28, 220);
         this._tone(220, 'sawtooth', 0.4, 0.28, 110);
         break;
+      case 'comboUp': {
+        // P2 体验细节·连击反馈：音高随连击数爬升（base 440 × 2^(n/12)，封顶 12 半音）
+        // ≥150ms 节流防吵；高频段叠一层轻泛音增加"上扬"感
+        if (!this._throttle('comboUp', 150)) return;
+        const n = Math.min(Math.max(Number(arg) || 1, 1), 12);
+        const f = 440 * Math.pow(2, n / 12);
+        this._tone(f, 'triangle', 0.09, 0.16, f * 1.4, false);
+        this._tone(f * 2, 'sine', 0.07, 0.05, f * 2.4, false);
+        break;
+      }
+      case 'voicePickup': {
+        // P2 合成音素语音·拾取："嘟-叮"（低→高双音，人声感 sine + 轻泛音，零外部资源）
+        if (!this._throttle('voicePickup', 120)) return;
+        this._toneAt(196, 'sine', 0.09, 0.10, 156, 0, false);
+        this._toneAt(392, 'sine', 0.13, 0.10, 523, 0.09, false);
+        break;
+      }
+      case 'voiceCombo': {
+        // P2 合成音素语音·连击："啊-↑"（上扬滑音，≥200ms 节流防吵）
+        if (!this._throttle('voiceCombo', 200)) return;
+        this._toneAt(294, 'triangle', 0.11, 0.10, 440, 0, false);
+        this._toneAt(440, 'triangle', 0.14, 0.10, 660, 0.09, false);
+        break;
+      }
+      case 'voiceBoss': {
+        // P2 合成音素语音·Boss 警戒："呜-呜"（两次下行低鸣，节流 800ms）
+        if (!this._throttle('voiceBoss', 800)) return;
+        this._toneAt(196, 'sawtooth', 0.28, 0.09, 147, 0, false);
+        this._toneAt(175, 'sawtooth', 0.30, 0.09, 131, 0.26, false);
+        break;
+      }
       default:
         break;
     }
@@ -380,12 +411,23 @@ class AudioSystem {
     add(EVENTS.PLAYER_HIT, () => this.sfx('hit'));
     add(EVENTS.COIN_COLLECTED, () => this.sfx('pickup'));
     add(EVENTS.POWERUP_COLLECTED, () => this.sfx('powerup'));
+    // P2 合成音素语音·拾取：在既有 powerup 之上叠一层"嘟-叮"人声感音素
+    add(EVENTS.POWERUP_COLLECTED, () => this.sfx('voicePickup'));
     add(EVENTS.USE_BOMB, () => this.sfx('bomb'));
     add(EVENTS.USE_SUPER, () => this.sfx('super'));
     add(EVENTS.BOSS_SPAWNED, () => this.sfx('bosswarn'));
+    // P2 合成音素语音·Boss 警戒："呜-呜"（叠在 bosswarn 之上）
+    add(EVENTS.BOSS_SPAWNED, () => this.sfx('voiceBoss'));
     add(EVENTS.BOSS_SPAWNED, () => this.startBgm('boss'));   // P1-9 Boss 动态音乐：进 Boss 切激烈段
     add(EVENTS.BOSS_DEFEATED, () => this.startBgm('stage')); // 退 Boss 切回普通段
     add(EVENTS.PLAYER_DIED, () => this.sfx('explosion'));
+    // P2 体验细节·连击反馈：音高随连击数爬升（comboUp），每 5 连追加上扬语音（voiceCombo）
+    add(EVENTS.COMBO_CHANGED, (combo) => {
+      if (combo > 0) {
+        this.sfx('comboUp', combo);
+        if (combo % 5 === 0) this.sfx('voiceCombo');
+      }
+    });
     // P1-6 濒死心搏：hp>0 且 ≤30% 时低频双搏（900ms 节流在 sfx 内，GameScene 零改动）
     add(EVENTS.HP_CHANGED, (hp, maxHp) => {
       if (hp > 0 && maxHp > 0 && hp / maxHp <= 0.30) this.sfx('heartbeat');

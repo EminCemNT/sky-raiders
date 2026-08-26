@@ -58,6 +58,14 @@ export default class ResultScene extends Phaser.Scene {
     // 星级
     this.drawStars(cx, 280, r.stars || 0);
 
+    // P2 皮肤装饰：战机立绘（小图，用对应皮肤纹理；纹理缺失安全降级 'player'）
+    // 放星级左侧空位（x=96，星级最左星 x=200），不与标题/星级/数据行重叠
+    const _ship = r.ship || { id: 0, skin: 0 };
+    const _skinKey = `player_skin_${Number(_ship.id) || 0}_${(_ship.skin != null) ? Number(_ship.skin) : 0}`;
+    if (this.textures.exists(_skinKey)) {
+      this.rsShipImg = this.add.image(96, 280, _skinKey).setScale(1.5).setAlpha(0.95).setDepth(6);
+    }
+
     // 本局新解锁成就（来自 GameScene.evaluate）
     if (r.newAchievements && r.newAchievements.length) {
       const names = r.newAchievements.map((a) => a.name).join('   ');

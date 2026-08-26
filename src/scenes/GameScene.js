@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import {
   SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, COLORS, PLAYER, BULLET, LEVELS, BOSS_RUSH, SHIPS, ELEMENTS, WINGMAN,
   DIFFICULTIES, getDifficulty, POWERUP, GRAZE, OVERDRIVE, bossRushScale, PERFORMANCE,
-  EVENT_MODES, getCurrentEvent, MODULE_DROP_CHANCE,
+  EVENT_MODES, getCurrentEvent, MODULE_DROP_CHANCE, getShipSkins,
 } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
@@ -156,6 +156,15 @@ export default class GameScene extends Phaser.Scene {
       this.player.setWeapon(bound);
       AchievementManager.reportWeaponUsed(bound);
       if (ship.tint) { this.player.setTint(ship.tint); this.player.setShipTint(ship.tint); }
+      // P2 皮肤装饰：机库所选皮肤纹理覆盖默认 tint（skin 0=默认款，回退既有视觉；皮肤已自带配色）
+      const skinId = SaveManager.getSkin(shipIdx);
+      if (SaveManager.ownsSkin(shipIdx, skinId)) {
+        this.player.applySkin(shipIdx, skinId);
+        const skinDef = (getShipSkins(shipIdx) || [])[skinId];
+        if (skinDef && skinDef.accent) this.player.setShipTint(skinDef.accent);
+      }
+      this._runShipId = shipIdx;
+      this._runSkinId = skinId;
       // 0 = 常驻（绑定武器无倒计时）；delayedCall 确保 UIScene 已绑定监听
       if (bound !== 'pulse') this.time.delayedCall(0, () => EventBus.emit(EVENTS.WEAPON_CHANGED, bound, 0));
     }
@@ -997,6 +1006,26 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * P2 体验细节·慢放子弹时间（纯演出，不改判定/数值）。
+   * 将 physics.world.timeScale 降为 timeScale（默认 0.3），duration ms 后恢复 1。
+   * 支持叠加：每次调用自建恢复定时器 + _slowMotionCount 计数，全部结束后才恢复，避免多层触发互相覆盖。
+   * reduced-motion 偏好下跳过（不打扰动效敏感用户）。
+   */
+  slowMotion(duration, timeScale = 0.3) {
+    if (typeof window !== 'undefined' && window.matchMedia
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const scale = (timeScale && timeScale > 0 && timeScale < 1) ? timeScale : 0.3;
+    this._slowMotionCount = (this._slowMotionCount || 0) + 1;
+    if (this.physics && this.physics.world) this.physics.world.timeScale = scale;
+    this.time.delayedCall(Math.max(50, duration || 300), () => {
+      this._slowMotionCount = Math.max(0, (this._slowMotionCount || 0) - 1);
+      if (this._slowMotionCount === 0 && this.physics && this.physics.world) {
+        this.physics.world.timeScale = 1;
+      }
+    });
+  }
+
   /** P1-8 普通命中轻震 + 玩家机微后坐：极轻 + 90ms 节流，避免高射速下持续抖动。reduced-motion 跳过后坐 */
   _impactFeedback() {
     const now = this.time.now;
@@ -1486,6 +1515,7 @@ export default class GameScene extends Phaser.Scene {
       maxCombo: this.maxCombo || 0,   // UI P2：结算页连击峰值面板（纯展示数据透传）
       rushReward,                     // P2 Boss Rush 差异化：{ hangarLv, coinMul, rareDrops }
       achievedMedals,                 // P0 留存-关卡勋章：本局达成勋章 id 列表
+      ship: { id: this._runShipId != null ? this._runShipId : 0, skin: this._runSkinId != null ? this._runSkinId : 0 }, // P2 皮肤装饰：结算页战机立绘用
       eventReward,                    // P0 留存-活动轮换：活动模式结算明细
       event: eventCfg ? { name: eventCfg.name, short: eventCfg.short, double: !!this.eventDouble, daysLeft: this.eventDaysLeft } : null,
     };

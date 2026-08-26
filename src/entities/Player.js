@@ -372,6 +372,20 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
   }
 
+  /**
+   * P2 皮肤装饰：应用战机皮肤纹理（key=player_skin_{shipId}_{skinId}，原 player 纹理不动）。
+   * 所有皮肤均为 48×54 同尺寸，physics body 不漂移；皮肤已自带配色，应用时清 tint 避免叠加染色。
+   * 纹理不存在时安全降级（保持当前贴图，不破坏既有 tint 行为）。
+   */
+  applySkin(shipId, skinId) {
+    const key = `player_skin_${Number(shipId) || 0}_${Number(skinId) || 0}`;
+    if (this.scene && this.scene.textures && this.scene.textures.exists(key)) {
+      if (this.texture.key !== key) this.setTexture(key);
+      this.clearTint();
+    }
+    return this;
+  }
+
   setFirepower(level) {
     this.firepower = Phaser.Math.Clamp(level, 0, 8);
     this._recalcFireInterval();

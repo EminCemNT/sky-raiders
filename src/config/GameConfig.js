@@ -285,6 +285,39 @@ export function bossRushScale(hangarLv) {
 }
 
 // ───────────────────────────────────────────────────────────────
+// P2 体验细节·数值反馈：总战力（calcPower）派生函数 + 推荐关卡
+// 纯展示：由六项升级 + 三槽模块品质 + 战机基础算一个"总战力"数值，
+// 不改任何 hp/score/判定/连击数值逻辑（只在机库展示与推荐）。
+// ───────────────────────────────────────────────────────────────
+export function calcPower(upgrades, modules, ship) {
+  const up = upgrades || {};
+  const firepower = up.firepower || 0;
+  const hull = up.hull || 0;
+  const shield = up.shield || 0;
+  const magnet = up.magnet || 0;
+  const wingman = up.wingman || 0;
+  const wingmanFirepower = up.wingmanFirepower || 0;
+  // 六项升级加权（各项上限 8/6/5/4/2/5 → 满级合计约 +442）
+  const upgradePower = firepower * 16 + hull * 12 + shield * 14 + magnet * 8 + wingman * 40 + wingmanFirepower * 12;
+  // 三槽模块品质加成：common +10 / rare +18（未装备不加成）
+  const mods = modules || {};
+  const equipped = [mods.weapon, mods.armor, mods.engine].filter((k) => k && MODULES[k]);
+  const modulePower = equipped.reduce((sum, k) => sum + ((MODULES[k].quality === 'rare') ? 18 : 10), 0);
+  // 战机基础战力（按机型索引：110/120/115，区分三机手感差异）
+  const shipBase = (ship && ship.id != null) ? (100 + (Number(ship.id) + 1) * 10) : 110;
+  return Math.round(shipBase + upgradePower + modulePower);
+}
+
+/** 按总战力映射推荐关卡（LEVELS 难度区间：<200 → 1 / <350 → 2 / <550 → 3 / 其余 4） */
+export function recommendLevel(power) {
+  const p = Number(power) || 0;
+  if (p < 200) return 1;
+  if (p < 350) return 2;
+  if (p < 550) return 3;
+  return 4;
+}
+
+// ───────────────────────────────────────────────────────────────
 // 四档难度系统（P0）：休闲 / 标准 / 困难 / 地狱
 // 系数乘在关卡 difficulty 之上；标准档全 1.0，与历史行为逐字段等价（零回归）。
 //   hpMul       敌机 HP 倍率
@@ -395,6 +428,41 @@ export const SHIPS = [
   { id: 2, name: '寒霜', weapon: 'laser',   element: 'ice',   tint: 0x9ff0ff, desc: '激光机·冰减速',
     passive: { element: 'ice', name: '极寒', desc: '减速强度 +20%', slowMul: 0.8 } },
 ];
+
+// 战机皮肤（P2 体验细节·皮肤装饰，append-only）：
+//   每架战机 3 款皮肤（第 0 款 = 默认自带，其余 800 金币购买）。
+//   纹理 key：player_skin_{shipId}_{skinId}（TextureFactory 程序化生成，原 player 纹理不动）。
+//   accent 为皮肤强调色（机库预览 aura / 战斗 aura 染色用）。
+export const SKIN_PRICE = 800;
+
+export const SHIP_SKINS = [
+  { shipId: 0, name: '苍鹰', skins: [
+    { id: 0, name: '青蓝', accent: 0x66ccff },
+    { id: 1, name: '曜金', accent: 0xffd54a },
+    { id: 2, name: '绯红', accent: 0xff5566 },
+  ] },
+  { shipId: 1, name: '赤焰', skins: [
+    { id: 0, name: '橙', accent: 0xff7a3a },
+    { id: 1, name: '银白', accent: 0xdfeaf5 },
+    { id: 2, name: '墨紫', accent: 0x9a6fd6 },
+  ] },
+  { shipId: 2, name: '寒霜', skins: [
+    { id: 0, name: '冰蓝', accent: 0x9ff0ff },
+    { id: 1, name: '玄黑', accent: 0x55606a },
+    { id: 2, name: '翠绿', accent: 0x7cffa0 },
+  ] },
+];
+
+/** 取某战机皮肤列表（无则回退默认 3 款），皮肤名辅助函数 */
+export function getShipSkins(shipId) {
+  const entry = SHIP_SKINS.find((s) => s.shipId === Number(shipId)) || SHIP_SKINS[0];
+  return (entry && entry.skins) || [];
+}
+
+/** 战机皮肤纹理 key（纯派生，不碰既有 'player' 纹理） */
+export function shipSkinKey(shipId, skinId) {
+  return `player_skin_${Number(shipId) || 0}_${Number(skinId) || 0}`;
+}
 
 // ───────────────────────────────────────────────────────────────
 // P0 机库模块养成系统（与既有 UPGRADE_TREE 金币升级并行，不替代）

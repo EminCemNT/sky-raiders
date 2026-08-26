@@ -47,6 +47,9 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
     this._lastFire = 0;
     this._dir = 1;
     this._spiralAng = 0;
+    // P2 体验细节·慢放子弹时间：血线首次降至 50% / 25% 触发（每血线只触发一次）
+    this._slowAt50 = false;
+    this._slowAt25 = false;
 
     scene.tweens.add({
       targets: this, y: 150, duration: 2000, ease: 'Cubic.out',
@@ -283,6 +286,16 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
       // 变身脉冲：短暂放大+白闪，强化「进场变身」感（能量环叠加层同步放大）
       this.scene.tweens.add({ targets: this, scaleX: 1.18, scaleY: 1.18, duration: 220, yoyo: true, ease: 'Quad.easeOut' });
       if (this.fxG) this.scene.tweens.add({ targets: this.fxG, scaleX: 1.18, scaleY: 1.18, duration: 220, yoyo: true, ease: 'Quad.easeOut' });
+    }
+    // P2 体验细节·慢放子弹时间：血线首次降至 50% / 25% 触发 slowMotion(300ms)（纯演出，复用 scene.slowMotion）
+    // 两条 if 独立判断：大额伤害一次性压过 50%+25% 时两个血线都会触发，slowMotion 内部叠加计数安全。
+    if (ratio <= 0.5 && !this._slowAt50) {
+      this._slowAt50 = true;
+      if (this.scene.slowMotion) this.scene.slowMotion(300);
+    }
+    if (ratio <= 0.25 && !this._slowAt25) {
+      this._slowAt25 = true;
+      if (this.scene.slowMotion) this.scene.slowMotion(300);
     }
 
     if (this.hp <= 0) {

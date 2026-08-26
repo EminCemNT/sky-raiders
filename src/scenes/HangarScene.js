@@ -1,5 +1,8 @@
 import Phaser from 'phaser';
-import { SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, UPGRADE_TREE, SHIPS, WEAPONS, ELEMENTS, MODULES, MODULE_SLOTS, MODULE_QUALITY, MODULE_SHOP } from '../config/GameConfig.js';
+import {
+  SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, UPGRADE_TREE, SHIPS, WEAPONS, ELEMENTS, MODULES, MODULE_SLOTS, MODULE_QUALITY, MODULE_SHOP,
+  LEVELS, PLAYER, calcPower, recommendLevel, SKIN_PRICE, getShipSkins, shipSkinKey,
+} from '../config/GameConfig.js';
 import { SaveManager } from '../utils/SaveManager.js';
 import { createStarfield, HANGAR_BG_THEME } from '../systems/Starfield.js';
 import { NeonButton, THEME, drawGlassPanel } from '../utils/UIWidgets.js';
@@ -40,6 +43,18 @@ export default class HangarScene extends Phaser.Scene {
     this.add.text(cx, 142, 'HANGAR', {
       fontFamily: THEME.fontFamily, fontSize: '16px', color: THEME.subColor,
     }).setOrigin(0.5).setAlpha(0.8);
+
+    // P2 体验细节·数值反馈：顶部总战力 + 推荐关卡（纯展示，由 calcPower/recommendLevel 派生）
+    this.powerText = this.add.text(cx, 166, '', {
+      fontFamily: THEME.fontFamily, fontSize: '15px', fontStyle: '700', color: THEME.textGoldLight,
+    }).setOrigin(0.5).setShadow(0, 0, '#000000', 6, true, true);
+
+    // P2 体验细节·皮肤装饰：皮肤选择入口（右上角，打开独立 overlay，不影响机库布局）
+    this.skinEntryBtn = new NeonButton(this, GAME_WIDTH - 66, 142, '皮肤', {
+      w: 100, h: 44, fontSize: 16, stroke: 0xffd54a, glow: true,
+      onDown: () => this.openSkins(),
+    }).container;
+    this.skinsOpen = false;
 
     if (!reduceMotion) {
       this.tweens.add({ targets: this.titleGlow, scale: { from: 1, to: 1.03 }, duration: 1700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
@@ -187,11 +202,18 @@ export default class HangarScene extends Phaser.Scene {
     const elTxt = s.element ? (ELEMENTS[s.element] ? ELEMENTS[s.element].name : s.element) : '无';
     const wTxt = WEAPONS[s.weapon] ? WEAPONS[s.weapon].name : s.weapon;
     this.shipLabel.setText(`${s.name} · ${wTxt} · 元素:${elTxt}`);
-    // 同步机型皮肤预览 tint（苍鹰青 / 赤焰橙 / 寒霜冰蓝）
-    if (this.shipPreview) this.shipPreview.setTint(s.tint || 0xffffff);
+    // 同步机型皮肤预览：优先皮肤纹理（player_skin_{shipId}_{skinId}），缺失回退 tint（苍鹰青/赤焰橙/寒霜冰蓝）
+    const skinId = SaveManager.getSkin(idx);
+    const skinKey = shipSkinKey(idx, skinId);
+    if (this.shipPreview) {
+      if (this.textures.exists(skinKey)) { this.shipPreview.setTexture(skinKey); this.shipPreview.clearTint(); }
+      else this.shipPreview.setTint(s.tint || 0xffffff);
+    }
     if (this.shipAura) this.shipAura.setTint(s.tint || 0xffffff);
     // UI P2：机库背景星空/光晕色调跟随所选战机 tint
     if (this.starfield) this.starfield.setTint(s.tint || 0);
+    // 皮肤 overlay 打开时同步刷新（战机切换 → 皮肤列表跟随）
+    if (this.skinsOpen && this.refreshSkinsPanel) this.refreshSkinsPanel();
   }
 
   /** 开局主武器选择（覆盖战机绑定武器；null=用战机默认） */
@@ -249,6 +271,16 @@ export default class HangarScene extends Phaser.Scene {
     const up = save.upgrades || {};
     this.coinText.setText(`金币  ${save.coins}`);
 
+    // P2 体验细节·数值反馈：总战力 + 推荐关卡（纯展示）
+    if (this.powerText) {
+      const shipIdx = (save.selectedShip != null) ? save.selectedShip : 0;
+      const ship = (SHIPS && SHIPS[shipIdx]) ? SHIPS[shipIdx] : (SHIPS ? SHIPS[0] : null);
+      const power = calcPower(up, save.modules, ship);
+      const rec = recommendLevel(power);
+      const lvlName = (LEVELS && LEVELS[rec - 1]) ? LEVELS[rec - 1].name : `第${rec}关`;
+      this.powerText.setText(`总战力  ${power}   ·   推荐关卡  ${lvlName}`);
+    }
+
     for (const row of this.rows) {
       const lvl = up[row.key] || 0;
       const maxed = lvl >= row.max;
@@ -278,6 +310,18 @@ export default class HangarScene extends Phaser.Scene {
     const cost = this.upgradeCost(row.key, lvl);
     if (save.coins < cost) return;
 
+    // P2 体验细节·数值反馈：升级前弹「当前 → 升级后」数值对比（纯展示）
+    const def = UPGRADE_TREE[row.key];
+    this.lastCompare = {
+      key: row.key,
+      name: def ? def.name : row.key,
+      from: lvl,
+      to: lvl + 1,
+      cost,
+      text: this.upgradeCompareText(row.key, lvl),
+    };
+    this.flashCompare(this.lastCompare);
+
     SaveManager.deductCoins(cost);
     if (!save.upgrades) save.upgrades = {};
     save.upgrades[row.key] = lvl + 1;
@@ -285,6 +329,45 @@ export default class HangarScene extends Phaser.Scene {
     SaveManager.save();
 
     this.refresh();
+  }
+
+  /** P2 体验细节·数值反馈：某升级项「当前等级 → 下一级」关键数值文本（只读，不改平衡） */
+  upgradeCompareText(key, lvl) {
+    const next = lvl + 1;
+    switch (key) {
+      case 'firepower': {
+        const cur = Math.max(70, PLAYER.FIRE_INTERVAL - lvl * 8);
+        const aft = Math.max(70, PLAYER.FIRE_INTERVAL - next * 8);
+        return `射速间隔 ${cur}ms → ${aft}ms`;
+      }
+      case 'hull': return `生命上限 +${lvl * 20} → +${next * 20}`;
+      case 'shield': return `护盾池 +${lvl * 15} → +${next * 15}`;
+      case 'magnet': return `磁力半径 ${90 + lvl * 45}px → ${90 + next * 45}px`;
+      case 'wingman': return `僚机 ${lvl} 架 → ${next} 架`;
+      case 'wingmanFirepower': return `僚机火力 档位 ${lvl} → ${next}`;
+      default: return `Lv${lvl} → Lv${next}`;
+    }
+  }
+
+  /** P2 体验细节·数值反馈：升级对比轻提示（浮动面板，不阻塞交互） */
+  flashCompare(cmp) {
+    if (!cmp) return;
+    this.lastCompareText = `${cmp.name} Lv${cmp.from} → Lv${cmp.to} · ${cmp.text} · 花费 ${cmp.cost} 金`;
+    const cx = GAME_WIDTH / 2;
+    const box = this.add.container(cx, GAME_HEIGHT / 2 - 60).setDepth(450);
+    const g = this.add.graphics();
+    const txt = this.add.text(0, 0, this.lastCompareText, {
+      fontFamily: THEME.fontFamily, fontSize: '17px', fontStyle: '800', color: THEME.textGoldLight,
+      align: 'center', wordWrap: { width: 420 },
+    }).setOrigin(0.5).setShadow(0, 0, '#000000', 8, true, true);
+    g.fillStyle(0x0a2236, 0.95).fillRoundedRect(-230, -32, 460, 64, 12);
+    g.lineStyle(2, COLORS.accent, 0.85).strokeRoundedRect(-230, -32, 460, 64, 12);
+    box.add([g, txt]);
+    box.setAlpha(0);
+    this.tweens.add({
+      targets: box, alpha: 1, y: '-=14', duration: 260, yoyo: true, hold: 1100,
+      onComplete: () => box.destroy(),
+    });
   }
 
   /** 通用霓虹按钮（P1 UI：统一复用 NeonButton） */
@@ -518,6 +601,129 @@ export default class HangarScene extends Phaser.Scene {
     const res = SaveManager.craftModule(slot);
     this.flashToast(res ? `合成成功！${MODULES[res.key].name}` : '需要 2 个同名普通模块');
     this.refreshModulesPanel();
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // P2 体验细节·皮肤装饰（overlay：预览 + 购买/切换）
+  // 与模块面板同款 overlay（depth 300），不影响机库既有布局。
+  // ─────────────────────────────────────────────────────────────
+  openSkins() {
+    if (this.skinsOpen) return;
+    this.skinsOpen = true;
+    const cx = GAME_WIDTH / 2;
+    const ov = this.add.container(0, 0).setDepth(300);
+    this.skinOverlay = ov;
+
+    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.78)
+      .setOrigin(0).setInteractive();
+    ov.add(dim);
+    const g = this.add.graphics();
+    drawGlassPanel(g, cx, 80, GAME_HEIGHT - 40, 474, THEME.panelRadius);
+    ov.add(g);
+
+    // 标题
+    ov.add(this.add.text(cx, 116, '皮肤装饰', {
+      fontFamily: THEME.fontFamily, fontSize: '30px', fontStyle: '800', color: THEME.titleBright,
+    }).setOrigin(0.5).setShadow(0, 0, THEME.titleShadow, 14, true, true));
+
+    // 预览 + 当前战机名 + 金币
+    this.skinPreview = this.add.image(cx - 160, 200, 'player').setScale(1.4).setDepth(2);
+    ov.add(this.skinPreview);
+    this.skinShipLabel = this.add.text(cx + 12, 186, '', {
+      fontFamily: THEME.fontFamily, fontSize: '20px', fontStyle: '700', color: THEME.white,
+    }).setOrigin(0, 0.5);
+    ov.add(this.skinShipLabel);
+    this.skinCoinText = this.add.text(cx + 12, 214, '', {
+      fontFamily: THEME.fontFamily, fontSize: '15px', color: THEME.textGold,
+    }).setOrigin(0, 0.5);
+    ov.add(this.skinCoinText);
+
+    // 皮肤行（当前战机 3 款）
+    this.skinRows = [];
+    [280, 360, 440].forEach((y) => this.skinRows.push(this._buildSkinRow(ov, y)));
+
+    ov.add(this.makeButton(cx, 884, '关闭', () => this.closeSkins()));
+
+    this.refreshSkinsPanel();
+    this.refresh();
+  }
+
+  closeSkins() {
+    if (this.skinOverlay) { this.skinOverlay.destroy(); this.skinOverlay = null; }
+    this.skinsOpen = false;
+    this.refresh();
+  }
+
+  /** 单个皮肤行：名称 + 状态 + 操作按钮（购买/装备） */
+  _buildSkinRow(ov, y) {
+    const cx = GAME_WIDTH / 2;
+    const card = this.add.rectangle(cx, y, 444, 56, THEME.chipBg, 0.92).setStrokeStyle(2, THEME.chipStroke);
+    const nameText = this.add.text(cx - 208, y, '', {
+      fontFamily: THEME.fontFamily, fontSize: '18px', fontStyle: '700', color: THEME.textPrimary,
+    }).setOrigin(0, 0.5);
+    const statusText = this.add.text(cx - 64, y, '', {
+      fontFamily: THEME.fontFamily, fontSize: '14px', color: THEME.textSecondary,
+    }).setOrigin(0, 0.5);
+    const btn = new NeonButton(this, cx + 176, y, '', {
+      w: 96, h: 36, fontSize: 14, stroke: COLORS.accent,
+      onDown: () => { if (row.skinId != null) this.actSkin(row.skinId); },
+    });
+    ov.add([card, nameText, statusText, btn.container]);
+    const row = { skinId: null, card, nameText, statusText, btn };
+    return row;
+  }
+
+  /** 刷新皮肤面板：预览贴图 + 当前战机名 + 金币 + 3 行状态/按钮 */
+  refreshSkinsPanel() {
+    const save = SaveManager.load();
+    const shipIdx = (save.selectedShip != null) ? save.selectedShip : 0;
+    const ship = (SHIPS && SHIPS[shipIdx]) ? SHIPS[shipIdx] : (SHIPS ? SHIPS[0] : null);
+    const skins = getShipSkins(shipIdx);
+    const cur = SaveManager.getSkin(shipIdx);
+    const key = shipSkinKey(shipIdx, cur);
+    if (this.skinPreview) this.skinPreview.setTexture(this.textures.exists(key) ? key : 'player');
+    if (this.skinShipLabel) this.skinShipLabel.setText(`${ship ? ship.name : '战机'} · 当前：${(skins[cur] && skins[cur].name) || ''}`);
+    if (this.skinCoinText) this.skinCoinText.setText(`金币 ${save.coins}`);
+    (this.skinRows || []).forEach((row, i) => {
+      const def = skins[i];
+      if (!def) {
+        row.card.setVisible(false); row.nameText.setVisible(false); row.statusText.setVisible(false);
+        row.btn.container.setVisible(false); row.skinId = null;
+        return;
+      }
+      row.card.setVisible(true); row.nameText.setVisible(true); row.statusText.setVisible(true); row.btn.container.setVisible(true);
+      row.skinId = def.id;
+      row.nameText.setText(def.name);
+      if (def.id === cur) {
+        row.statusText.setText('已装备');
+        row.btn.setLabel('使用中');
+        row.btn.setEnabled(false);
+      } else if (SaveManager.ownsSkin(shipIdx, def.id)) {
+        row.statusText.setText('已拥有');
+        row.btn.setLabel('装备');
+        row.btn.setEnabled(true);
+      } else {
+        row.statusText.setText(`未拥有 · ${SKIN_PRICE} 金`);
+        row.btn.setLabel(save.coins >= SKIN_PRICE ? '购买' : '金币不足');
+        row.btn.setEnabled(save.coins >= SKIN_PRICE);
+      }
+    });
+  }
+
+  /** 皮肤操作：已拥有→切换装备；未拥有→金币购买（成功后自动装备） */
+  actSkin(skinId) {
+    const save = SaveManager.load();
+    const shipIdx = (save.selectedShip != null) ? save.selectedShip : 0;
+    if (SaveManager.ownsSkin(shipIdx, skinId)) {
+      SaveManager.equipSkin(shipIdx, skinId);
+      this.flashToast('已切换皮肤');
+    } else if (SaveManager.buySkin(shipIdx, skinId)) {
+      this.flashToast('购买成功，已切换');
+    } else {
+      this.flashToast('金币不足');
+    }
+    this.refreshSkinsPanel();
+    this.refresh();
   }
 
   /** 顶部轻提示（与 MenuScene.flashToast 同款，不阻塞交互） */

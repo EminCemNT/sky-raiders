@@ -1,4 +1,4 @@
-import { SAVE_KEY, DAILY_QUEST_POOL, DIFFICULTIES, PERFORMANCE, NEWBIE_PLAN, UPGRADE_TREE, MODULES, MODULE_SLOTS, MODULE_SHOP } from '../config/GameConfig.js';
+import { SAVE_KEY, DAILY_QUEST_POOL, DIFFICULTIES, PERFORMANCE, NEWBIE_PLAN, UPGRADE_TREE, MODULES, MODULE_SLOTS, MODULE_SHOP, SKIN_PRICE } from '../config/GameConfig.js';
 
 /**
  * 存档管理（localStorage）
@@ -44,6 +44,10 @@ const DEFAULT_SAVE = {
   // 只新增字段、不改旧字段：既有 upgrades 升级逻辑完全保留，模块是并行系统。
   modules: { weapon: null, armor: null, engine: null },
   moduleInv: [],
+  // P2 体验细节·皮肤装饰（只新增字段，不改旧字段）：
+  //   skins={ [shipId]: 当前皮肤索引 }；ownedSkins=已购买皮肤数组（"shipId:skinId"，第 0 款默认自带不进数组）
+  skins: {},
+  ownedSkins: [],
 };
 
 let cache = null;
@@ -70,6 +74,8 @@ function freshSave() {
     newbiePlan: { day: 1, claimed: {}, progress: {} },
     modules: { weapon: null, armor: null, engine: null },
     moduleInv: [],
+    skins: {},
+    ownedSkins: [],
   };
 }
 
@@ -117,6 +123,9 @@ export const SaveManager = {
         // P0 机库模块养成：三槽深合并（老存档缺失兜底 null）+ 库存数组兜底 []；模块都是 {key,slot,quality} 引用式数据，无需更深拷贝
         modules: { weapon: null, armor: null, engine: null, ...((parsed.modules) || {}) },
         moduleInv: Array.isArray(parsed.moduleInv) ? parsed.moduleInv : [],
+        // P2 体验细节·皮肤装饰：只新增字段，老存档缺失兜底默认
+        skins: { ...((parsed.skins) || {}) },
+        ownedSkins: Array.isArray(parsed.ownedSkins) ? parsed.ownedSkins : [],
       };
       // 勋章计数是派生字段：每次 load 从 levelMedals 重算，老存档/脏数据自动自愈
       cache.medalCount = Object.values(cache.levelMedals || {})
@@ -517,5 +526,44 @@ export const SaveManager = {
   reset() {
     cache = freshSave();
     this.save();
+  },
+
+  // ---- P2 体验细节·皮肤装饰（只新增字段与方法，不改旧字段）----
+  /** 当前战机皮肤索引（无记录默认 0） */
+  getSkin(shipId) {
+    const s = this.load();
+    const idx = s.skins ? s.skins[shipId] : undefined;
+    return (idx != null) ? idx : 0;
+  },
+
+  /** 是否已拥有某皮肤（第 0 款默认自带；其余查 ownedSkins 数组） */
+  ownsSkin(shipId, skinId) {
+    const id = Number(skinId) || 0;
+    if (id === 0) return true;
+    return (this.load().ownedSkins || []).includes(`${Number(shipId)}:${id}`);
+  },
+
+  /** 切换皮肤（仅限已拥有；未拥有返回 false，不发金币） */
+  equipSkin(shipId, skinId) {
+    const s = this.load();
+    const id = Number(skinId) || 0;
+    if (!this.ownsSkin(shipId, id)) return false;
+    if (!s.skins) s.skins = {};
+    s.skins[shipId] = id;
+    this.save();
+    return true;
+  },
+
+  /** 金币购买皮肤：每款 800（SKIN_PRICE）。成功返回 true，金币不足/已拥有返回 false */
+  buySkin(shipId, skinId) {
+    const s = this.load();
+    const id = Number(skinId) || 0;
+    if (id === 0 || this.ownsSkin(shipId, id)) return false;
+    if (s.coins < SKIN_PRICE) return false;
+    if (!Array.isArray(s.ownedSkins)) s.ownedSkins = [];
+    s.coins = Math.max(0, s.coins - SKIN_PRICE);
+    s.ownedSkins.push(`${Number(shipId)}:${id}`);
+    this.save();
+    return true;
   },
 };
