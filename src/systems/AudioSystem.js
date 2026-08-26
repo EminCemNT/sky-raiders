@@ -17,14 +17,40 @@ import { SaveManager } from '../utils/SaveManager.js';
  *   - 射击音效在 Player.fire 直接调用（太频繁，内部节流）
  *   - 其余通过 bindGameEvents() 监听 EventBus 自动播放（GameScene.create 调用一次）
  */
+
+// ── P0-1 全链路动态压缩：参数集中一处，便于试听微调 ──
+// master → compressor → compGain(makeup) → destination。阈值 -18dB / ratio 6 收紧峰值，
+// makeupGain 1.25（≈ +2dB）补偿压缩带来的响度损失，听感更"贴"不炸耳。
+const COMPRESSOR = {
+  threshold: -18,
+  knee: 20,
+  ratio: 6,
+  attack: 0.003,
+  release: 0.25,
+  makeupGain: 1.25,
+};
+
+// ── P0-2 爆炸三阶段分级参数表（small/mid/boss）──
+//   ① 瞬态爆裂：highpass 噪声，burstDur 时长 / burstCut 高通截止，快衰减
+//   ② 低频轰鸣：bodyFreq sine 指数衰减，freq 滑落 ~0.6x；subFreq 非空时追加更低 sub 正弦
+//   ③ 回声尾音：tailFreq（≈bodyFreq*2）sine，低音量，tailDur 时长
+export const EXPLOSION_TIERS = {
+  small: { burstDur: 0.05, burstCut: 2400, bodyFreq: 50, bodyDur: 0.22, bodyVol: 0.30, subFreq: null, tailFreq: 92, tailDur: 0.16, tailVol: 0.10 },
+  mid:   { burstDur: 0.07, burstCut: 1800, bodyFreq: 45, bodyDur: 0.30, bodyVol: 0.38, subFreq: 30,  tailFreq: 84, tailDur: 0.22, tailVol: 0.14 },
+  boss:  { burstDur: 0.11, burstCut: 1400, bodyFreq: 40, bodyDur: 0.50, bodyVol: 0.45, subFreq: 27,  tailFreq: 76, tailDur: 0.34, tailVol: 0.18 },
+};
+
 class AudioSystem {
   constructor() {
     this.ctx = null;
     this.master = null;
+    this.compressor = null;   // P0-1 主输出链动态压缩节点
+    this.compGain = null;     // P0-1 压缩后 makeup 增益（+2dB 补偿）
     this.sfxGain = null;
     this.bgmGain = null;
     this.enabled = true;
     this._last = {};        // 各音效最小间隔节流
+    this._pitchStep = {};   // P1-4 音高循环：各射击音效的轮换步进
     this._bgmTimer = null;
     this._bgmBass = null;
     this._bgmStep = 0;
@@ -41,7 +67,19 @@ class AudioSystem {
     const a = { ...AUDIO, ...saved };
     this.master = this.ctx.createGain();
     this.master.gain.value = a.master;
-    this.master.connect(this.ctx.destination);
+    // P0-1 全链路动态压缩：master → compressor → compGain(makeup) → destination。
+    // 收敛多路音效叠加时的峰值，makeupGain 补偿响度；参数集中在顶部 COMPRESSOR 常量。
+    this.compressor = this.ctx.createDynamicsCompressor();
+    this.compressor.threshold.value = COMPRESSOR.threshold;
+    this.compressor.knee.value = COMPRESSOR.knee;
+    this.compressor.ratio.value = COMPRESSOR.ratio;
+    this.compressor.attack.value = COMPRESSOR.attack;
+    this.compressor.release.value = COMPRESSOR.release;
+    this.compGain = this.ctx.createGain();
+    this.compGain.gain.value = COMPRESSOR.makeupGain;
+    this.master.connect(this.compressor);
+    this.compressor.connect(this.compGain);
+    this.compGain.connect(this.ctx.destination);
     this.sfxGain = this.ctx.createGain();
     this.sfxGain.gain.value = a.sfx;
     this.sfxGain.connect(this.master);
@@ -100,11 +138,16 @@ class AudioSystem {
     return true;
   }
 
-  _tone(freq, type, dur, vol, slideTo, randomize = true) {
+  _tone(freq, type, dur, vol, slideTo, randomize = true, pan = 0) {
+    this._toneAt(freq, type, dur, vol, slideTo, 0, randomize, pan);
+  }
+
+  /** 与 _tone 同构，但可在 offset(秒) 后起播（P1-6 心搏双搏用）。pan 默认 0 不建 Panner，BGM 零影响 */
+  _toneAt(freq, type, dur, vol, slideTo, offset = 0, randomize = true, pan = 0) {
     if (!this.enabled) return;
     this._ensure();
     if (!this.ctx) return;
-    const t = this.ctx.currentTime;
+    const t = this.ctx.currentTime + (offset || 0);
     // 全局音高随机化 ±7%：规避机械重复疲劳感（业界 juice 惯例）；BGM 传 false 保持音准
     const f = randomize ? freq * (1 + (Math.random() * 2 - 1) * 0.07) : freq;
     const osc = this.ctx.createOscillator();
@@ -116,12 +159,19 @@ class AudioSystem {
     g.gain.exponentialRampToValueAtTime(vol, t + 0.005);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     osc.connect(g);
-    g.connect(this.sfxGain);
+    // P1-5 立体声声像：pan!=0 且支持 StereoPanner 时插入；否则直连（零行为变化）
+    const panNode = this._panNode(pan);
+    if (panNode) {
+      g.connect(panNode);
+      panNode.connect(this.sfxGain);
+    } else {
+      g.connect(this.sfxGain);
+    }
     osc.start(t);
     osc.stop(t + dur + 0.02);
   }
 
-  _noiseBurst(dur, vol, cutoff) {
+  _noiseBurst(dur, vol, cutoff, filterType = 'lowpass', pan = 0) {
     if (!this.enabled) return;
     this._ensure();
     if (!this.ctx) return;
@@ -133,16 +183,95 @@ class AudioSystem {
     const src = this.ctx.createBufferSource();
     src.buffer = buf;
     const lp = this.ctx.createBiquadFilter();
-    lp.type = 'lowpass';
+    lp.type = filterType || 'lowpass';
     lp.frequency.value = cutoff || 1200;
+    if (lp.type === 'bandpass') lp.Q.value = 1.5;   // P0-3 双音层噪声：bandpass Q≈1.5
     const g = this.ctx.createGain();
     g.gain.setValueAtTime(vol, t);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     src.connect(lp);
     lp.connect(g);
-    g.connect(this.sfxGain);
+    // P1-5 立体声声像：pan!=0 且支持 StereoPanner 时插入；否则直连（默认值=现状，零破坏）
+    const panNode = this._panNode(pan);
+    if (panNode) {
+      g.connect(panNode);
+      panNode.connect(this.sfxGain);
+    } else {
+      g.connect(this.sfxGain);
+    }
     src.start(t);
     src.stop(t + dur);
+  }
+
+  /** P1-5 立体声像节点：StereoPanner 不可用时返回 null（调用方降级直连） */
+  _panNode(value) {
+    if (!this.ctx || typeof this.ctx.createStereoPanner !== 'function') return null;
+    const p = this.ctx.createStereoPanner();
+    p.pan.value = Math.max(-1, Math.min(1, value || 0));
+    return p;
+  }
+
+  /** P1-5 简易混响尾：单样本脉冲 → 反馈延迟环，wet 随时间淡出形成"回声尾" */
+  _echoTail(dur, vol, interval = 0.09, feedback = 0.3) {
+    if (!this.enabled) return;
+    this._ensure();
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    const delay = this.ctx.createDelay(1);
+    delay.delayTime.value = interval;
+    const fb = this.ctx.createGain();
+    fb.gain.value = feedback;
+    const wet = this.ctx.createGain();
+    wet.gain.setValueAtTime(vol, t);
+    wet.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    const src = this.ctx.createBufferSource();
+    const buf = this.ctx.createBuffer(1, 1, this.ctx.sampleRate);
+    buf.getChannelData(0)[0] = 1;
+    src.buffer = buf;
+    src.connect(delay);
+    delay.connect(fb);
+    fb.connect(delay);
+    delay.connect(wet);
+    wet.connect(this.sfxGain);
+    src.start(t);
+    src.stop(t + 0.02);
+  }
+
+  /** P1-4 射击音高循环：按 key 在 semis 半音表内轮换，规避机械重复感 */
+  _pitchCycle(key, base, semis = [0, -2, 2]) {
+    const arr = (semis && semis.length) ? semis : [0, -2, 2];
+    const idx = (this._pitchStep[key] = ((this._pitchStep[key] || -1) + 1) % arr.length);
+    return base * Math.pow(2, arr[idx] / 12);
+  }
+
+  /** P0-3 命中双音层：金属层(square 高音随机) + 噪声层(白噪声 bandpass) */
+  _dualHit(metalFreq, metalDur, noiseVol, noiseFilter = 'bandpass') {
+    if (!this.enabled) return;
+    this._ensure();
+    if (!this.ctx) return;
+    // 金属层：square 短促，vol 0.22~0.32，音高随机 ±7%（_tone 内部处理）
+    this._tone(metalFreq, 'square', metalDur, 0.22 + Math.random() * 0.10, metalFreq * 0.55);
+    // 噪声层：白噪声 0.025~0.05s，bandpass（Q≈1.5 中心 ~2500Hz）
+    this._noiseBurst(0.025 + Math.random() * 0.025, noiseVol, 2500, noiseFilter);
+  }
+
+  /** P0-2 爆炸三阶段分级：①瞬态爆裂 ②低频轰鸣(+sub) ③回声尾音；外加 P1-5 混响尾 */
+  _explosion(tier) {
+    if (!this.enabled) return;
+    this._ensure();
+    if (!this.ctx) return;
+    const t = EXPLOSION_TIERS[tier] || EXPLOSION_TIERS.small;
+    // 每次爆炸轻微随机声像偏置（P1-5 立体声宽度）
+    const pan = (Math.random() * 2 - 1) * 0.12;
+    // ① 瞬态爆裂：highpass 噪声，vol 0.5~0.6 快衰减
+    this._noiseBurst(t.burstDur, 0.55, t.burstCut, 'highpass');
+    // ② 低频轰鸣：40-60Hz sine 指数衰减，freq 滑落 ~0.6x；mid/boss 追加 25-30Hz sub 正弦
+    this._tone(t.bodyFreq, 'sine', t.bodyDur, t.bodyVol, t.bodyFreq * 0.6, true, pan);
+    if (t.subFreq) this._tone(t.subFreq, 'sine', t.bodyDur, t.bodyVol * 0.7, t.subFreq * 0.7, true, -pan);
+    // ③ 回声尾音：比 body 高 ~2x 的 sine（76-92Hz）低音量
+    this._tone(t.tailFreq, 'sine', t.tailDur, t.tailVol, t.tailFreq * 0.85, true, pan * 0.6);
+    // P1-5 简易混响尾：爆炸这类大事件追加反馈延迟尾
+    this._echoTail(Math.min(0.5, t.bodyDur + t.tailDur), 0.10, 0.09, 0.3);
   }
 
   /** 播放一个音效 */
@@ -150,27 +279,67 @@ class AudioSystem {
     if (!this.enabled) return;
     switch (name) {
       case 'shoot':
+        // 旧键保留（历史兼容）：Player.fire 已分流到 shootPulse / shootLaser
         if (!this._throttle('shoot', 55)) return;
         this._tone(880, 'square', 0.06, 0.10, 440);
         break;
+      case 'shootPulse':
+        // P1-4 主炮：square 880 系 + 音高循环，清脆不拖泥带水（不加混响尾）
+        if (!this._throttle('shoot', 55)) return;
+        this._tone(this._pitchCycle('shootPulse', 880), 'square', 0.06, 0.10, 0, false);
+        break;
+      case 'shootLaser':
+        // P1-4 激光：sawtooth 240→480 扫掠（持续光束的"充能"质感），节流 80ms
+        if (!this._throttle('shootLaser', 80)) return;
+        this._tone(240, 'sawtooth', 0.12, 0.10, 480, false);
+        break;
+      case 'shootWingman':
+        // P1-4 僚机：triangle 620 系低音量，节流 60ms（多僚机齐射不噪）
+        if (!this._throttle('shootWingman', 60)) return;
+        this._tone(this._pitchCycle('shootWingman', 620), 'triangle', 0.07, 0.06, 0, false);
+        break;
       case 'explosion':
+        // PLAYER_DIED 保留原爆炸（命数复活即播，三阶段留给敌机/Boss 分级）
         if (!this._throttle('explosion', 40)) return;
         this._noiseBurst(0.25, 0.45, 900);
         this._tone(120, 'sine', 0.25, 0.28, 50);
+        break;
+      case 'explosionSmall':
+        if (!this._throttle('explosion', 40)) return;
+        this._explosion('small');
+        break;
+      case 'explosionMid':
+        if (!this._throttle('explosion', 60)) return;
+        this._explosion('mid');
+        break;
+      case 'explosionBoss':
+        if (!this._throttle('explosion', 100)) return;
+        this._explosion('boss');
         break;
       case 'hit':
         if (!this._throttle('hit', 80)) return;
         this._tone(160, 'sawtooth', 0.18, 0.32, 60);
         break;
       case 'enemyHit': {
-        // 打中敌人的轻脆反馈：高频短促 + 音高随机化（业界：避免机械重复疲劳感）
+        // P0-3 升级双音层：金属层 + 噪声层（噪声层 vol 0.05→0.10~0.14，bandpass Q≈1.5）
         // 35ms 节流，避免高射速下成片命中变成嘈杂噪声
         if (!this._throttle('enemyHit', 35)) return;
-        const base = 1300 + Math.random() * 500;   // 1300~1800Hz
-        this._tone(base, 'square', 0.035, 0.07, base * 0.55);
-        this._noiseBurst(0.03, 0.05, 3200);         // 轻微金属/冲击质感，与音调分层
+        const base = 1300 + Math.random() * 500;   // 1300~1800Hz 金属层
+        this._dualHit(base, 0.035, 0.10 + Math.random() * 0.04, 'bandpass');
         break;
       }
+      case 'bossHit':
+        // P0-3 Boss 命中：金属层更低（700-1400Hz）更厚重，噪声层略强；P1-5 加混响尾
+        if (!this._throttle('bossHit', 60)) return;
+        this._dualHit(700 + Math.random() * 700, 0.05, 0.14, 'bandpass');
+        this._echoTail(0.25, 0.07, 0.08, 0.3);
+        break;
+      case 'heartbeat':
+        // P1-6 濒死心搏：双低频 thump（60Hz + 50Hz，间隔 0.12s），900ms 节流
+        if (!this._throttle('heartbeat', 900)) return;
+        this._toneAt(60, 'sine', 0.09, 0.20, 40, 0, false);
+        this._toneAt(50, 'sine', 0.07, 0.20, 34, 0.12, false);
+        break;
       case 'pickup':
         this._tone(660, 'triangle', 0.08, 0.18, 990);
         break;
@@ -181,10 +350,12 @@ class AudioSystem {
       case 'bomb':
         this._noiseBurst(0.5, 0.55, 600);
         this._tone(80, 'sine', 0.5, 0.35, 30);
+        this._echoTail(0.7, 0.12, 0.10, 0.35);      // P1-5 混响尾
         break;
       case 'super':
         this._tone(330, 'sawtooth', 0.5, 0.28, 1320);
         this._noiseBurst(0.4, 0.35, 2000);
+        this._echoTail(0.6, 0.10, 0.09, 0.3);       // P1-5 混响尾
         break;
       case 'ui':
         this._tone(520, 'square', 0.05, 0.16, 700);
@@ -215,6 +386,10 @@ class AudioSystem {
     add(EVENTS.BOSS_SPAWNED, () => this.startBgm('boss'));   // P1-9 Boss 动态音乐：进 Boss 切激烈段
     add(EVENTS.BOSS_DEFEATED, () => this.startBgm('stage')); // 退 Boss 切回普通段
     add(EVENTS.PLAYER_DIED, () => this.sfx('explosion'));
+    // P1-6 濒死心搏：hp>0 且 ≤30% 时低频双搏（900ms 节流在 sfx 内，GameScene 零改动）
+    add(EVENTS.HP_CHANGED, (hp, maxHp) => {
+      if (hp > 0 && maxHp > 0 && hp / maxHp <= 0.30) this.sfx('heartbeat');
+    });
   }
 
   unbindGameEvents() {

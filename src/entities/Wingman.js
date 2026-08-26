@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT, WINGMAN, EVENTS } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
+import { audio } from '../systems/AudioSystem.js';
 
 /**
  * 僚机实体（僚机 AI 进阶 第一/二版）
@@ -204,6 +205,7 @@ export default class Wingman extends Phaser.Physics.Arcade.Sprite {
   _fire(target, cfg) {
     const scene = this.scene;
     if (!scene || !scene.spawnWingmanBullet) return;
+    audio.sfx('shootWingman');   // P1-4 僚机射击音色（内部 60ms 节流，多僚机齐射不噪）
     const base = target
       ? Phaser.Math.Angle.Between(this.x, this.y, target.x, target.y)
       : -Math.PI / 2;

@@ -162,11 +162,11 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     // 激光（B4）：持续光束，fire 仅作脉冲触发声效，伤害由 GameScene overlap 持续结算
     if (this.weapon === 'laser') {
       this._ensureLaserBeam();
-      audio.sfx('shoot');
+      audio.sfx('shootLaser');   // P1-4 射击分流：激光束 → 扫掠音色
       return;
     }
 
-    audio.sfx('shoot');
+    audio.sfx('shootPulse');     // P1-4 射击分流：主炮（pulse/missile/bomb 统一走脉冲音色）
     const patterns = this.getFirePattern(this.firepower);
     for (const p of patterns) this._emitBullet(p);
 

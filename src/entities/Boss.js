@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { GAME_WIDTH, BULLET, EVENTS, COLORS } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
+import { audio } from '../systems/AudioSystem.js';
 import * as VFX from '../systems/VFX.js';
 
 // reduced-motion 偏好：三阶段视觉脉动降级为静态
@@ -288,6 +289,8 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
       this.die();
       return true;
     }
+    // P0-3 非致死命中：Boss 专属双音层命中音（致死走 die() 的 explosionBoss，避免双重音）
+    audio.sfx('bossHit');
     return false;
   }
 
@@ -303,6 +306,8 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
 
   die() {
     EventBus.emit(EVENTS.BOSS_DEFEATED);
+    // P0-2 爆炸三阶段分级：Boss 用最高档，与 BOSS_DEFEATED 同帧（定格同步由 GameScene 现有逻辑天然成立）
+    audio.sfx('explosionBoss');
     VFX.bossDeathExplosion(this.scene, this, this.color);
     // P3 弹性缩放死亡演出：1→1.25 Back.easeOut(90ms)→0 Back.easeIn(260ms)，fxG 同步 yoyo
     if (!PREFERS_REDUCED) {

@@ -253,7 +253,8 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
   die() {
     if (this._dying) return;
     this._dying = true;
-    audio.sfx('explosion');
+    // P0-2 爆炸三阶段分级：mid 用中档、small/diver 用小型（Boss 用 explosionBoss 在 Boss.die）
+    audio.sfx(this.typeKey === 'mid' ? 'explosionMid' : 'explosionSmall');
     EventBus.emit(EVENTS.SCORE_CHANGED, this.def.score);
     // 掉金币
     if (Math.random() < this.def.coin && this.scene.spawnCoin) {
