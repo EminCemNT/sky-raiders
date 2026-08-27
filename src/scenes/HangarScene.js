@@ -4,6 +4,7 @@ import {
   LEVELS, PLAYER, calcPower, recommendLevel, SKIN_PRICE, getShipSkins, shipSkinKey,
 } from '../config/GameConfig.js';
 import { SaveManager } from '../utils/SaveManager.js';
+import { t } from '../config/Locale.js';
 import { createStarfield, HANGAR_BG_THEME } from '../systems/Starfield.js';
 import { NeonButton, THEME, drawGlassPanel } from '../utils/UIWidgets.js';
 
@@ -33,14 +34,14 @@ export default class HangarScene extends Phaser.Scene {
     this.starfield = createStarfield(this, { theme: HANGAR_BG_THEME });
 
     // 标题（辉光副本层 + 呼吸脉动，与 MenuScene Phase A 统一）
-    this.titleGlow = this.add.text(cx, 92, '机  库', {
+    this.titleGlow = this.add.text(cx, 92, t('hangarTitle'), {
       fontFamily: THEME.fontFamily, fontSize: '54px', fontStyle: '800', color: THEME.titleColor,
     }).setOrigin(0.5).setShadow(0, 0, THEME.titleColor, 30, true, true).setAlpha(0.3).setDepth(1);
-    this.add.text(cx, 92, '机  库', {
+    this.add.text(cx, 92, t('hangarTitle'), {
       fontFamily: THEME.fontFamily, fontSize: '50px', fontStyle: '800', color: THEME.titleBright,
     }).setOrigin(0.5).setShadow(0, 0, THEME.titleShadow, 22, true, true).setDepth(2);
 
-    this.add.text(cx, 142, 'HANGAR', {
+    this.add.text(cx, 142, t('hangarSub'), {
       fontFamily: THEME.fontFamily, fontSize: '16px', color: THEME.subColor,
     }).setOrigin(0.5).setAlpha(0.8);
 
@@ -50,7 +51,7 @@ export default class HangarScene extends Phaser.Scene {
     }).setOrigin(0.5).setShadow(0, 0, '#000000', 6, true, true);
 
     // P2 体验细节·皮肤装饰：皮肤选择入口（右上角，打开独立 overlay，不影响机库布局）
-    this.skinEntryBtn = new NeonButton(this, GAME_WIDTH - 66, 142, '皮肤', {
+    this.skinEntryBtn = new NeonButton(this, GAME_WIDTH - 66, 142, t('hangarSkin'), {
       w: 100, h: 44, fontSize: 16, stroke: 0xffd54a, glow: true,
       onDown: () => this.openSkins(),
     }).container;
@@ -81,12 +82,12 @@ export default class HangarScene extends Phaser.Scene {
     });
 
     // 返回菜单按钮
-    this.makeButton(cx, GAME_HEIGHT - 70, '返回菜单', () => {
+    this.makeButton(cx, GAME_HEIGHT - 70, t('backMenu'), () => {
       this.scene.start(SCENES.MENU);
     });
 
     // P0 机库模块养成：模块面板入口（右下角，与返回菜单同行不重叠）
-    this.moduleEntryBtn = new NeonButton(this, GAME_WIDTH - 82, GAME_HEIGHT - 70, '模块', {
+    this.moduleEntryBtn = new NeonButton(this, GAME_WIDTH - 82, GAME_HEIGHT - 70, t('hangarModule'), {
       w: 110, h: 56, fontSize: 18, stroke: 0xffd54a, glow: true,
       onDown: () => this.openModules(),
     }).container;
@@ -117,8 +118,8 @@ export default class HangarScene extends Phaser.Scene {
     const cardGlow = this.add.graphics().setAlpha(0.9);
     cardGlow.lineStyle(6, COLORS.accent, 0.16).strokeRoundedRect(cx - 240, y - 42, 480, 84, 10);
 
-    // 名称（部件中文名）
-    const nameText = this.add.text(cx - 222, y - 20, def.name, {
+    // 名称（部件名，i18n key 化）
+    const nameText = this.add.text(cx - 222, y - 20, t(`up_${key}`), {
       fontFamily: THEME.fontFamily, fontSize: '24px', fontStyle: '700', color: THEME.textPrimary,
     }).setOrigin(0, 0.5);
 
@@ -153,7 +154,7 @@ export default class HangarScene extends Phaser.Scene {
       .setAlpha(0.5).setBlendMode(Phaser.BlendModes.ADD).setDepth(1);
     this.shipPreview = this.add.image(px, y, 'player').setScale(1.1).setDepth(2);
 
-    this.add.text(cx - chipW / 2 + 100, y - 16, '战机', {
+    this.add.text(cx - chipW / 2 + 100, y - 16, t('hangarShip'), {
       fontFamily: THEME.fontFamily, fontSize: '15px', color: THEME.textSection,
     }).setOrigin(0, 0.5);
     this.shipLabel = this.add.text(cx - chipW / 2 + 100, y + 6, '', {
@@ -199,9 +200,9 @@ export default class HangarScene extends Phaser.Scene {
     const save = SaveManager.load();
     const idx = (save.selectedShip != null) ? save.selectedShip : 0;
     const s = W[idx] || W[0];
-    const elTxt = s.element ? (ELEMENTS[s.element] ? ELEMENTS[s.element].name : s.element) : '无';
-    const wTxt = WEAPONS[s.weapon] ? WEAPONS[s.weapon].name : s.weapon;
-    this.shipLabel.setText(`${s.name} · ${wTxt} · 元素:${elTxt}`);
+    const elTxt = s.element ? (ELEMENTS[s.element] ? t(`el_${s.element}`) : s.element) : t('el_none');
+    const wTxt = WEAPONS[s.weapon] ? t(`w_${s.weapon}`) : s.weapon;
+    this.shipLabel.setText(t('shipLabel', { name: t(`ship_${s.id}`), weapon: wTxt, element: elTxt }));
     // 同步机型皮肤预览：优先皮肤纹理（player_skin_{shipId}_{skinId}），缺失回退 tint（苍鹰青/赤焰橙/寒霜冰蓝）
     const skinId = SaveManager.getSkin(idx);
     const skinKey = shipSkinKey(idx, skinId);
@@ -220,7 +221,7 @@ export default class HangarScene extends Phaser.Scene {
   buildStartWeaponSelector(cx, y) {
     const chipW = 460, chipH = 44;
     this.add.rectangle(cx, y, chipW, chipH, THEME.chipBg, 0.9).setStrokeStyle(2, THEME.chipStroke);
-    this.add.text(cx - chipW / 2 + 14, y, '开局武器', {
+    this.add.text(cx - chipW / 2 + 14, y, t('hangarWeapon'), {
       fontFamily: THEME.fontFamily, fontSize: '16px', color: THEME.textSection,
     }).setOrigin(0, 0.5);
     this.weaponLabel = this.add.text(cx, y, '', {
@@ -256,7 +257,7 @@ export default class HangarScene extends Phaser.Scene {
   refreshWeapon() {
     const save = SaveManager.load();
     const w = save.startWeapon;
-    this.weaponLabel.setText(w && WEAPONS[w] ? WEAPONS[w].name : '默认(战机)');
+    this.weaponLabel.setText(w && WEAPONS[w] ? t(`w_${w}`) : t('hangarDefaultWeapon'));
   }
 
   /** 升级花费：baseCost * costMul^当前等级（取整） */
@@ -269,7 +270,7 @@ export default class HangarScene extends Phaser.Scene {
   refresh() {
     const save = SaveManager.load();
     const up = save.upgrades || {};
-    this.coinText.setText(`金币  ${save.coins}`);
+    this.coinText.setText(t('hangarCoins', { coins: save.coins }));
 
     // P2 体验细节·数值反馈：总战力 + 推荐关卡（纯展示）
     if (this.powerText) {
@@ -277,14 +278,14 @@ export default class HangarScene extends Phaser.Scene {
       const ship = (SHIPS && SHIPS[shipIdx]) ? SHIPS[shipIdx] : (SHIPS ? SHIPS[0] : null);
       const power = calcPower(up, save.modules, ship);
       const rec = recommendLevel(power);
-      const lvlName = (LEVELS && LEVELS[rec - 1]) ? LEVELS[rec - 1].name : `第${rec}关`;
-      this.powerText.setText(`总战力  ${power}   ·   推荐关卡  ${lvlName}`);
+      const lvlName = t(`levelName_${rec}`);
+      this.powerText.setText(t('hangarPower', { power, level: lvlName }));
     }
 
     for (const row of this.rows) {
       const lvl = up[row.key] || 0;
       const maxed = lvl >= row.max;
-      row.levelText.setText(`等级  ${lvl} / ${row.max}`);
+      row.levelText.setText(t('hangarLevel', { cur: lvl, max: row.max }));
 
       if (maxed) {
         row.btn.setLabel('MAX');
@@ -338,21 +339,23 @@ export default class HangarScene extends Phaser.Scene {
       case 'firepower': {
         const cur = Math.max(70, PLAYER.FIRE_INTERVAL - lvl * 8);
         const aft = Math.max(70, PLAYER.FIRE_INTERVAL - next * 8);
-        return `射速间隔 ${cur}ms → ${aft}ms`;
+        return t('cmp_firepower', { cur, aft });
       }
-      case 'hull': return `生命上限 +${lvl * 20} → +${next * 20}`;
-      case 'shield': return `护盾池 +${lvl * 15} → +${next * 15}`;
-      case 'magnet': return `磁力半径 ${90 + lvl * 45}px → ${90 + next * 45}px`;
-      case 'wingman': return `僚机 ${lvl} 架 → ${next} 架`;
-      case 'wingmanFirepower': return `僚机火力 档位 ${lvl} → ${next}`;
-      default: return `Lv${lvl} → Lv${next}`;
+      case 'hull': return t('cmp_hull', { cur: lvl * 20, next: next * 20 });
+      case 'shield': return t('cmp_shield', { cur: lvl * 15, next: next * 15 });
+      case 'magnet': return t('cmp_magnet', { cur: 90 + lvl * 45, next: 90 + next * 45 });
+      case 'wingman': return t('cmp_wingman', { cur: lvl, next });
+      case 'wingmanFirepower': return t('cmp_wingmanFirepower', { cur: lvl, next });
+      default: return t('cmp_default', { cur: lvl, next });
     }
   }
 
   /** P2 体验细节·数值反馈：升级对比轻提示（浮动面板，不阻塞交互） */
   flashCompare(cmp) {
     if (!cmp) return;
-    this.lastCompareText = `${cmp.name} Lv${cmp.from} → Lv${cmp.to} · ${cmp.text} · 花费 ${cmp.cost} 金`;
+    this.lastCompareText = t('hangarCompareToast', {
+      name: t(`up_${cmp.key}`), from: cmp.from, to: cmp.to, text: cmp.text, cost: cmp.cost,
+    });
     const cx = GAME_WIDTH / 2;
     const box = this.add.container(cx, GAME_HEIGHT / 2 - 60).setDepth(450);
     const g = this.add.graphics();
@@ -395,10 +398,10 @@ export default class HangarScene extends Phaser.Scene {
     ov.add(g);
 
     // 标题（辉光副本层 + 本体）
-    ov.add(this.add.text(cx, 100, '模块养成', {
+    ov.add(this.add.text(cx, 100, t('moduleTitle'), {
       fontFamily: THEME.fontFamily, fontSize: '30px', fontStyle: '800', color: THEME.titleColor,
     }).setOrigin(0.5).setShadow(0, 0, THEME.titleColor, 24, true, true).setAlpha(0.3));
-    ov.add(this.add.text(cx, 100, '模块养成', {
+    ov.add(this.add.text(cx, 100, t('moduleTitle'), {
       fontFamily: THEME.fontFamily, fontSize: '30px', fontStyle: '800', color: THEME.titleBright,
     }).setOrigin(0.5).setShadow(0, 0, THEME.titleShadow, 14, true, true));
 
@@ -419,7 +422,7 @@ export default class HangarScene extends Phaser.Scene {
     }
 
     // 合成区（2 个同名同品质 → 高一级）
-    ov.add(this.add.text(cx - 220, 612, '合成（2 个同名普通 → 稀有）', {
+    ov.add(this.add.text(cx - 220, 612, t('moduleCraftLabel'), {
       fontFamily: THEME.fontFamily, fontSize: '16px', fontStyle: '700', color: THEME.textSection,
     }).setOrigin(0, 0.5));
     this.moduleCraftBtns = [];
@@ -428,7 +431,7 @@ export default class HangarScene extends Phaser.Scene {
     });
 
     // 商店区
-    ov.add(this.add.text(cx - 220, 716, '模块商店', {
+    ov.add(this.add.text(cx - 220, 716, t('moduleShopLabel'), {
       fontFamily: THEME.fontFamily, fontSize: '16px', fontStyle: '700', color: THEME.textSection,
     }).setOrigin(0, 0.5));
     this.moduleShopBtns = [];
@@ -442,7 +445,7 @@ export default class HangarScene extends Phaser.Scene {
     ov.add(this.modulePassiveText);
 
     // 关闭
-    ov.add(this.makeButton(cx, 884, '关闭', () => this.closeModules()));
+    ov.add(this.makeButton(cx, 884, t('close'), () => this.closeModules()));
 
     this.refreshModulesPanel();
     this.refresh();
@@ -459,13 +462,13 @@ export default class HangarScene extends Phaser.Scene {
   _buildModuleSlotRow(ov, slotDef, y) {
     const cx = GAME_WIDTH / 2;
     const card = this.add.rectangle(cx, y, 444, 56, THEME.chipBg, 0.92).setStrokeStyle(2, THEME.chipStroke);
-    const nameText = this.add.text(cx - 208, y, slotDef.name, {
+    const nameText = this.add.text(cx - 208, y, t(`slot_${slotDef.key}`), {
       fontFamily: THEME.fontFamily, fontSize: '19px', fontStyle: '700', color: THEME.textSection,
     }).setOrigin(0, 0.5);
     const infoText = this.add.text(cx - 150, y, '', {
       fontFamily: THEME.fontFamily, fontSize: '15px', color: THEME.textPrimary,
     }).setOrigin(0, 0.5).setWordWrapWidth(250);
-    const unbtn = new NeonButton(this, cx + 178, y, '卸下', {
+    const unbtn = new NeonButton(this, cx + 178, y, t('unequip'), {
       w: 76, h: 36, fontSize: 14, stroke: COLORS.accent,
       onDown: () => { this.unequipModule(slotDef.key); },
     });
@@ -480,7 +483,7 @@ export default class HangarScene extends Phaser.Scene {
     const txt = this.add.text(cx - 208, y, '', {
       fontFamily: THEME.fontFamily, fontSize: '14px', color: THEME.textPrimary,
     }).setOrigin(0, 0.5);
-    const btn = new NeonButton(this, cx + 178, y, '装备', {
+    const btn = new NeonButton(this, cx + 178, y, t('equip'), {
       w: 66, h: 28, fontSize: 13, stroke: COLORS.accent,
       onDown: () => { if (row.mod) this.equipModule(row.mod.key); },
     });
@@ -520,12 +523,12 @@ export default class HangarScene extends Phaser.Scene {
       if (key && MODULES[key]) {
         const def = MODULES[key];
         const q = MODULE_QUALITY[def.quality] || MODULE_QUALITY.common;
-        row.infoText.setText(`[${q.name}] ${def.name} · ${def.effect}`);
+        row.infoText.setText(`[${t(`q_${q.key}`)}] ${t(`mod_${def.key}`)} · ${t(`mod_${def.key}_effect`)}`);
         row.infoText.setColor(q.key === 'rare' ? '#8fc9ff' : THEME.textPrimary);
-        row.unbtn.setLabel('卸下');
+        row.unbtn.setLabel(t('unequip'));
         row.unbtn.setEnabled(true);
       } else {
-        row.infoText.setText('未装备');
+        row.infoText.setText(t('moduleEmpty'));
         row.infoText.setColor(THEME.textSecondary);
         row.unbtn.setEnabled(false);
       }
@@ -533,7 +536,10 @@ export default class HangarScene extends Phaser.Scene {
 
     // 库存
     const inv = Array.isArray(save.moduleInv) ? save.moduleInv : [];
-    this.moduleInvLabel.setText(`库存  ${inv.length} 个${inv.length > this.moduleInvRows.length ? `（显示前 ${this.moduleInvRows.length} 个）` : ''}`);
+    this.moduleInvLabel.setText(t('moduleInvLabel', {
+      count: inv.length,
+      extra: inv.length > this.moduleInvRows.length ? t('moduleInvMore', { n: this.moduleInvRows.length }) : '',
+    }));
     (this.moduleInvRows || []).forEach((row, i) => {
       const mod = inv[i];
       if (!mod) {
@@ -546,7 +552,7 @@ export default class HangarScene extends Phaser.Scene {
       const def = MODULES[mod.key];
       const q = MODULE_QUALITY[mod.quality] || MODULE_QUALITY.common;
       const slotDef = MODULE_SLOTS.find((s) => s.key === mod.slot) || { name: mod.slot };
-      row.txt.setText(`[${q.name}] ${def ? def.name : mod.key} · ${slotDef.name} · ${def ? def.effect : ''}`);
+      row.txt.setText(`[${t(`q_${q.key}`)}] ${def ? t(`mod_${def.key}`) : mod.key} · ${t(`slot_${mod.slot}`)} · ${def ? t(`mod_${def.key}_effect`) : ''}`);
       row.txt.setColor(q.key === 'rare' ? '#8fc9ff' : THEME.textPrimary);
     });
 
@@ -554,14 +560,14 @@ export default class HangarScene extends Phaser.Scene {
     (this.moduleCraftBtns || []).forEach(({ slot, btn }) => {
       const slotDef = MODULE_SLOTS.find((s) => s.key === slot) || { name: slot };
       const n = SaveManager.countCommonModules(slot);
-      btn.setLabel(`${slotDef.name}合成 ${n}/2`);
+      btn.setLabel(t('moduleCraftBtn', { slot: t(`slot_${slot}`), n }));
       btn.setEnabled(n >= 2);
     });
 
     // 商店按钮
     (this.moduleShopBtns || []).forEach(({ quality, btn }) => {
       const price = MODULE_SHOP[quality];
-      btn.setLabel(`${MODULE_QUALITY[quality].name}模块 ${price}`);
+      btn.setLabel(t('moduleShopBtn', { quality: t(`q_${quality}`), price }));
       btn.setEnabled(save.coins >= price);
     });
 
@@ -569,16 +575,19 @@ export default class HangarScene extends Phaser.Scene {
     const shipIdx = (save.selectedShip != null) ? save.selectedShip : 0;
     const ship = (SHIPS && SHIPS[shipIdx]) ? SHIPS[shipIdx] : (SHIPS ? SHIPS[0] : null);
     if (ship && ship.passive) {
-      this.modulePassiveText.setText(`战机被动 · ${ship.name}：${ship.passive.desc}`);
+      this.modulePassiveText.setText(t('modulePassive', {
+        ship: t(`ship_${ship.id}`),
+        desc: t(`passive_${ship.passive.element}`),
+      }));
     } else {
-      this.modulePassiveText.setText('战机被动：无');
+      this.modulePassiveText.setText(t('modulePassiveNone'));
     }
   }
 
   /** 购买随机模块：按品质定价；成功/失败轻提示 */
   buyModule(quality) {
     const res = SaveManager.buyRandomModule(quality);
-    this.flashToast(res ? `购入 ${MODULES[res.key].name}！` : '金币不足');
+    this.flashToast(res ? t('moduleBought', { name: t(`mod_${res.key}`) }) : t('notEnoughCoins'));
     this.refreshModulesPanel();
     this.refresh();
   }
@@ -586,20 +595,20 @@ export default class HangarScene extends Phaser.Scene {
   /** 装备模块：从库存装入对应槽位 */
   equipModule(key) {
     if (!key) return;
-    if (SaveManager.equipModule(key)) this.flashToast('装备成功');
+    if (SaveManager.equipModule(key)) this.flashToast(t('moduleEquipped'));
     this.refreshModulesPanel();
   }
 
   /** 卸下模块：槽位退回库存 */
   unequipModule(slot) {
-    if (SaveManager.unequipModule(slot)) this.flashToast('已卸下');
+    if (SaveManager.unequipModule(slot)) this.flashToast(t('moduleUnequipped'));
     this.refreshModulesPanel();
   }
 
   /** 合成：2 个同槽普通模块 → 1 个稀有模块 */
   craftModule(slot) {
     const res = SaveManager.craftModule(slot);
-    this.flashToast(res ? `合成成功！${MODULES[res.key].name}` : '需要 2 个同名普通模块');
+    this.flashToast(res ? t('moduleCrafted', { name: t(`mod_${res.key}`) }) : t('moduleCraftFail'));
     this.refreshModulesPanel();
   }
 
@@ -622,7 +631,7 @@ export default class HangarScene extends Phaser.Scene {
     ov.add(g);
 
     // 标题
-    ov.add(this.add.text(cx, 116, '皮肤装饰', {
+    ov.add(this.add.text(cx, 116, t('skinTitle'), {
       fontFamily: THEME.fontFamily, fontSize: '30px', fontStyle: '800', color: THEME.titleBright,
     }).setOrigin(0.5).setShadow(0, 0, THEME.titleShadow, 14, true, true));
 
@@ -642,7 +651,7 @@ export default class HangarScene extends Phaser.Scene {
     this.skinRows = [];
     [280, 360, 440].forEach((y) => this.skinRows.push(this._buildSkinRow(ov, y)));
 
-    ov.add(this.makeButton(cx, 884, '关闭', () => this.closeSkins()));
+    ov.add(this.makeButton(cx, 884, t('close'), () => this.closeSkins()));
 
     this.refreshSkinsPanel();
     this.refresh();
@@ -682,8 +691,11 @@ export default class HangarScene extends Phaser.Scene {
     const cur = SaveManager.getSkin(shipIdx);
     const key = shipSkinKey(shipIdx, cur);
     if (this.skinPreview) this.skinPreview.setTexture(this.textures.exists(key) ? key : 'player');
-    if (this.skinShipLabel) this.skinShipLabel.setText(`${ship ? ship.name : '战机'} · 当前：${(skins[cur] && skins[cur].name) || ''}`);
-    if (this.skinCoinText) this.skinCoinText.setText(`金币 ${save.coins}`);
+    if (this.skinShipLabel) this.skinShipLabel.setText(t('skinShipLabel', {
+      ship: ship ? t(`ship_${ship.id}`) : t('hangarShip'),
+      skin: (skins[cur] && skins[cur].name) ? t(`skin_${shipIdx}_${cur}`) : '',
+    }));
+    if (this.skinCoinText) this.skinCoinText.setText(t('hangarCoins', { coins: save.coins }));
     (this.skinRows || []).forEach((row, i) => {
       const def = skins[i];
       if (!def) {
@@ -693,18 +705,18 @@ export default class HangarScene extends Phaser.Scene {
       }
       row.card.setVisible(true); row.nameText.setVisible(true); row.statusText.setVisible(true); row.btn.container.setVisible(true);
       row.skinId = def.id;
-      row.nameText.setText(def.name);
+      row.nameText.setText(t(`skin_${shipIdx}_${def.id}`));
       if (def.id === cur) {
-        row.statusText.setText('已装备');
-        row.btn.setLabel('使用中');
+        row.statusText.setText(t('skinStatusEquipped'));
+        row.btn.setLabel(t('inUse'));
         row.btn.setEnabled(false);
       } else if (SaveManager.ownsSkin(shipIdx, def.id)) {
-        row.statusText.setText('已拥有');
-        row.btn.setLabel('装备');
+        row.statusText.setText(t('skinStatusOwned'));
+        row.btn.setLabel(t('equip'));
         row.btn.setEnabled(true);
       } else {
-        row.statusText.setText(`未拥有 · ${SKIN_PRICE} 金`);
-        row.btn.setLabel(save.coins >= SKIN_PRICE ? '购买' : '金币不足');
+        row.statusText.setText(t('skinStatusNotOwned', { price: SKIN_PRICE }));
+        row.btn.setLabel(save.coins >= SKIN_PRICE ? t('buy') : t('skinNotEnough'));
         row.btn.setEnabled(save.coins >= SKIN_PRICE);
       }
     });
@@ -716,11 +728,11 @@ export default class HangarScene extends Phaser.Scene {
     const shipIdx = (save.selectedShip != null) ? save.selectedShip : 0;
     if (SaveManager.ownsSkin(shipIdx, skinId)) {
       SaveManager.equipSkin(shipIdx, skinId);
-      this.flashToast('已切换皮肤');
+      this.flashToast(t('skinSwitch'));
     } else if (SaveManager.buySkin(shipIdx, skinId)) {
-      this.flashToast('购买成功，已切换');
+      this.flashToast(t('skinBoughtSwitch'));
     } else {
-      this.flashToast('金币不足');
+      this.flashToast(t('notEnoughCoins'));
     }
     this.refreshSkinsPanel();
     this.refresh();

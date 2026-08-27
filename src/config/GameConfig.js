@@ -800,3 +800,33 @@ export const PERFORMANCE = {
   defaultTier: 'high',
   scale: { high: 1.0, mid: 0.7, low: 0.45 },
 };
+
+// ───────────────────────────────────────────────────────────────
+// P1 表现工程·PostFX 辉光（Bloom）
+// 实现说明：本 Phaser 3.90 构建无 camera.postFX，改用「全屏 RenderTexture +
+// GameObject postFX.addBloom」实现真实 PostFX 辉光（WebGL 才生效，Canvas 自动降级无影响）。
+// 开关纪律：
+//   enabled    总开关
+//   qualityGate 性能档门限：high/mid 开，low 关（qualityGate='mid' 语义 = low 关闭）
+//   params      addBloom 参数（本版本签名 addBloom(color, offsetX, offsetY, blurStrength, strength, steps)）
+//   rtAlpha     辉光叠加层透明度（越低越克制；纯视觉可微调）
+// reduced-motion 不关闭 bloom（静态渲染，不影响动画偏好）。
+// ───────────────────────────────────────────────────────────────
+export const BLOOM = {
+  enabled: true,
+  qualityGate: 'mid',
+  params: { color: 0xffffff, offsetX: 1, offsetY: 1, blurStrength: 0.6, strength: 0.5, steps: 4 },
+  rtAlpha: 0.30,
+};
+
+// P1 表现工程·触控手感（append-only）：
+//   TOUCH_OFFSET 手指按住时战机跟随手指下方偏移（px，避免手指遮挡机体）；
+//                存档 touchOffset=0 表示关闭，回退「手指上方 40px」旧手感。
+//   SENSITIVITY 灵敏度滑杆范围（0.5~1.5，拖动 lerp 系数 = 0.35 × sensitivity，封顶 0.6）
+export const TOUCH = {
+  OFFSET: 36,
+  SENS_MIN: 0.5,
+  SENS_MAX: 1.5,
+  LERP_BASE: 0.35,
+  LERP_CAP: 0.6,
+};

@@ -6,6 +6,7 @@ import {
 } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
+import { t } from '../config/Locale.js';
 import { Ads } from '../systems/Ads.js';
 import { createStarfield } from '../systems/Starfield.js';
 import Player from '../entities/Player.js';
@@ -17,6 +18,7 @@ import WingmanSystem from '../systems/WingmanSystem.js';
 import ElementReaction from '../systems/ElementReaction.js';
 import { FloatingTextManager, warmFonts } from '../systems/FloatingText.js';
 import { NeonButton } from '../utils/UIWidgets.js';
+import { enableSceneBloom } from '../utils/BloomFX.js';
 import { AchievementManager } from '../systems/AchievementManager.js';
 import { audio } from '../systems/AudioSystem.js';
 import * as VFX from '../systems/VFX.js';
@@ -254,6 +256,8 @@ export default class GameScene extends Phaser.Scene {
     // reduced-motion 优先于 quality（VFX.createVfxPool 内部返回 null，爆炸/火花调用点判空降级为无粒子）。
     const quality = (SaveManager.load().quality) || PERFORMANCE.defaultTier;
     this.qualityScale = (PERFORMANCE.scale && PERFORMANCE.scale[quality]) || 1;
+    // P1 表现工程·PostFX 辉光：按性能档开启（high/mid 开，low 关；WebGL 才生效，Canvas 自动降级）
+    this.bloomFX = enableSceneBloom(this, quality);
     // 爆炸/命中火花对象池：预建 2 个 offscreen emitter 复用（消除 GC 抖动）
     this.vfxPool = VFX.createVfxPool(this);
 
@@ -474,7 +478,7 @@ export default class GameScene extends Phaser.Scene {
         const rareChance = (this.mode === 'bossrush' && this._rushScale) ? this._rushScale.rareChance : 0;
         const rare = this.spawnBossDrops(this.boss.x, this.boss.y, rareChance);
         if (rare > 0) this._rushRareDrops = (this._rushRareDrops || 0) + rare;
-        EventBus.emit(EVENTS.FLOAT_SCORE, { x: this.boss.x, y: this.boss.y, special: true, label: 'BOSS 击破' });
+        EventBus.emit(EVENTS.FLOAT_SCORE, { x: this.boss.x, y: this.boss.y, special: true, label: t('fl_bossDown') });
       }
       // 成就系统：Boss 击败实时上报（bossKey 对应各克星/屠龙者成就）
       if (this.boss) AchievementManager.reportBossDefeated(this.boss.bossKey);
@@ -1249,7 +1253,7 @@ export default class GameScene extends Phaser.Scene {
     const total = GRAZE.SCORE + chainBonus;
     this.addEnergy(GRAZE.ENERGY_GAIN);
     EventBus.emit(EVENTS.SCORE_CHANGED, total);
-    EventBus.emit(EVENTS.FLOAT_SCORE, { x, y, amount: total, special: true, label: '擦弹' });
+    EventBus.emit(EVENTS.FLOAT_SCORE, { x, y, amount: total, special: true, label: t('fl_graze') });
     EventBus.emit(EVENTS.GRAZE_CHANGED, { count: this.grazeCount, chain: this.grazeChain });
     SaveManager.addNewbieProgress('grazes', 1); // P0 留存-新手计划：D6 擦弹进度
     SaveManager.addDailyProgress('grazes', 1); // P1 留存-每日任务：累计擦弹进度
@@ -1288,7 +1292,7 @@ export default class GameScene extends Phaser.Scene {
     });
     // 视觉反馈（reduced-motion 由 VFX 降级）
     this.cameras.main.flash(200, 90, 200, 130);
-    EventBus.emit(EVENTS.FLOAT_SCORE, { x: this.player.x, y: this.player.y - 44, special: true, label: '超载' });
+    EventBus.emit(EVENTS.FLOAT_SCORE, { x: this.player.x, y: this.player.y - 44, special: true, label: t('fl_overcharge') });
   }
 
   /** 每帧：超载到期恢复（射速倍率回退 + 得分倍率自动随 active 关闭） */
@@ -1441,10 +1445,10 @@ export default class GameScene extends Phaser.Scene {
       .setOrigin(0).setInteractive();
     const panel = this.add.rectangle(cx, cy, 440, 250, 0x0d2236, 0.98)
       .setStrokeStyle(2, COLORS.accent);
-    const title = this.add.text(cx, cy - 66, '命数耗尽', {
+    const title = this.add.text(cx, cy - 66, t('adReviveTitle'), {
       fontFamily: 'sans-serif', fontSize: '34px', fontStyle: '800', color: COLORS.accent,
     }).setOrigin(0.5).setShadow(0, 0, '#000000', 8, true, true);
-    const sub = this.add.text(cx, cy - 20, '看广告复活，继续本周赛！', {
+    const sub = this.add.text(cx, cy - 20, t('adReviveSub'), {
       fontFamily: 'sans-serif', fontSize: '18px', color: '#cfe8ff',
     }).setOrigin(0.5);
     ov.add([dim, panel, title, sub]);
@@ -1468,24 +1472,24 @@ export default class GameScene extends Phaser.Scene {
       }
     };
 
-    const adBtn = new NeonButton(this, cx - 100, cy + 62, '看广告复活', {
+    const adBtn = new NeonButton(this, cx - 100, cy + 62, t('adReviveBtn'), {
       w: 190, glow: true,
       onDown: () => {
         audio.sfx('ui');
         adBtn.setEnabled(false);
-        sub.setText('广告播放中…');
+        sub.setText(t('adPlaying'));
         Ads.showRewardAd((ok) => {
           if (ok) {
-            sub.setText('复活成功！');
+            sub.setText(t('adReviveOk'));
             this.time.delayedCall(260, () => finish(true));
           } else {
-            sub.setText('广告未完成，无法复活');
+            sub.setText(t('adReviveFail'));
             adBtn.setEnabled(true);
           }
         });
       },
     });
-    const quitBtn = new NeonButton(this, cx + 100, cy + 62, '返回结算', {
+    const quitBtn = new NeonButton(this, cx + 100, cy + 62, t('adQuit'), {
       w: 190, glow: true, onDown: () => { audio.sfx('ui'); finish(false); },
     });
     ov.add([adBtn.container, quitBtn.container]);
@@ -1524,10 +1528,10 @@ export default class GameScene extends Phaser.Scene {
       .setOrigin(0).setInteractive();
     const panel = this.add.rectangle(cx, cy, 460, 430, 0x0d2236, 0.98)
       .setStrokeStyle(2, COLORS.accent);
-    const title = this.add.text(cx, cy - 158, '波次奖励 · 三选一', {
+    const title = this.add.text(cx, cy - 158, t('towerTitle'), {
       fontFamily: 'sans-serif', fontSize: '30px', fontStyle: '800', color: COLORS.accent,
     }).setOrigin(0.5).setShadow(0, 0, '#000000', 8, true, true);
-    const sub = this.add.text(cx, cy - 112, this.isTower ? `当前爬塔 ${this.towerFloor || 0} 层` : '选择一项增益强化战机', {
+    const sub = this.add.text(cx, cy - 112, this.isTower ? t('towerSubTower', { floor: this.towerFloor || 0 }) : t('towerSubPick'), {
       fontFamily: 'sans-serif', fontSize: '16px', color: '#cfe8ff',
     }).setOrigin(0.5);
     ov.add([dim, panel, title, sub]);
@@ -1551,10 +1555,10 @@ export default class GameScene extends Phaser.Scene {
       const bg = this.add.rectangle(0, 0, 400, 80, 0x123a5a, 0.98)
         .setStrokeStyle(2, COLORS.accent);
       card.add(bg);
-      card.add(this.add.text(-170, -14, b.name, {
+      card.add(this.add.text(-170, -14, t(`tb_${b.id}`), {
         fontFamily: 'sans-serif', fontSize: '22px', fontStyle: '800', color: '#aef6ff',
       }).setOrigin(0, 0.5));
-      card.add(this.add.text(-170, 18, b.desc, {
+      card.add(this.add.text(-170, 18, t(`tb_${b.id}_desc`), {
         fontFamily: 'sans-serif', fontSize: '15px', color: '#88bbdd',
       }).setOrigin(0, 0.5));
       card.setSize(400, 80).setInteractive({
@@ -1616,7 +1620,7 @@ export default class GameScene extends Phaser.Scene {
       default:
         break;
     }
-    EventBus.emit(EVENTS.FLOAT_SCORE, { x: p.x, y: p.y - 44, special: true, label: '增益' });
+    EventBus.emit(EVENTS.FLOAT_SCORE, { x: p.x, y: p.y - 44, special: true, label: t('fl_buff') });
   }
 
   playerHit(dmg) {
@@ -1711,7 +1715,7 @@ export default class GameScene extends Phaser.Scene {
     // 轻量视觉反馈：闪光 + 轻震 + 飘字（reduced-motion 由 VFX/tween 内部降级）
     this.cameras.main.flash(280, 120, 200, 255);
     VFX.shake(this, 'light');
-    EventBus.emit(EVENTS.FLOAT_SCORE, { x: this.player.x, y: this.player.y - 44, special: true, label: '过载' });
+    EventBus.emit(EVENTS.FLOAT_SCORE, { x: this.player.x, y: this.player.y - 44, special: true, label: t('fl_overdrive') });
   }
 
   /** 技能切换：星风暴 ↔ 过载 轮换。激活中的过载 buff 不中断（fireMul 独立于技能槽） */
@@ -1979,12 +1983,12 @@ export default class GameScene extends Phaser.Scene {
     const panel = this.add.rectangle(cx, cy, 470, 300, 0x0d2236, 0.98)
       .setStrokeStyle(2, COLORS.accent);
     const steps = [
-      '移动战机：拖动屏幕，或用方向键 / WASD',
-      '自动开火：无需操作，子弹持续射出',
-      '技能：能量满按【空格】释放星风暴；清屏炸弹可救场',
-      '顶部 HUD：血量条 / 能量条 / 得分；拥有僚机时还会显示元素圆点（火/冰/雷）与「Lv·架数·协同倍率」',
-      '集火：解锁僚机后按【F】，全体僚机集中攻击当前目标（屏幕出现准星）',
-      '进阶：机库升级可解锁更多僚机、追踪导弹、穿透激光；你与僚机用同元素交替命中会触发增伤 combo',
+      t('tutStep1'),
+      t('tutStep2'),
+      t('tutStep3'),
+      t('tutStep4'),
+      t('tutStep5'),
+      t('tutStep6'),
     ];
     let i = 0;
     const txt = this.add.text(cx, cy - 66, steps[0], {
@@ -1994,10 +1998,10 @@ export default class GameScene extends Phaser.Scene {
     const dots = this.add.text(cx, cy + 44, '● ○ ○ ○ ○ ○', {
       fontFamily: 'sans-serif', fontSize: '16px', color: COLORS.accent,
     }).setOrigin(0.5);
-    const nextBtn = this.add.text(cx + 120, cy + 105, '下一步', {
+    const nextBtn = this.add.text(cx + 120, cy + 105, t('tutNext'), {
       fontFamily: 'sans-serif', fontSize: '20px', fontStyle: '700', color: '#7cf3ff',
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-    const skipBtn = this.add.text(cx - 120, cy + 105, '跳过', {
+    const skipBtn = this.add.text(cx - 120, cy + 105, t('tutSkip'), {
       fontFamily: 'sans-serif', fontSize: '20px', fontStyle: '700', color: '#88bbdd',
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
@@ -2006,7 +2010,7 @@ export default class GameScene extends Phaser.Scene {
       let d = '';
       for (let k = 0; k < steps.length; k++) d += (k === i ? '● ' : '○ ');
       dots.setText(d.trim());
-      nextBtn.setText(i < steps.length - 1 ? '下一步' : '开始游戏');
+      nextBtn.setText(i < steps.length - 1 ? t('tutNext') : t('tutStart'));
     };
     const finish = () => {
       SaveManager.set('tutorialDone', true);

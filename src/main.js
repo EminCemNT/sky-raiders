@@ -7,6 +7,10 @@ import GameScene from './scenes/GameScene.js';
 import UIScene from './scenes/UIScene.js';
 import ResultScene from './scenes/ResultScene.js';
 import { SaveManager } from './utils/SaveManager.js';
+import { initLocale } from './config/Locale.js';
+
+// P1 表现工程·i18n：启动时按存档语言初始化（默认 zh 保持既有中文零回归）
+initLocale(SaveManager.load().lang || 'zh');
 
 /**
  * 游戏入口：创建 Phaser.Game 实例。

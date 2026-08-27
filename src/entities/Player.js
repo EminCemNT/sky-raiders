@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { PLAYER, BULLET, GAME_WIDTH, GAME_HEIGHT, EVENTS, POWERUP, GRAZE, MODULES, FOCUS } from '../config/GameConfig.js';
+import { PLAYER, BULLET, GAME_WIDTH, GAME_HEIGHT, EVENTS, POWERUP, GRAZE, MODULES, FOCUS, TOUCH } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
 import { audio } from '../systems/AudioSystem.js';
@@ -147,11 +147,24 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
   update(time, dt, pointer, cursors) {
     // 移动：指针拖动优先，否则键盘
     if (pointer && pointer.isDown) {
+      // P1 表现工程·触控偏移 + 灵敏度：
+      //   touchOffset>0：战机跟随手指下方 offset px（避免手指遮挡机体，默认 36）；
+      //   touchOffset=0：关闭，回退「手指上方 40px」旧手感。
+      //   灵敏度 sensitivity（0.5~1.5）放大拖动插值系数，封顶 TOUCH.LERP_CAP。
+      const sv = SaveManager.load();
+      const tOff = (sv && sv.touchOffset != null) ? sv.touchOffset : TOUCH.OFFSET;
+      const sens = (sv && sv.sensitivity) || 1;
       const tx = Phaser.Math.Clamp(pointer.worldX, 20, GAME_WIDTH - 20);
-      const ty = Phaser.Math.Clamp(pointer.worldY - 40, 40, GAME_HEIGHT - 20);
-      // 引擎模块移速加成 + P1 聚焦减速：同时作用于拖动插值系数（保守封顶，不破坏手感）
+      const ty = Phaser.Math.Clamp(
+        tOff > 0 ? pointer.worldY + tOff : pointer.worldY - 40,
+        40, GAME_HEIGHT - 20
+      );
+      // 引擎模块移速加成 + P1 聚焦减速 + 灵敏度：同时作用于拖动插值系数（保守封顶，不破坏手感）
       const spdMul = this.focusing ? (FOCUS.SPEED_MUL || 1) : 1;
-      const k = Math.min(0.35 * (this.moduleSpeedMul || 1) * (this.towerSpeedMul || 1) * spdMul, 0.55);
+      const k = Math.min(
+        TOUCH.LERP_BASE * sens * (this.moduleSpeedMul || 1) * (this.towerSpeedMul || 1) * spdMul,
+        TOUCH.LERP_CAP
+      );
       this.x = Phaser.Math.Linear(this.x, tx, k);
       this.y = Phaser.Math.Linear(this.y, ty, k);
     } else if (cursors) {

@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, LEVELS, WEAPONS, SHIPS, WINGMAN, PLAYER, EVENT_MODES, OVERCHARGE } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
+import { t } from '../config/Locale.js';
 import { audio } from '../systems/AudioSystem.js';
 import { NeonBar, NeonButton, makeIconButton, THEME } from '../utils/UIWidgets.js';
 import { SKILLS, DEFAULT_SKILL } from '../config/Skills.js';
@@ -45,7 +46,7 @@ export default class UIScene extends Phaser.Scene {
     const HUD_RIGHT = GAME_WIDTH - 70;
     const lvl = LEVELS.find((l) => l.id === d.levelId) || LEVELS[0];
     const levelLabel = this.mode === 'bossrush' ? 'BOSS RUSH'
-      : (this._eventCfg ? this._eventCfg.name : `第 ${lvl.id} 关 · ${lvl.name}`);
+      : (this._eventCfg ? t(`eventName_${this.mode}`) : t('hudLevelLabel', { level: lvl.id, name: t(`levelName_${lvl.id}`) }));
     this.levelLabel = this.add.text(HUD_RIGHT, 18, levelLabel, {
       fontFamily: THEME.fontFamily, fontSize: '15px', fontStyle: '700', color: THEME.titleColor,
     }).setOrigin(1, 0).setDepth(100);
@@ -113,7 +114,7 @@ export default class UIScene extends Phaser.Scene {
     // 技能按钮（右下角图标化，能量满时发光脉冲）。
     // P2 第二主动技能：tap 发 USE_SKILL（由 GameScene 按 activeSkill 派发星风暴/过载；USE_SUPER 事件保留兼容）
     this.skill = makeIconButton(this, GAME_WIDTH - 156, GAME_HEIGHT - 72, 'item_energy', {
-      radius: 40, ringAlpha: 0, label: '星风暴',
+      radius: 40, ringAlpha: 0, label: t('uiSkill'),
       onDown: () => { audio.sfx('ui'); EventBus.emit(EVENTS.USE_SKILL); },
     });
     this.skill.container.setAlpha(0.45);
@@ -137,11 +138,11 @@ export default class UIScene extends Phaser.Scene {
 
     // 增益徽标（护盾/磁力）：矢量纹理图标 + 文本，取代 emoji 🛡/🧲（跨端字形一致）
     this.shieldIcon = this.add.image(16, 104, 'item_shield').setScale(0.5).setDepth(101).setVisible(false);
-    this.shieldBadge = this.add.text(26, 104, '护盾', {
+    this.shieldBadge = this.add.text(26, 104, t('uiShield'), {
       fontFamily: THEME.fontFamily, fontSize: '12px', color: THEME.shield,
     }).setOrigin(0, 0.5).setDepth(101).setVisible(false);
     this.magnetIcon = this.add.image(96, 104, 'item_magnet').setScale(0.5).setDepth(101).setVisible(false);
-    this.magnetBadge = this.add.text(106, 104, '磁力', {
+    this.magnetBadge = this.add.text(106, 104, t('uiMagnet'), {
       fontFamily: THEME.fontFamily, fontSize: '12px', color: THEME.magnet,
     }).setOrigin(0, 0.5).setDepth(101).setVisible(false);
 
@@ -192,11 +193,11 @@ export default class UIScene extends Phaser.Scene {
     this._paused = false;
     this.pauseOverlay = this.add.container(0, 0).setDepth(200).setVisible(false);
     const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.62).setOrigin(0);
-    const pTitle = this.add.text(GAME_WIDTH / 2, 300, '已暂停', {
+    const pTitle = this.add.text(GAME_WIDTH / 2, 300, t('uiPaused'), {
       fontFamily: THEME.fontFamily, fontSize: '46px', fontStyle: '800', color: THEME.titleColor,
     }).setOrigin(0.5).setShadow(0, 0, THEME.titleShadow, 16, true, true);
-    const resumeBtn = this.makePauseButton(GAME_WIDTH / 2, 440, '继续', () => this.togglePause());
-    const quitBtn = this.makePauseButton(GAME_WIDTH / 2, 530, '退出到菜单', () => this.quitToMenu());
+    const resumeBtn = this.makePauseButton(GAME_WIDTH / 2, 440, t('uiResume'), () => this.togglePause());
+    const quitBtn = this.makePauseButton(GAME_WIDTH / 2, 530, t('uiQuit'), () => this.quitToMenu());
     // P1-6 可见判定点开关（斑鸠/虫姬同款）：暂停面板内一键切换存档 showHitbox
     const hbBtn = new NeonButton(this, GAME_WIDTH / 2, 620, this._hitboxLabel(), {
       onDown: () => {
@@ -237,9 +238,10 @@ export default class UIScene extends Phaser.Scene {
     this._renderElement(this._element);   // 开局元素指示（元素核心轮换初始值）
 
     // Phase C：关卡开场大字 banner（Stage Banner，Back.easeOut 弹入 + 辉光 + 淡出）
-    const stageName = this.mode === 'bossrush' ? 'BOSS RUSH' : (this._eventCfg ? this._eventCfg.name : lvl.name);
-    const stageSub = this.mode === 'bossrush' ? '挑战连战'
-      : (this._eventCfg ? `限时 ${this._eventCfg.duration}s` : `STAGE ${lvl.id}`);
+    const stageName = this.mode === 'bossrush' ? 'BOSS RUSH'
+      : (this._eventCfg ? t(`eventName_${this.mode}`) : t(`levelName_${lvl.id}`));
+    const stageSub = this.mode === 'bossrush' ? t('stageSubRush')
+      : (this._eventCfg ? t('stageSubEvent', { duration: this._eventCfg.duration }) : t('stageSubLevel', { level: lvl.id }));
     this.showStageBanner(stageName, stageSub);
   }
 
@@ -274,7 +276,7 @@ export default class UIScene extends Phaser.Scene {
   _buildWingmanHud() {
     const WM_COLORS = { fire: 0xff6633, ice: 0x33ccff, thunder: 0xffe14a };
     this._wmColors = WM_COLORS;
-    this.wmTitle = this.add.text(16, 146, '僚机', {
+    this.wmTitle = this.add.text(16, 146, t('uiWingman'), {
       fontFamily: THEME.fontFamily, fontSize: '12px', color: THEME.textCyan,
     }).setDepth(101).setVisible(false);
     this.wmCountText = this.add.text(16, 164, '', {
@@ -327,7 +329,7 @@ export default class UIScene extends Phaser.Scene {
         this.wmFocus.setVisible(false);
       }
       let txt = `Lv${s.weaponLv} · ${s.count}架 · 协同×${s.comboMul ? s.comboMul.toFixed(2) : '1.00'}`;
-      if (s.focus && s.focus.active) txt += ' · 集火';
+      if (s.focus && s.focus.active) txt += t('uiFocusOn');
       this.wmCountText.setText(txt);
     };
   }
@@ -339,7 +341,7 @@ export default class UIScene extends Phaser.Scene {
       .setStrokeStyle(1, 0x2a4a6a, 0.9).setDepth(101).setVisible(false);
     this.ocFill = this.add.rectangle(x - 44 + 2, y, 88, 14, 0x33ccff, 0.9)
       .setOrigin(0, 0.5).setDepth(102).setVisible(false);
-    this.ocLabel = this.add.text(x, y - 18, '超载', {
+    this.ocLabel = this.add.text(x, y - 18, t('uiOvercharge'), {
       fontFamily: THEME.fontFamily, fontSize: '11px', fontStyle: '700', color: THEME.textGold,
     }).setDepth(101).setVisible(false);
     this.ocText = this.add.text(x + 94, y, '', {
@@ -356,7 +358,7 @@ export default class UIScene extends Phaser.Scene {
     this._focusOn = false;
     this.focusBtn = this.add.circle(x, y, 24, 0x0a2a44, 0.92)
       .setStrokeStyle(2, 0x33ccff, 0.8).setDepth(105).setInteractive({ useHandCursor: true });
-    this.focusBtnTxt = this.add.text(x, y, '聚', {
+    this.focusBtnTxt = this.add.text(x, y, t('uiFocus'), {
       fontFamily: THEME.fontFamily, fontSize: '17px', fontStyle: '700', color: '#9fe8ff',
     }).setOrigin(0.5).setDepth(106);
     this.focusBtn.on('pointerdown', () => {
@@ -461,8 +463,8 @@ export default class UIScene extends Phaser.Scene {
       this.bossBar.setVisible(true);
       const name = (info && info.name) ? info.name : 'BOSS';
       if (this.bossNameText) this.bossNameText.setText(name).setVisible(true);
-      this.flashCenter(`${name} 来袭`, THEME.textRed);
-      if (this.waveText) this.waveText.setText('BOSS 战');
+      this.flashCenter(t('bossIncoming', { name }), THEME.textRed);
+      if (this.waveText) this.waveText.setText(t('uiBossBattle'));
     };
     EventBus.on(EVENTS.BOSS_SPAWNED, this._onBossSpawn);
 
@@ -475,7 +477,7 @@ export default class UIScene extends Phaser.Scene {
     EventBus.on(EVENTS.BOSS_DEFEATED, this._onBossDead);
 
     this._onBossPhase = (phase) => {
-      const label = phase >= 3 ? '狂暴形态！' : `第 ${phase} 阶段`;
+      const label = phase >= 3 ? t('uiBossRage') : t('uiPhase', { phase });
       this.flashCenter(label, phase >= 3 ? THEME.textRed : THEME.textGold);
     };
     EventBus.on(EVENTS.BOSS_PHASE, this._onBossPhase);
@@ -604,7 +606,7 @@ export default class UIScene extends Phaser.Scene {
       this._lastOc = s || {};
       if (s && s.active) {
         this.ocBg.setVisible(true); this.ocFill.setVisible(true);
-        this.ocLabel.setVisible(true).setText('超载').setColor(THEME.textGold);
+        this.ocLabel.setVisible(true).setText(t('uiOvercharge')).setColor(THEME.textGold);
         this.ocText.setVisible(true).setText('');
         this._ocActiveUntil = s.until || 0;
         this._ocActiveDur = s.duration || cfg.DURATION || 5000;
@@ -749,7 +751,7 @@ export default class UIScene extends Phaser.Scene {
 
   /** P1-6 判定点按钮文案：随存档开关显示 开/关 */
   _hitboxLabel() {
-    return `判定点：${SaveManager.load().showHitbox ? '开' : '关'}`;
+    return t('uiHitbox', { state: SaveManager.load().showHitbox ? t('on') : t('off') });
   }
 
   // ---- 成就解锁横幅（顶部滑入，2.2s 后滑出）----
@@ -772,7 +774,7 @@ export default class UIScene extends Phaser.Scene {
     bg.fillStyle(THEME.cardBg, 0.96); bg.fillRoundedRect(-w / 2, -h / 2, w, h, 12);
     bg.lineStyle(2, THEME.accent, 1); bg.strokeRoundedRect(-w / 2, -h / 2, w, h, 12);
     const ico = this.add.image(-w / 2 + 18, 0, iconKey).setScale(0.85);
-    const tag = this.add.text(-w / 2 + 54, -16, '成就解锁', { fontFamily: THEME.fontFamily, fontSize: '12px', color: THEME.textGoldLight, fontStyle: '800' }).setOrigin(0, 0.5);
+    const tag = this.add.text(-w / 2 + 54, -16, t('uiAchTag'), { fontFamily: THEME.fontFamily, fontSize: '12px', color: THEME.textGoldLight, fontStyle: '800' }).setOrigin(0, 0.5);
     const nm = this.add.text(-w / 2 + 54, 2, label, { fontFamily: THEME.fontFamily, fontSize: '17px', color: THEME.white, fontStyle: '800' }).setOrigin(0, 0.5);
     const ds = this.add.text(-w / 2 + 54, 20, desc, { fontFamily: THEME.fontFamily, fontSize: '11px', color: THEME.textMuted }).setOrigin(0, 0.5);
     c.add([bg, ico, tag, nm, ds]);

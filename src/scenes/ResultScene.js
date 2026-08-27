@@ -1,7 +1,10 @@
 import Phaser from 'phaser';
-import { SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, LEVELS, SHIPS, getShipSkins } from '../config/GameConfig.js';
+import { SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, LEVELS, SHIPS, getShipSkins, PERFORMANCE } from '../config/GameConfig.js';
+import { SaveManager } from '../utils/SaveManager.js';
+import { t } from '../config/Locale.js';
 import { createStarfield } from '../systems/Starfield.js';
 import { NeonButton, NeonBar, THEME } from '../utils/UIWidgets.js';
+import { enableSceneBloom } from '../utils/BloomFX.js';
 
 /**
  * ResultScene：关卡结算。显示胜负、星级、分数、金币，提供重来/返回。
@@ -30,6 +33,9 @@ export default class ResultScene extends Phaser.Scene {
 
     this.starfield = createStarfield(this, { layers: 4, starTints: theme.starTints });
 
+    // P1 表现工程·PostFX 辉光（可选场景；按性能档开，low 关 / Canvas 自动降级）
+    this.bloomFX = enableSceneBloom(this, SaveManager.load().quality || PERFORMANCE.defaultTier);
+
     // 霓虹装饰边框（Phase C）
     const frame = this.add.graphics().setDepth(10);
     frame.lineStyle(3, COLORS.accent, 0.5);
@@ -39,10 +45,10 @@ export default class ResultScene extends Phaser.Scene {
     this.add.rectangle(cx, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.55);
 
     // 标题（P0 留存-活动轮换：事件模式专属标题）
-    const title = r.mode === 'endless' ? '无尽挑战结束'
-      : r.mode === 'coin_rush' ? '金币冲刺结束'
-      : r.mode === 'survival' ? '限时生存结束'
-      : (r.victory ? '关卡通过' : '任务失败');
+    const title = r.mode === 'endless' ? t('resEndless')
+      : r.mode === 'coin_rush' ? t('resCoinRush')
+      : r.mode === 'survival' ? t('resSurvival')
+      : (r.victory ? t('resVictory') : t('resFail'));
     const titleColor = r.mode === 'endless' || r.mode === 'coin_rush' || r.mode === 'survival'
       ? THEME.titleColor : (r.victory ? THEME.titleColor : THEME.textRed);
     this.add.text(cx, 200, title, {
@@ -68,19 +74,19 @@ export default class ResultScene extends Phaser.Scene {
 
     // P1 留存·社交排行：成绩分享按钮（右上角；生成 canvas 成绩卡 → PNG 下载 / 文本复制）
     this._initShareHooks();
-    new NeonButton(this, GAME_WIDTH - 84, 128, '分享', {
+    new NeonButton(this, GAME_WIDTH - 84, 128, t('resShare'), {
       w: 116, h: 46, fontSize: 18, glow: true,
       onDown: () => {
         const res = this.downloadShareCard();
-        this._flashToast(res && res.ok ? '成绩卡已下载' : '生成失败');
+        this._flashToast(res && res.ok ? t('resShareDownloaded') : t('resShareFail'));
       },
     }).container;
 
     // 本局新解锁成就（来自 GameScene.evaluate）
     if (r.newAchievements && r.newAchievements.length) {
-      const names = r.newAchievements.map((a) => a.name).join('   ');
+      const names = r.newAchievements.map((a) => t(`ach_${a.id}`)).join('   ');
       // 标题行：勋章矢量图标 + 文本（取代 emoji 🏅，跨端字形一致）
-      const achTitle = this.add.text(0, 0, '本局解锁成就', {
+      const achTitle = this.add.text(0, 0, t('resNewAch'), {
         fontFamily: THEME.fontFamily, fontSize: '18px', color: THEME.textGoldLight, fontStyle: '800',
       }).setOrigin(0.5);
       const achMedal = this.add.image(-achTitle.width / 2 - 16, 0, 'icon_medal').setScale(0.75);
@@ -92,49 +98,50 @@ export default class ResultScene extends Phaser.Scene {
 
     // 数据（含最高分；破纪录时得分行高亮并加「新纪录」标识）
     const lines = [
-      { label: '得分', value: r.score || 0, newBest: !!r.isNewBest },
-      { label: '击杀', value: r.kills || 0 },
-      { label: '金币', value: r.coins || 0 },
+      { label: t('resScore'), value: r.score || 0, newBest: !!r.isNewBest },
+      { label: t('resKills'), value: r.kills || 0 },
+      { label: t('resCoins'), value: r.coins || 0 },
     ];
     if (r.mode === 'endless') {
-      lines.push({ label: '波次', value: `第 ${r.wave || 0} 波` });
+      lines.push({ label: t('resWave'), value: t('resWaveVal', { wave: r.wave || 0 }) });
       // P1 留存·深空爬塔：无尽结算显示爬塔层数（含破新高标识）
       if (r.towerFloor != null) {
-        lines.push({ label: '爬塔层数', value: `${r.towerFloor} 层`, newBest: !!r.isNewTowerTop });
+        lines.push({ label: t('resTowerFloor'), value: t('resTowerVal', { floor: r.towerFloor }), newBest: !!r.isNewTowerTop });
       }
     }
     // P1 留存·社交排行：本局入 Top10 显示名次
-    if (r.topRank > 0) lines.push({ label: '历史排行榜', value: `第 ${r.topRank} 名`, newBest: true });
+    if (r.topRank > 0) lines.push({ label: t('resLeaderboard'), value: t('resRankVal', { rank: r.topRank }), newBest: true });
     // P2 Boss Rush 差异化：胜利结算新增「Boss Rush 奖励」行（机库等级 / 金币倍率 / 稀有掉落数）
     if (r.mode === 'bossrush' && r.victory && r.rushReward) {
       const rr = r.rushReward;
       const coinMulTxt = Number.isInteger(rr.coinMul) ? String(rr.coinMul) : Number(rr.coinMul).toFixed(1);
       lines.push({
-        label: 'Boss Rush 奖励',
-        value: `机库 Lv${rr.hangarLv} · 金币×${coinMulTxt} · 稀有${rr.rareDrops || 0}`,
+        label: t('resRushReward'),
+        value: t('resRushVal', { lv: rr.hangarLv, mul: coinMulTxt, rare: rr.rareDrops || 0 }),
       });
     }
     // P0 留存-活动轮换：活动模式结算明细（金币冲刺 ×N / 限时生存 波次→金币）
     if (r.eventReward) {
       const er = r.eventReward;
+      const double = er.double ? t('resDoubleDay') : '';
       if (er.kind === 'coin_rush') {
-        lines.push({ label: '活动金币', value: `金币×${er.mult} 结算 +${er.coins}${er.double ? ' · 双倍日' : ''}` });
+        lines.push({ label: t('resEventCoins'), value: t('resEventCoinsVal', { mult: er.mult, coins: er.coins, double }) });
       } else if (er.kind === 'survival') {
-        lines.push({ label: '生存结算', value: `${er.waves} 波 × ${er.per} 金币 = +${er.coins}${er.double ? ' · 双倍日' : ''}` });
+        lines.push({ label: t('resSurvivalSettle'), value: t('resSurvivalVal', { waves: er.waves, per: er.per, coins: er.coins, double }) });
       }
     }
     // P0 留存-关卡勋章：本局达成勋章（normal 胜利展示）
     if (r.mode === 'normal' && r.victory && r.achievedMedals && r.achievedMedals.length) {
       const names = (lvl.challenges || [])
         .filter((c) => r.achievedMedals.includes(c.id))
-        .map((c) => c.name)
+        .map((c) => t(`medal_${c.type}`, { target: c.target }))
         .join(' / ');
-      lines.push({ label: '本局勋章', value: names });
+      lines.push({ label: t('resMedals'), value: names });
     }
-    lines.push({ label: '最高分', value: r.bestScore ?? 0 });
+    lines.push({ label: t('resBest'), value: r.bestScore ?? 0 });
     const dataStartY = 400;
     lines.forEach((l, i) => {
-      this.add.text(cx, dataStartY + i * 40, `${l.label}   ${l.value}${l.newBest ? '  ★新纪录' : ''}`, {
+      this.add.text(cx, dataStartY + i * 40, `${l.label}   ${l.value}${l.newBest ? t('resNewRecord') : ''}`, {
         fontFamily: THEME.fontFamily, fontSize: '22px',
         color: l.newBest ? THEME.textGoldLight : THEME.textPrimary,
         fontStyle: l.newBest ? '800' : 'normal',
@@ -154,7 +161,7 @@ export default class ResultScene extends Phaser.Scene {
       ? Phaser.Math.Clamp(r.composite, 0, 1)
       : (r.stars ? Phaser.Math.Clamp(r.stars / 3, 0, 1) : 0.5);
     this.completionRatio = completionRatio;
-    this.add.text(cx - 195, barY, '完成度', {
+    this.add.text(cx - 195, barY, t('resCompletion'), {
       fontFamily: THEME.fontFamily, fontSize: '16px', color: THEME.textSecondary,
     }).setOrigin(0, 0.5);
     this.completionBar = new NeonBar(this, cx - 90, barY, 250, 14, {
@@ -169,7 +176,7 @@ export default class ResultScene extends Phaser.Scene {
     const comboCard = this.add.graphics().setDepth(5);
     comboCard.fillStyle(0x0a2236, 0.85).fillRoundedRect(cx - 200, comboY - 34, 400, 68, 12);
     comboCard.lineStyle(2, 0x4fc3ff, 0.5).strokeRoundedRect(cx - 200, comboY - 34, 400, 68, 12);
-    this.add.text(cx - 150, comboY, '连击峰值', {
+    this.add.text(cx - 150, comboY, t('resComboPeak'), {
       fontFamily: THEME.fontFamily, fontSize: '16px', color: THEME.textSecondary,
     }).setOrigin(0, 0.5);
     const peak = r.maxCombo || 0;
@@ -181,34 +188,34 @@ export default class ResultScene extends Phaser.Scene {
     // 按钮：无尽模式 -> 再来一局（仍进无尽）；活动模式 -> 再战一次（仍进本周活动）；
     // 胜利且可解锁 -> 下一关；其余 -> 重来/菜单
     if (r.mode === 'endless') {
-      this.makeButton(cx, btnY, '再来一局', () => {
+      this.makeButton(cx, btnY, t('resAgainEndless'), () => {
         this.scene.start(SCENES.GAME, { mode: 'endless', levelId: 1 });
       });
-      this.makeButton(cx, btnY + 80, '返回菜单', () => {
+      this.makeButton(cx, btnY + 80, t('backMenu'), () => {
         this.scene.start(SCENES.MENU);
       });
     } else if (r.mode === 'coin_rush' || r.mode === 'survival') {
-      this.makeButton(cx, btnY, '再战一次', () => {
+      this.makeButton(cx, btnY, t('resAgainEvent'), () => {
         this.scene.start(SCENES.GAME, { mode: r.mode });
       });
-      this.makeButton(cx, btnY + 80, '返回菜单', () => {
+      this.makeButton(cx, btnY + 80, t('backMenu'), () => {
         this.scene.start(SCENES.MENU);
       });
     } else if (r.victory && (r.levelId || 1) < LEVELS.length) {
-      this.makeButton(cx, btnY, '下一关', () => {
+      this.makeButton(cx, btnY, t('resNextLevel'), () => {
         this.scene.start(SCENES.GAME, { levelId: (r.levelId || 1) + 1 });
       });
-      this.makeButton(cx, btnY + 80, '再玩一次', () => {
+      this.makeButton(cx, btnY + 80, t('resReplay'), () => {
         this.scene.start(SCENES.GAME, { levelId: r.levelId || 1 });
       });
-      this.makeButton(cx, btnY + 160, '返回菜单', () => {
+      this.makeButton(cx, btnY + 160, t('backMenu'), () => {
         this.scene.start(SCENES.MENU);
       });
     } else {
-      this.makeButton(cx, btnY, r.victory ? '再玩一次' : '重新挑战', () => {
+      this.makeButton(cx, btnY, r.victory ? t('resReplay') : t('resRetry'), () => {
         this.scene.start(SCENES.GAME, { levelId: r.levelId || 1 });
       });
-      this.makeButton(cx, btnY + 80, '返回菜单', () => {
+      this.makeButton(cx, btnY + 80, t('backMenu'), () => {
         this.scene.start(SCENES.MENU);
       });
     }
@@ -261,31 +268,31 @@ export default class ResultScene extends Phaser.Scene {
     // 标题
     ctx.fillStyle = '#7cf3ff';
     ctx.font = '800 42px sans-serif';
-    ctx.fillText('苍穹战机 · 战绩分享', 270, 118);
+    ctx.fillText(t('shareTitle'), 270, 118);
     // 分数
     ctx.fillStyle = '#ffd86b';
     ctx.font = '800 76px Consolas, monospace';
     ctx.fillText(String(r.score || 0), 270, 252);
     ctx.fillStyle = '#88bbdd'; ctx.font = '600 20px sans-serif';
-    ctx.fillText('得分 SCORE', 270, 292);
+    ctx.fillText(t('shareScoreLabel'), 270, 292);
     // 模式 / 爬塔层数
     const modeName = r.mode === 'endless'
-      ? `无尽爬塔 · ${r.towerFloor || 0} 层`
-      : r.mode === 'bossrush' ? 'BOSS RUSH 连战'
-      : r.mode === 'coin_rush' ? '金币冲刺'
-      : r.mode === 'survival' ? '限时生存'
-      : `第 ${r.levelId || 1} 关 · ${r.victory ? '通关' : '挑战'}`;
+      ? t('shareModeEndless', { floor: r.towerFloor || 0 })
+      : r.mode === 'bossrush' ? t('shareModeBossRush')
+      : r.mode === 'coin_rush' ? t('shareModeCoinRush')
+      : r.mode === 'survival' ? t('shareModeSurvival')
+      : t('shareModeNormal', { level: r.levelId || 1, victory: r.victory ? t('shareVictory') : t('shareChallenge') });
     ctx.fillStyle = '#cfe8ff'; ctx.font = '700 30px sans-serif';
     ctx.fillText(modeName, 270, 380);
     // 数据行
     ctx.fillStyle = '#88bbdd'; ctx.font = '600 22px sans-serif';
-    ctx.fillText(`击杀 ${r.kills || 0}  ·  金币 ${r.coins || 0}  ·  连击 ×${r.maxCombo || 0}`, 270, 452);
+    ctx.fillText(t('shareData', { kills: r.kills || 0, coins: r.coins || 0, combo: r.maxCombo || 0 }), 270, 452);
     // 战机 / 皮肤
     const ship = (SHIPS && SHIPS[(r.ship && r.ship.id) || 0]) || (SHIPS && SHIPS[0]) || { name: '苍鹰', id: 0 };
     const skinId = (r.ship && r.ship.skin != null) ? Number(r.ship.skin) : 0;
     const skins = getShipSkins(ship.id);
     const skinName = (skins && skins[skinId] && skins[skinId].name) || '默认';
-    ctx.fillText(`战机 ${ship.name || '苍鹰'} · ${skinName}`, 270, 512);
+    ctx.fillText(t('shareShip', { ship: t(`ship_${ship.id}`), skin: t(`skin_${ship.id}_${skinId}`) }), 270, 512);
     // 日期
     const d = new Date();
     const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -293,10 +300,10 @@ export default class ResultScene extends Phaser.Scene {
     ctx.fillText(dateStr, 270, 620);
     // 文本摘要（复制用）
     this._shareText = [
-      '苍穹战机 · 战绩分享',
-      `得分 ${r.score || 0} · ${modeName}`,
-      `击杀 ${r.kills || 0} · 金币 ${r.coins || 0} · 连击 ×${r.maxCombo || 0}`,
-      `战机 ${ship.name || '苍鹰'} · ${skinName}`,
+      t('shareLine1'),
+      t('shareLine2', { score: r.score || 0, mode: modeName }),
+      t('shareLine3', { kills: r.kills || 0, coins: r.coins || 0, combo: r.maxCombo || 0 }),
+      t('shareLine4', { ship: t(`ship_${ship.id}`), skin: t(`skin_${ship.id}_${skinId}`) }),
       dateStr,
     ].join('\n');
     this._shareCardCanvas = canvas;

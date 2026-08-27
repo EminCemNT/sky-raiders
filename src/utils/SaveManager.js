@@ -33,6 +33,13 @@ const DEFAULT_SAVE = {
   tutorialDone: false,
   startWeapon: null, // 开局主武器覆盖（机库选择；null=用战机绑定武器）
   showHitbox: false, // 显示玩家判定点（P1-6：斑鸠/虫姬同款，默认关）
+  // P1 表现工程·触控手感（append-only，只新增字段不改旧字段）：
+  //   sensitivity 灵敏度（0.5~1.5，拖动 lerp 系数 = 0.35 × sensitivity，封顶 0.6）
+  //   touchOffset  手指按住时战机跟随手指下方的像素偏移（36=默认开；0=关，回退旧手感）
+  //   lang         语言（'zh' | 'en'，i18n 前置）
+  sensitivity: 1.0,
+  touchOffset: 36,
+  lang: 'zh',
   // 每日任务（留存系统 #每日任务）：date=当天日期 / claimed=是否已领 / progress=各指标进度 / picked=当天抽中的指标
   dailyQuest: { date: '', claimed: false, progress: {}, picked: [] },
   // P0 留存-关卡勋章：{ [levelId]: ['c1','c3',...] } 达成记勋章；medalCount=累计勋章数（派生字段，读时重算自愈）
@@ -92,6 +99,9 @@ function freshSave() {
     skins: {},
     ownedSkins: [],
     noAds: false,
+    sensitivity: 1.0,
+    touchOffset: 36,
+    lang: 'zh',
     league: { week: '', score: 0, claimed: false, rank: 0 },
     towerTop: 0,
     dailyActs: { date: '', count: 0, chests: { 3: false, 5: false } },
@@ -149,6 +159,11 @@ export const SaveManager = {
         ownedSkins: Array.isArray(parsed.ownedSkins) ? parsed.ownedSkins : [],
         // P2 激励广告位预留：去广告纯净版开关（布尔，老存档缺失默认 false）
         noAds: !!parsed.noAds,
+        // P1 表现工程·触控手感/i18n（append-only，只新增字段不改旧字段）：
+        // 老存档缺失兜底默认；越界值钳位自愈
+        sensitivity: Math.min(1.5, Math.max(0.5, Number(parsed.sensitivity) || 1.0)),
+        touchOffset: (parsed.touchOffset != null) ? Math.max(0, Math.round(Number(parsed.touchOffset) || 0)) : 36,
+        lang: (parsed.lang === 'en') ? 'en' : 'zh',
         // P2 系统扩展·无尽周赛：深合并，老存档缺失兜底默认（只新增字段，不改旧字段）
         league: {
           week: '', score: 0, claimed: false, rank: 0,
