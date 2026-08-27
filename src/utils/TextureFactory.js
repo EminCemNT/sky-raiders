@@ -103,6 +103,8 @@ export function generateAll(scene) {
   drawBgBuilding(g); g.generateTexture('bg_building', 64, 120);
   drawGlowSoft(g); g.generateTexture('glow_soft', 512, 512);    // P3 柔光贴图（光效纪律白名单：机/弹/爆/拾取）
   drawBgGlowband(g); g.generateTexture('bg_glowband', 512, 96); // P3 背景底部地平线光带
+  // 画质精修三件·B：胶片颗粒噪点（128×128 随机灰点，UIScene 全屏 Image 叠加；纯视觉零业务）
+  makeGrainTexture(scene);
 
   g.destroy();
 }
@@ -1097,6 +1099,25 @@ function drawGlowSoft(g) {
   }
 }
 
+// ─── 画质精修三件·B：胶片颗粒噪点（128×128 随机灰点，全屏叠加）────
+// 直接写 canvas 纹理（不走 graphics：逐像素噪点用 fillRect 太慢）。
+// 低对比灰点：单点 alpha 8~32（≈0.03~0.13），整体再由 UIScene 的 Image alpha
+// 压到 0.03-0.05，避免噪点过重。纹理为随机内容，放大铺满即可。
+function makeGrainTexture(scene) {
+  if (!scene || !scene.textures || scene.textures.exists('grain_tex')) return;
+  const S = 128;
+  const ct = scene.textures.createCanvas('grain_tex', S, S);
+  const ctx = ct.getContext();
+  const img = ctx.createImageData(S, S);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const v = 90 + Math.floor(Math.random() * 80);   // 灰点 90~170
+    img.data[i] = v; img.data[i + 1] = v; img.data[i + 2] = v;
+    img.data[i + 3] = 8 + Math.floor(Math.random() * 24); // alpha 8~32
+  }
+  ctx.putImageData(img, 0, 0);
+  ct.refresh();
+}
+
 // ─── 背景底部地平线光带（512×96 横向柔光带，白色基底便于 tint）────
 function drawBgGlowband(g) {
   g.clear();
@@ -1107,3 +1128,5 @@ function drawBgGlowband(g) {
     g.fillEllipse(cx, cy, 512 * (0.92 + t * 0.08), r * 2);
   }
 }
+
+// ─── 背景底部地平线光带（512×96 横向柔光带，白色基底便于 tint）────

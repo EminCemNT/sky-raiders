@@ -69,10 +69,35 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
     this._slowAt50 = false;
     this._slowAt25 = false;
 
-    scene.tweens.add({
-      targets: this, y: 150, duration: 2000, ease: 'Cubic.out',
-      onComplete: () => { this._entering = false; },
-    });
+    // 画质精修三件·C：Boss 入场仪式（纯演出，血量/阶段/掉落/成就链路零改动）。
+    // 初始 y 已在屏外上方（super y=-120），冲入目标位 y=150（400-600ms + Back 轻微回弹）；
+    // 到达时冲击波环 + 顶光聚光（大半径柔光短暂显影）+ 轻微 camera.flash。
+    // 入场期间 _entering=true：update 跳过横移/弹幕，hit() 返回 false（无敌）。
+    // reduced-motion：直接出现在目标位，仅冲击波环一闪（无冲入动画）。
+    const ENTRY_Y = 150;
+    if (PREFERS_REDUCED) {
+      this.y = ENTRY_Y;
+      VFX.shockwaveRing(scene, this.x, this.y, this.color, { radius: 120, duration: 240, depth: 56 });
+      this._entering = false;
+    } else {
+      scene.tweens.add({
+        targets: this, y: ENTRY_Y, duration: 500, ease: 'Back.easeOut',
+        onComplete: () => {
+          if (!this.active) return;
+          this._entering = false;
+          // 冲击波环 + 顶光聚光（glow_soft 大半径柔光短暂显影）+ 轻微 camera.flash
+          VFX.shockwaveRing(scene, this.x, this.y, this.color, { radius: 130, duration: 320, depth: 56 });
+          const glow = scene.add.image(this.x, this.y, 'glow_soft')
+            .setDepth(56).setAlpha(0).setTint(this.color)
+            .setBlendMode(Phaser.BlendModes.ADD).setScale(1.1);
+          scene.tweens.add({
+            targets: glow, alpha: { from: 0, to: 0.45 }, duration: 120, yoyo: true, hold: 60,
+            onComplete: () => { if (glow && glow.active) glow.destroy(); },
+          });
+          scene.cameras.main.flash(90, 255, 255, 255);
+        },
+      });
+    }
 
     EventBus.emit(EVENTS.BOSS_HP_CHANGED, this.hp, this.maxHp);
   }

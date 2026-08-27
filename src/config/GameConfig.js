@@ -815,8 +815,31 @@ export const PERFORMANCE = {
 export const BLOOM = {
   enabled: true,
   qualityGate: 'mid',
-  params: { color: 0xffffff, offsetX: 1, offsetY: 1, blurStrength: 0.6, strength: 0.5, steps: 4 },
-  rtAlpha: 0.30,
+  // 画质精修三件·A：bloom 精调（目标：高光柔和溢出、暗部不泛白、整体不发灰）。
+  // 本构建 addBloom 实测签名 = (color, offsetX, offsetY, blurStrength, strength, steps)
+  // （Phaser 3.90 无 threshold uniform），与"strength/radius/threshold"建议范围的对应关系：
+  //   strength    混合强度（bloom 叠入原图比例）→ 0.4-0.6 区间，取 0.55
+  //   offsetX/Y   采样扩散步长（≈radius 半径感），1.5 比默认 1 更宽溢散
+  //   blurStrength 模糊过程强度（中心采样权重，越低越弥散柔和）→ 0.3-0.5 区间，取 0.5
+  //   threshold   本构建无对应 uniform，保留为调参锚点（高光阈值感由 rtAlpha+blurStrength 组合模拟）
+  //   rtAlpha     辉光叠加层透明度（越低越克制泛白；0.30→0.24）
+  params: { color: 0xffffff, offsetX: 1.5, offsetY: 1.5, blurStrength: 0.5, strength: 0.55, steps: 4, threshold: 0.6 },
+  rtAlpha: 0.24,
+};
+
+// ───────────────────────────────────────────────────────────────
+// 画质精修三件·B：电影感滤镜（常驻暗角 + 胶片颗粒，append-only）
+// 消费方：UIScene._buildFilmLayers（常驻暗角深度低于 HUD、颗粒低于 HUD 文本）。
+//   vignetteAlpha  常驻基线暗角四角强度（径向渐变：中心透明→四角黑，≈0.14-0.18）
+//   grainAlpha     胶片颗粒全屏 Image 透明度（0.03-0.05；NORMAL 混合，微弱颗粒感）
+//   grainSpeed     颗粒是否逐帧抖动 1-2px（模拟胶片呼吸；reduced-motion 下强制静态）
+//   grainLowAlpha  quality low 性能档颗粒 alpha（减半降级，成本极低；暗角保留）
+// ───────────────────────────────────────────────────────────────
+export const FILM = {
+  vignetteAlpha: 0.16,
+  grainAlpha: 0.04,
+  grainSpeed: true,
+  grainLowAlpha: 0.02,
 };
 
 // P1 表现工程·触控手感（append-only）：

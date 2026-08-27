@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, LEVELS, WEAPONS, SHIPS, WINGMAN, PLAYER, EVENT_MODES, OVERCHARGE } from '../config/GameConfig.js';
+import { SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, LEVELS, WEAPONS, SHIPS, WINGMAN, PLAYER, EVENT_MODES, OVERCHARGE, PERFORMANCE, FILM } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
 import { t } from '../config/Locale.js';
@@ -221,6 +221,9 @@ export default class UIScene extends Phaser.Scene {
     this._lowHpBorder.lineStyle(bw, THEME.dangerBorder, 1);
     this._lowHpBorder.strokeRect(bw / 2, bw / 2, GAME_WIDTH - bw, GAME_HEIGHT - bw);
     this._lowHpBorderBase = 0;
+
+    // 画质精修三件·B：常驻暗角 + 胶片颗粒（电影感；纯视觉零业务，深度低于 HUD）
+    this._buildFilmLayers();
 
     // 连击 HUD（常驻，复用不重建）：击杀连击计数，脉冲缩放 + 档位变色（D）
     // y≈170 顶部区域（错层到 Boss 血条之下），不挡玩家判定区（约 y≈860）；初始隐藏，COMBO_CHANGED 触发显隐
@@ -630,6 +633,17 @@ export default class UIScene extends Phaser.Scene {
   }
 
   update() {
+    // 画质精修三件·B：胶片颗粒逐帧抖动 1-2px（模拟胶片呼吸）；reduced-motion 下静态居中
+    if (this._filmGrain) {
+      if (FILM.grainSpeed && !PREFERS_REDUCED) {
+        this._filmGrain.setPosition(
+          GAME_WIDTH / 2 + Phaser.Math.Between(-1, 1),
+          GAME_HEIGHT / 2 + Phaser.Math.Between(-1, 1),
+        );
+      } else {
+        this._filmGrain.setPosition(GAME_WIDTH / 2, GAME_HEIGHT / 2);
+      }
+    }
     // P2 技能键：F 发 USE_SKILL（按 activeSkill 派发）；Q 发 SKILL_SWITCHED（轮换技能槽）
     if (this.skillKey && Phaser.Input.Keyboard.JustDown(this.skillKey)) {
       EventBus.emit(EVENTS.USE_SKILL);
@@ -737,6 +751,46 @@ export default class UIScene extends Phaser.Scene {
     }
     this._lowHpVignette = this.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, key).setDepth(90).setAlpha(0);
     this._lowHpBase = 0;
+  }
+
+  /** 画质精修三件·B：常驻暗角 + 胶片颗粒（电影感，纯视觉零业务）。
+   *  常驻暗角：径向渐变（中心透明→四角黑），depth 88 高于背景低于低血暗角(90)/HUD(100)；
+   *            alpha = FILM.vignetteAlpha（≈0.16，低血时低血暗角叠加在其上更深）。
+   *  胶片颗粒：TextureFactory 已生成 grain_tex（128×128 随机灰点），全屏 Image 铺满，
+   *            alpha = FILM.grainAlpha（low 性能档减半）；每帧 update 抖动 1-2px 模拟呼吸，
+   *            reduced-motion 下颗粒静态（不抖动）。
+   *  测试钩子：this._permVignette / this._filmGrain / this._filmGrainQuality。 */
+  _buildFilmLayers() {
+    const quality = (SaveManager.load().quality) || PERFORMANCE.defaultTier;
+    this._filmGrainQuality = quality;
+
+    // 常驻暗角：程序生成径向渐变纹理（中心透明→四角黑），与低血红角互不冲突
+    const vk = 'vignette-perm';
+    if (!this.textures.exists(vk)) {
+      const W = GAME_WIDTH, H = GAME_HEIGHT;
+      const ct = this.textures.createCanvas(vk, W, H);
+      const ctx = ct.getContext();
+      const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.34, W / 2, H / 2, Math.max(W, H) * 0.72);
+      g.addColorStop(0, 'rgba(0,0,0,0)');
+      g.addColorStop(0.62, 'rgba(0,0,0,0)');
+      g.addColorStop(1, 'rgba(0,0,0,0.95)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+      ct.refresh();
+    }
+    this._permVignette = this.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, vk)
+      .setDepth(88)
+      .setAlpha(FILM.vignetteAlpha);
+
+    // 胶片颗粒：全屏 Image（NORMAL 混合，微弱颗粒感；纹理随机内容放大无接缝）
+    if (this.textures.exists('grain_tex')) {
+      const gAlpha = quality === 'low' ? (FILM.grainLowAlpha != null ? FILM.grainLowAlpha : FILM.grainAlpha * 0.5) : FILM.grainAlpha;
+      this._filmGrain = this.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, 'grain_tex')
+        .setDepth(96)
+        .setAlpha(gAlpha)
+        .setScale(GAME_WIDTH / 128, GAME_HEIGHT / 128)
+        .setBlendMode(Phaser.BlendModes.NORMAL);
+    }
   }
 
   flashCenter(text, color = THEME.titleColor) {
