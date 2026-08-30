@@ -26,6 +26,10 @@ export default class ResultScene extends Phaser.Scene {
     const r = this.result;
     const cx = GAME_WIDTH / 2;
 
+    // OPT-13 批B B15 分享卡：结算后滚动 lastScore←本次、prevScore←旧 lastScore
+    // （append-only 纯视觉数据；不影响结算/排行/成就，红线 R7）
+    this._rollLastScore();
+
     // 背景渐变（按关卡色调，与战斗场景一致）
     const lvl = LEVELS.find((l) => l.id === (r.levelId || 1)) || LEVELS[0];
     const theme = lvl.theme;
@@ -263,32 +267,114 @@ export default class ResultScene extends Phaser.Scene {
   }
 
   // ---- P1 留存·社交排行：成绩分享卡（纯本地，无后端）----
-  /** 生成 canvas 成绩卡（分数/关卡/战机/皮肤/日期），返回 canvas */
-  buildShareCard() {
+  // OPT-13 批B B15 分享卡升级：主题背景（LEVELS.theme）/难度边框强调色/昵称行/称号行/历史对比。
+  // 纯视觉展示，零业务逻辑（红线 R7）：只读 topScores 历史 + append-only 写昵称/lastScore/prevScore，
+  // 不触碰结算/排行/成就；canvas 尺寸 540×720 与下载/复制链路不变。
+
+  /** B15 历史分数滚动写盘（append-only）：结算后 lastScore←本次、prevScore←旧 lastScore */
+  _rollLastScore() {
     const r = this.result || {};
+    const s = SaveManager.load();
+    const score = Math.max(0, Math.floor(Number(r.score) || 0));
+    s.prevScore = Number(s.lastScore) || 0;
+    s.lastScore = score;
+    SaveManager.save();
+  }
+
+  /** B15 昵称：存档已有则复用；为空则生成「默认昵称 + 随机后缀」（如 飞行员·42）并持久化（编辑文本框后置 P2） */
+  _resolveNickname() {
+    const s = SaveManager.load();
+    if (typeof s.nickname === 'string' && s.nickname) return s.nickname;
+    const base = t('nicknameDefault') || '飞行员';
+    const suffix = String(Math.floor(Math.random() * 90) + 10); // 10-99
+    const nick = `${base}·${suffix}`;
+    s.nickname = nick;
+    SaveManager.save();
+    return nick;
+  }
+
+  /** B15 称号：B12 纯派生当前称号名（与结算页一致）；无称号返回 ''（省略对应行） */
+  _resolveTitle() {
+    const cur = TitleSystem.getCurrentTitle(SaveManager.load());
+    return cur ? t('title_' + cur.id) : '';
+  }
+
+  /** B15 历史对比：本局 vs 同关同模式排除本局历史最高（pct 向上取整；无历史返回 null → 首秀） */
+  _computeDeltaPct() {
+    const r = this.result || {};
+    const prevBest = Number(r.prevSameBest) || 0;
+    const score = Number(r.score) || 0;
+    if (prevBest <= 0) return null; // 无历史 → 首秀
+    if (score <= 0) return 0;
+    return Math.ceil(((score - prevBest) / prevBest) * 100);
+  }
+
+  /** B15 对比行文案：无历史 → 首秀；有提升 → 比上次 +X%（破纪录追加 ★新纪录）；未提升 → 省略该行 */
+  _compareLine(pct, isNewBest) {
+    if (pct == null) return t('shareFirstRun'); // 无历史 → 首秀
+    if (pct > 0) {
+      const base = t('shareVsLast', { pct });
+      return isNewBest ? `${base} ${t('resNewRecord').trim()}` : base;
+    }
+    return ''; // 有历史但未提升 → 不显示负/0% 干扰视觉
+  }
+
+  /** 生成 canvas 成绩卡（主题背景/难度边框/昵称/称号/历史对比，540×720 不变），返回 canvas */
+  buildShareCard(deltaPct, nickname, title) {
+    const r = this.result || {};
+    // 钩子无参调用（__RESULT_SHARE.buildShareCard()）时从 result + 存档现算，保持兼容
+    const _deltaPct = (typeof deltaPct === 'number') ? deltaPct : this._computeDeltaPct();
+    const _nick = (typeof nickname === 'string' && nickname) ? nickname : this._resolveNickname();
+    const _title = (typeof title === 'string' && title) ? title : this._resolveTitle();
+
     const canvas = document.createElement('canvas');
     canvas.width = 540; canvas.height = 720;
     const ctx = canvas.getContext('2d');
-    // 背景渐变
+    // 背景渐变：改用本关 LEVELS[i].theme（skyTop→skyBottom；accent 做标题/昵称强调色，零新增数据）
+    const lvl = LEVELS.find((l) => l.id === (r.levelId || 1)) || LEVELS[0];
+    const theme = (lvl && lvl.theme) || {};
+    const hex = (n, fallback) => {
+      const v = Number(n);
+      return (v || v === 0) ? `#${(v >>> 0).toString(16).padStart(6, '0')}` : fallback;
+    };
+    const skyTop = hex(theme.skyTop, '#0b1c33');
+    const skyBottom = hex(theme.skyBottom, '#040a16');
+    const accent = hex(theme.accent, '#7cf3ff');
     const g = ctx.createLinearGradient(0, 0, 0, 720);
-    g.addColorStop(0, '#0b1c33'); g.addColorStop(1, '#040a16');
+    g.addColorStop(0, skyTop); g.addColorStop(1, skyBottom);
     ctx.fillStyle = g; ctx.fillRect(0, 0, 540, 720);
-    // 霓虹边框
-    ctx.strokeStyle = '#7cf3ff'; ctx.lineWidth = 4;
+    // 霓虹边框：难度档强调色（hard=橙 / hell=红，casual·standard=默认青）
+    const diffBorder = { hard: '#ff7a3a', hell: '#ff5566' }[r.difficulty || 'standard'] || '#7cf3ff';
+    const rgba = (hexStr, a) => {
+      const v = parseInt(hexStr.slice(1), 16);
+      return `rgba(${(v >> 16) & 255},${(v >> 8) & 255},${v & 255},${a})`;
+    };
+    ctx.strokeStyle = diffBorder; ctx.lineWidth = 4;
     ctx.strokeRect(16, 16, 508, 688);
-    ctx.strokeStyle = 'rgba(124,243,255,0.25)'; ctx.lineWidth = 1;
+    ctx.strokeStyle = rgba(diffBorder, 0.25); ctx.lineWidth = 1;
     ctx.strokeRect(24, 24, 492, 672);
     ctx.textAlign = 'center';
-    // 标题
-    ctx.fillStyle = '#7cf3ff';
+    // 标题（关卡 accent 强调色）
+    ctx.fillStyle = accent;
     ctx.font = '800 42px sans-serif';
     ctx.fillText(t('shareTitle'), 270, 118);
-    // 分数
+    // 分数（主视觉，y 252/292 保持不动，不遮挡）
     ctx.fillStyle = '#ffd86b';
     ctx.font = '800 76px Consolas, monospace';
     ctx.fillText(String(r.score || 0), 270, 252);
     ctx.fillStyle = '#88bbdd'; ctx.font = '600 20px sans-serif';
     ctx.fillText(t('shareScoreLabel'), 270, 292);
+    // 昵称行（默认「飞行员·随机后缀」）
+    ctx.fillStyle = accent;
+    ctx.font = '700 22px sans-serif';
+    ctx.fillText(`${t('nicknameLabel')}  ${_nick}`, 270, 336);
+    // 称号行（B12 派生；无称号省略）
+    if (_title) {
+      const curTitle = TitleSystem.getCurrentTitle(SaveManager.load());
+      ctx.fillStyle = curTitle ? TitleSystem.getRarityColor(curTitle.rarity) : '#88bbdd';
+      ctx.font = '600 20px sans-serif';
+      ctx.fillText(_title, 270, 366);
+    }
     // 模式 / 爬塔层数
     const modeName = r.mode === 'endless'
       ? t('shareModeEndless', { floor: r.towerFloor || 0 })
@@ -297,29 +383,39 @@ export default class ResultScene extends Phaser.Scene {
       : r.mode === 'survival' ? t('shareModeSurvival')
       : t('shareModeNormal', { level: r.levelId || 1, victory: r.victory ? t('shareVictory') : t('shareChallenge') });
     ctx.fillStyle = '#cfe8ff'; ctx.font = '700 30px sans-serif';
-    ctx.fillText(modeName, 270, 380);
+    ctx.fillText(modeName, 270, 408);
     // 数据行
     ctx.fillStyle = '#88bbdd'; ctx.font = '600 22px sans-serif';
     ctx.fillText(t('shareData', { kills: r.kills || 0, coins: r.coins || 0, combo: r.maxCombo || 0 }), 270, 452);
+    // 历史对比行（B15：比上次 +X% / 首秀 / ★新纪录；未提升省略）
+    const compareText = this._compareLine(_deltaPct, !!r.isNewBest);
+    if (compareText) {
+      ctx.fillStyle = '#7cffa0';
+      ctx.font = '700 22px sans-serif';
+      ctx.fillText(compareText, 270, 492);
+    }
     // 战机 / 皮肤
     const ship = (SHIPS && SHIPS[(r.ship && r.ship.id) || 0]) || (SHIPS && SHIPS[0]) || { name: '苍鹰', id: 0 };
     const skinId = (r.ship && r.ship.skin != null) ? Number(r.ship.skin) : 0;
     const skins = getShipSkins(ship.id);
     const skinName = (skins && skins[skinId] && skins[skinId].name) || '默认';
-    ctx.fillText(t('shareShip', { ship: t(`ship_${ship.id}`), skin: t(`skin_${ship.id}_${skinId}`) }), 270, 512);
+    ctx.fillStyle = '#88bbdd'; ctx.font = '600 22px sans-serif';
+    ctx.fillText(t('shareShip', { ship: t(`ship_${ship.id}`), skin: t(`skin_${ship.id}_${skinId}`) }), 270, 548);
     // 日期
     const d = new Date();
     const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     ctx.fillStyle = '#5a7a99'; ctx.font = '600 20px sans-serif';
     ctx.fillText(dateStr, 270, 620);
-    // 文本摘要（复制用）
+    // 文本摘要（复制用）：昵称/称号/历史对比行同步更新
     this._shareText = [
       t('shareLine1'),
       t('shareLine2', { score: r.score || 0, mode: modeName }),
+      _title ? `${t('nicknameLabel')}  ${_nick} · ${_title}` : `${t('nicknameLabel')}  ${_nick}`,
       t('shareLine3', { kills: r.kills || 0, coins: r.coins || 0, combo: r.maxCombo || 0 }),
+      compareText ? `${t('shareDiffLabel')}  ${compareText}` : '',
       t('shareLine4', { ship: t(`ship_${ship.id}`), skin: t(`skin_${ship.id}_${skinId}`) }),
       dateStr,
-    ].join('\n');
+    ].filter(Boolean).join('\n');
     this._shareCardCanvas = canvas;
     return canvas;
   }

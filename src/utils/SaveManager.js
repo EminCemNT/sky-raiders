@@ -80,6 +80,12 @@ const DEFAULT_SAVE = {
   //   codexDecor=[] 图鉴页装饰（边框/背景）购买记录（纯展示金币出口）
   codex: { enemies: {}, bosses: {}, weapons: {}, elements: {} },
   codexDecor: [],
+  // OPT-13 批B B15 分享卡升级（append-only，只新增字段不改旧字段）：
+  //   nickname='' 默认昵称+随机后缀（如「飞行员·42」），首次分享卡生成时写入（昵称编辑文本框后置 P2）
+  //   lastScore/prevScore 历史分数滚动：结算后 lastScore←本次、prevScore←旧 lastScore（供 deltaPct）
+  nickname: '',
+  lastScore: 0,
+  prevScore: 0,
 };
 
 let cache = null;
@@ -128,6 +134,9 @@ function freshSave() {
     reliefRuns: 0,
     codex: { enemies: {}, bosses: {}, weapons: {}, elements: {} },
     codexDecor: [],
+    nickname: '',
+    lastScore: 0,
+    prevScore: 0,
   };
 }
 
@@ -217,6 +226,10 @@ export const SaveManager = {
           elements: { ...((parsed.codex && parsed.codex.elements) || {}) },
         },
         codexDecor: Array.isArray(parsed.codexDecor) ? parsed.codexDecor.slice() : [],
+        // OPT-13 批B B15 分享卡（append-only）：老存档缺失兜底默认；nickname 仅字符串有效
+        nickname: (typeof parsed.nickname === 'string') ? parsed.nickname : '',
+        lastScore: Math.max(0, Math.floor(Number(parsed.lastScore) || 0)),
+        prevScore: Math.max(0, Math.floor(Number(parsed.prevScore) || 0)),
       };
       // 勋章计数是派生字段：每次 load 从 levelMedals 重算，老存档/脏数据自动自愈
       cache.medalCount = Object.values(cache.levelMedals || {})

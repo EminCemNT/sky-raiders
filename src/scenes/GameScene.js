@@ -2426,6 +2426,13 @@ export default class GameScene extends Phaser.Scene {
 
     // P1 留存·社交排行（本地）：每次结算插入历史 Top10（按 score 降序，最多 10 条）
     // A9 救济局不入榜（防救济加成刷榜）
+    // OPT-13 批B B15 分享卡：同关+同模式「排除本局」的历史最高分（只读 topScores，零写入；
+    // 必须在 addTopScore 插入本局之前捕获，否则会把本局分数误当成历史基准）
+    const prevSameBest = recordPersist
+      ? SaveManager.getTopScores()
+          .filter((s) => s && s.levelId === this.levelId && s.mode === this.mode)
+          .reduce((m, s) => Math.max(m, Number(s.score) || 0), 0)
+      : 0;
     const topScoreRes = recordPersist ? SaveManager.addTopScore({
       score: scaledScore,
       levelId: this.levelId,
@@ -2501,6 +2508,9 @@ export default class GameScene extends Phaser.Scene {
       // P1 留存·社交排行：本局是否入 Top10 及名次（-1=未入榜）
       topRank: topScoreRes ? topScoreRes.rank : -1,
       topList: topScoreRes ? topScoreRes.list : [],
+      // OPT-13 批B B15 分享卡：同关同模式排除本局的历史最高分（0=无历史 → 首秀）+ 本局难度（边框强调色）
+      prevSameBest,
+      difficulty: (this.difficultyCfg && this.difficultyCfg.id) || 'standard',
     };
 
     // 成就评估（#成就）：事件已实时上报，这里做局末兜底评估（无伤/通关/BossRush 等）。

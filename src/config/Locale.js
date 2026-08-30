@@ -295,6 +295,12 @@ const zh = {
   shareLine2: '得分 {score} · {mode}',
   shareLine3: '击杀 {kills} · 金币 {coins} · 连击 ×{combo}',
   shareLine4: '战机 {ship} · {skin}',
+  // OPT-13 批B B15 分享卡升级：昵称/历史对比词条（PM 第 3 条词表）
+  nicknameLabel: '昵称',
+  nicknameDefault: '飞行员',
+  shareVsLast: '比上次 +{pct}%',
+  shareFirstRun: '首秀',
+  shareDiffLabel: '历史对比',
 
   // ── hangar ──
   hangarTitle: '机  库',
@@ -842,6 +848,12 @@ const en = {
   shareLine2: 'Score {score} · {mode}',
   shareLine3: 'Kills {kills} · Coins {coins} · Combo ×{combo}',
   shareLine4: 'Ship {ship} · {skin}',
+  // OPT-13 批B B15 分享卡升级：昵称/历史对比词条（PM 第 3 条词表）
+  nicknameLabel: 'Nickname',
+  nicknameDefault: 'Pilot',
+  shareVsLast: '+{pct}% vs Last',
+  shareFirstRun: 'First Run',
+  shareDiffLabel: 'History',
 
   // ── hangar ──
   hangarTitle: 'HANGAR',
