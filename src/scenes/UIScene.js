@@ -651,6 +651,10 @@ export default class UIScene extends Phaser.Scene {
       this._renderOverchargeBar();
     };
     EventBus.on(EVENTS.OVERCHARGE_STATE, this._onOverchargeState);
+
+    // D3 P3 修复：存档降级（隐私模式/超配额）一次性提示——SaveManager 已保证 SAVE_FAILED 仅首败 emit
+    this._onSaveFailed = () => { this.flashCenter(t('saveFailed'), THEME.textRed); };
+    EventBus.on(EVENTS.SAVE_FAILED, this._onSaveFailed);
   }
 
   update() {

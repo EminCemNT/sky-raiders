@@ -300,7 +300,9 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
     this._enrageDmgAcc = 0;
     this._enrageEscUntil = 0;
     this._enrageWindowStart = this.scene.time.now;
-    this._enrageFireUntil = this.scene.time.now + RAGE.fireGapMs;
+    // D2 P3 修复：PM 要求入场演出 ≥1.2s —— 首组狂暴弹幕最早发射时间取「组间歇与 1.2s 演出期」较大者
+    // （后续组间歇仍按 RAGE.fireGapMs=500ms，仅首组让出演出窗口）
+    this._enrageFireUntil = this.scene.time.now + Math.max(RAGE.fireGapMs, 1200);
     // 演出：狂暴横幅（复用 UIScene BOSS_PHASE≥3『狂暴』文案）+ 红屏闪烁（reduced-motion 降级）
     EventBus.emit(EVENTS.BOSS_PHASE, 3);
     if (!PREFERS_REDUCED) this.scene.cameras.main.flash(180, 140, 16, 16);

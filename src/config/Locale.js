@@ -456,6 +456,8 @@ const zh = {
   reliefDecline: '拒绝',
   reliefDeclineDesc: '按原难度硬刚',
   reliefFireBonus: '复活火力 +1',
+  // D3 P3 修复：存档降级一次性提示（SaveManager 首次写失败 emit SAVE_FAILED）
+  saveFailed: '存档失败，本次进度可能无法保存',
 
   // ── ui scene（暂停 / Boss 警告 / 技能 / 徽标）──
   uiPaused: '已暂停',
@@ -920,6 +922,8 @@ const en = {
   reliefDecline: 'Decline',
   reliefDeclineDesc: 'Keep the original difficulty',
   reliefFireBonus: 'Revive Fire +1',
+  // D3 P3 fix: one-time save-degradation notice (SaveManager emits SAVE_FAILED on first write failure)
+  saveFailed: 'Save failed — progress may not be kept',
 
   // ── ui scene ──
   uiPaused: 'PAUSED',

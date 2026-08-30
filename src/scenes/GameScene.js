@@ -578,7 +578,7 @@ export default class GameScene extends Phaser.Scene {
     EventBus.on(EVENTS.SKILL_SWITCHED, this._onSkillSwitched);
 
     // 元素协同 combo 触发 -> 成就统计（combo_element_5 / combo_element_50）
-    this._onWingmanCombo = (e) => { AchievementManager.reportElementCombo(e && e.element); SaveManager.addDailyProgress('combos', 1); }; // #每日任务：元素协同进度
+    this._onWingmanCombo = (e) => { AchievementManager.reportElementCombo(e && e.element); this._addProgress('daily', 'combos', 1); }; // #每日任务：元素协同进度
     EventBus.on(EVENTS.WINGMAN_COMBO, this._onWingmanCombo);
 
     // P1 聚焦模式：移动端按钮切换（UIScene 发 FOCUS_TOGGLE）
@@ -1024,8 +1024,8 @@ export default class GameScene extends Phaser.Scene {
     this.stats.coins++;
     AchievementManager.reportCoins(this.stats.coins);
     SaveManager.addCoins(1);
-    SaveManager.addDailyProgress('coins', 1); // #每日任务：金币收集进度
-    SaveManager.addNewbieProgress('coins', 1); // P0 留存-新手计划：D3 收集金币进度
+    this._addProgress('daily', 'coins', 1); // #每日任务：金币收集进度
+    this._addProgress('newbie', 'coins', 1); // P0 留存-新手计划：D3 收集金币进度
     EventBus.emit(EVENTS.COIN_COLLECTED, this.stats.coins);
     EventBus.emit(EVENTS.SCORE_CHANGED, 20);
     EventBus.emit(EVENTS.FLOAT_SCORE, { x: coin.x, y: coin.y, amount: 20, special: true });
@@ -1140,7 +1140,7 @@ export default class GameScene extends Phaser.Scene {
         case 'module':
           // P0 机库模块养成：Boss 掉落的模块 → 随机入库存（机库面板装备/合成）
           SaveManager.addRandomModule();
-          SaveManager.addDailyProgress('modules', 1); // P1 留存-每日任务：收集模块进度
+          this._addProgress('daily', 'modules', 1); // P1 留存-每日任务：收集模块进度
           break;
         case 'element':
           this.rotatePlayerElement();   // 元素核心：火→冰→雷→火 轮换
@@ -1318,7 +1318,7 @@ export default class GameScene extends Phaser.Scene {
     if (this.combo > this.maxCombo) this.maxCombo = this.combo;
     const mult = this.comboMultiplier();
     this.stats.kills++;
-    SaveManager.addDailyProgress('kills', 1); // #每日任务：击杀进度
+    this._addProgress('daily', 'kills', 1); // #每日任务：击杀进度
     const amount = Math.round(10 * mult);
     EventBus.emit(EVENTS.SCORE_CHANGED, amount);
     EventBus.emit(EVENTS.COMBO_CHANGED, this.combo, mult);
@@ -1448,8 +1448,8 @@ export default class GameScene extends Phaser.Scene {
     EventBus.emit(EVENTS.SCORE_CHANGED, total);
     EventBus.emit(EVENTS.FLOAT_SCORE, { x, y, amount: total, special: true, label: t('fl_graze') });
     EventBus.emit(EVENTS.GRAZE_CHANGED, { count: this.grazeCount, chain: this.grazeChain });
-    SaveManager.addNewbieProgress('grazes', 1); // P0 留存-新手计划：D6 擦弹进度
-    SaveManager.addDailyProgress('grazes', 1); // P1 留存-每日任务：累计擦弹进度
+    this._addProgress('newbie', 'grazes', 1); // P0 留存-新手计划：D6 擦弹进度
+    this._addProgress('daily', 'grazes', 1); // P1 留存-每日任务：累计擦弹进度
     // P1 超载：连续擦弹计数（30s 窗口）
     this._registerOvercharge('graze', now);
   }
@@ -1837,6 +1837,19 @@ export default class GameScene extends Phaser.Scene {
   }
 
   /**
+   * D1 P2 修复：统一局内「每日任务 / 新手计划」持久化进度入账守卫。
+   * 救济局(_reliefRun=true)不累加进度（防刷）；局内金币入账、击杀/连击等实时统计不受影响。
+   * @param {'daily'|'newbie'} type
+   * @param {string} key
+   * @param {number} [n=1]
+   */
+  _addProgress(type, key, n = 1) {
+    if (!this._shouldRecordPersist()) return;
+    if (type === 'newbie') SaveManager.addNewbieProgress(key, n);
+    else SaveManager.addDailyProgress(key, n);
+  }
+
+  /**
    * 弹「救济提示」面板三选一（静态弹窗 + 按钮，无粒子；reduced-motion 零动画）。
    * 面板弹出期间冻结物理世界，选择后恢复并开始本局。
    * @returns {boolean} 面板是否弹出
@@ -1972,7 +1985,10 @@ export default class GameScene extends Phaser.Scene {
       // 负面变异不可静默生效：先警示文字，1s 后再落地
       EventBus.emit(EVENTS.MUTATION_CHANGED, { ...result, type: 'warning', label: t('mutWarning') });
       this.time.delayedCall(1000, () => {
-        if (this.gameEnded || !this.player || !this.player.active) return;
+        // D4 P3 修复：延迟内玩家死亡不再静默丢弃——仅本局结束时跳过。
+        // 死亡等待 / 广告复活 / 命数复活期间照常落地（_commitMutation 对 player 全判空安全，
+        // 磁力/护盾等计时器在复活后自然生效；stack 标记必叠，不丢变异）。
+        if (this.gameEnded) return;
         this._commitMutation(result);
       });
     } else {
@@ -2062,7 +2078,7 @@ export default class GameScene extends Phaser.Scene {
   useBomb() {
     if (this.bombs <= 0 || this.gameEnded) return;
     this.bombs--;
-    SaveManager.addDailyProgress('bombs', 1); // #每日任务：清屏炸弹进度
+    this._addProgress('daily', 'bombs', 1); // #每日任务：清屏炸弹进度
     EventBus.emit(EVENTS.HUD_BOMBS, this.bombs);
 
     // 清屏冲击波
@@ -2091,7 +2107,7 @@ export default class GameScene extends Phaser.Scene {
     this.energy = 0;
     this.usedSuperCount++;
     AchievementManager.reportSuperUsed();
-    SaveManager.addDailyProgress('super', 1); // #每日任务：星风暴进度
+    this._addProgress('daily', 'super', 1); // #每日任务：星风暴进度
     EventBus.emit(EVENTS.ENERGY_CHANGED, 0, ENERGY_MAX);
 
     const skill = SKILLS[DEFAULT_SKILL] || SKILLS.starstorm;
