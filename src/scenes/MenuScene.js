@@ -1,9 +1,10 @@
 import Phaser from 'phaser';
-import { SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, LEVELS, DIFFICULTIES, PERFORMANCE, MEDALS, getCurrentEvent, TOUCH } from '../config/GameConfig.js';
+import { SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, LEVELS, DIFFICULTIES, PERFORMANCE, MEDALS, getCurrentEvent, TOUCH, CODEX_DECOR } from '../config/GameConfig.js';
 import { SaveManager } from '../utils/SaveManager.js';
 import { t, setLocale } from '../config/Locale.js';
 import { Ads } from '../systems/Ads.js';
 import { AchievementManager } from '../systems/AchievementManager.js';
+import { Codex, CODEX_ENTRIES } from '../systems/Codex.js';
 import { createStarfield, MENU_BG_THEME } from '../systems/Starfield.js';
 import { transition } from '../systems/TransitionManager.js';
 import { audio } from '../systems/AudioSystem.js';
@@ -26,6 +27,7 @@ export default class MenuScene extends Phaser.Scene {
     this.settingsOpen = this.levelSelectOpen = this.achievementsOpen = this.checkinOpen = this.dailyQuestOpen = false;
     this.eventOpen = this.newbiePlanOpen = false; // P0 留存：本周活动 / 新手计划 面板标志
     this.leaderboardOpen = this.returnGiftOpen = false; // P1 留存：排行榜 / 回归礼包 面板标志
+    this.codexOpen = false; // OPT-13 批B B13 图鉴面板标志
     // reduced-motion 偏好（子面板动画降级）
     this.reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
@@ -63,6 +65,12 @@ export default class MenuScene extends Phaser.Scene {
     this.energyRing.lineStyle(2, 0x66ccff, 0.3).strokeCircle(0, 0, 144);
     this.tweens.add({ targets: this.energyRing, angle: 360, duration: 28000, repeat: -1 });
     this.tweens.add({ targets: this.energyRing, scale: { from: 0.97, to: 1.05 }, duration: 3200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+
+    // OPT-13 批B B13 图鉴收藏入口（收集型玩家长期目标；面板内可购买装饰金币出口）
+    new NeonButton(this, cx, 330, t('btnCodex'), { stroke: 0x9a6fd6, glow: true, onDown: () => {
+      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen || this.returnGiftOpen || this.codexOpen) return;
+      audio.sfx('ui'); this.openCodex();
+    } });
 
     // 教程按钮（重看新手引导，进入第 1 关并强制显示教程）
     new NeonButton(this, cx, 400, t('btnTutorial'), {
@@ -883,6 +891,136 @@ export default class MenuScene extends Phaser.Scene {
   closeLeaderboard() {
     if (this.leaderboardOverlay) { this.leaderboardOverlay.destroy(); this.leaderboardOverlay = null; }
     this.leaderboardOpen = false;
+  }
+
+  // ---- OPT-13 批B B13 图鉴收藏面板（纯展示 + 金币装饰出口）----
+  openCodex() {
+    if (this.codexOpen) return;
+    this.codexOpen = true;
+    const cx = GAME_WIDTH / 2;
+    const ov = this.add.container(0, 0).setDepth(300);
+    this.codexOverlay = ov;
+    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.82)
+      .setOrigin(0).setInteractive();
+    ov.add(dim);
+    this.addPanel(ov, cx, 56, GAME_HEIGHT - 40, 486);
+    this.addGlowTitle(ov, cx, 110, t('codexTitle'), THEME.textGoldLight);
+
+    // 总进度计数（已解锁 X/18）
+    const total = Codex.getTotalProgress();
+    const progressText = this.add.text(cx, 156, t('codexProgress', { n: total.unlocked, total: total.total }), {
+      fontFamily: THEME.fontFamily, fontSize: '17px', color: THEME.textPrimary,
+    }).setOrigin(0.5);
+    ov.add(progressText);
+
+    // 四分类 tab 按钮 + 当前分类容器
+    const tabDefs = [
+      { type: 'enemies', label: t('codexEnemies') },
+      { type: 'bosses', label: t('codexBosses') },
+      { type: 'weapons', label: t('codexWeapons') },
+      { type: 'elements', label: t('codexElements') },
+    ];
+    const tabBtns = [];
+    let activeTab = 'enemies';
+    let gridContainer = null;
+    const gridTop = 208;
+
+    const renderGrid = () => {
+      if (gridContainer) gridContainer.destroy();
+      gridContainer = this.add.container(0, 0);
+      ov.add(gridContainer);
+      const entries = CODEX_ENTRIES[activeTab] || [];
+      // 条目 i18n key 前缀：codex_enemy_*/codex_boss_*/codex_weapon_*/codex_element_*
+      // （boss key 已自带 boss_ 前缀，故 codex_ + key 即正确；其余需补分类前缀）
+      const i18nPrefix = { enemies: 'codex_enemy_', bosses: 'codex_', weapons: 'codex_weapon_', elements: 'codex_element_' }[activeTab] || 'codex_';
+      const colX = [cx - 100, cx + 100];
+      const rowH = 62;
+      entries.forEach((e, i) => {
+        const col = i % 2;
+        const row = Math.floor(i / 2);
+        const x = colX[col];
+        const y = gridTop + row * rowH;
+        const unlocked = Codex.isUnlocked(activeTab, e.key);
+        // 图标（复用现有纹理；未解锁显示剪影 + ???
+        const icon = this.add.image(x - 78, y, unlocked ? e.tex : 'enemy_small')
+          .setScale(unlocked ? 1 : 0.9)
+          .setAlpha(unlocked ? 1 : 0.35);
+        if (unlocked && e.tint != null) icon.setTint(e.tint);
+        gridContainer.add(icon);
+        if (unlocked) {
+          gridContainer.add(this.add.text(x + 4, y - 10, t(`${i18nPrefix}${e.key}`), {
+            fontFamily: THEME.fontFamily, fontSize: '17px', fontStyle: '700', color: THEME.textPrimary,
+          }).setOrigin(0, 0.5));
+          gridContainer.add(this.add.text(x + 4, y + 13, t(`${i18nPrefix}${e.key}_desc`), {
+            fontFamily: THEME.fontFamily, fontSize: '12px', color: THEME.textDim,
+          }).setOrigin(0, 0.5));
+        } else {
+          gridContainer.add(this.add.text(x + 4, y, t('codexLocked'), {
+            fontFamily: THEME.fontFamily, fontSize: '18px', fontStyle: '700', color: THEME.textDim,
+          }).setOrigin(0, 0.5));
+        }
+        // 点亮动画：解锁条目一次性轻微缩放（reduced-motion 下静态，零粒子）
+        if (unlocked && !this.reduceMotion) {
+          icon.setScale(unlocked ? 1 : 0.9);
+          this.tweens.add({ targets: icon, scale: { from: unlocked ? 1 : 0.9, to: 1.15, yoyo: true, duration: 260 }, ease: 'Quad.out' });
+        }
+      });
+    };
+    renderGrid();
+
+    // tab 按钮（切换重渲染网格；makeMenuBtn 返回 container，直接 setAlpha）
+    tabDefs.forEach((td, i) => {
+      const tx = cx - 160 + i * 106;
+      const btn = this.makeMenuBtn(tx, 184, td.label, () => {
+        if (activeTab === td.type) return;
+        activeTab = td.type;
+        tabBtns.forEach((b, bi) => b.setAlpha(bi === tabDefs.findIndex((x) => x.type === activeTab) ? 1 : 0.6));
+        renderGrid();
+      });
+      btn.setAlpha(i === 0 ? 1 : 0.6);
+      tabBtns.push(btn);
+      ov.add(btn);
+    });
+
+    // 金币出口：2 款图鉴装饰（纯展示）
+    const decorY = 616;
+    ov.add(this.add.text(cx, decorY - 30, t('codexDecorLabel'), {
+      fontFamily: THEME.fontFamily, fontSize: '18px', color: THEME.textGoldLight,
+    }).setOrigin(0.5));
+    const coinsText = this.add.text(cx, decorY - 4, `${SaveManager.load().coins}`, {
+      fontFamily: THEME.fontFamily, fontSize: '14px', color: COLORS.coin,
+    }).setOrigin(0.5);
+    ov.add(coinsText);
+    const decors = Object.keys(CODEX_DECOR || {});
+    decors.forEach((id, i) => {
+      const def = CODEX_DECOR[id];
+      const x = cx + (i === 0 ? -118 : 118);
+      ov.add(this.add.text(x, decorY + 26, t(`codexDecor_${id}`), {
+        fontFamily: THEME.fontFamily, fontSize: '15px', color: THEME.textPrimary,
+      }).setOrigin(0.5));
+      const btn = this.makeMenuBtn(x, decorY + 62, Codex.ownsDecor(id) ? t('codexOwned') : `${t('codexBuy')} ${def.price}`, () => {
+        if (Codex.ownsDecor(id)) return;
+        if (Codex.buyDecor(id)) {
+          btn.container.destroy();
+          ov.add(this.makeMenuBtn(x, decorY + 62, t('codexOwned'), () => {}));
+          coinsText.setText(`${SaveManager.load().coins}`);
+          if (this.saveInfoText) this.saveInfoText.setText(this._saveInfoLabel());
+          this.flashToast(t('codexBought', { name: t(`codexDecor_${id}`) }));
+        } else {
+          this.flashToast(t('codexNotEnough'));
+        }
+      });
+      if (Codex.ownsDecor(id)) btn.container.setAlpha(0.5);
+      ov.add(btn);
+    });
+
+    ov.add(this.makeMenuBtn(cx, GAME_HEIGHT - 74, t('close'), () => this.closeCodex()));
+    this.fadeInPanel(ov);
+  }
+
+  closeCodex() {
+    if (this.codexOverlay) { this.codexOverlay.destroy(); this.codexOverlay = null; }
+    this.codexOpen = false;
   }
 
   // ---- 新手 7 日计划面板（P0 留存：新手成长目标）----

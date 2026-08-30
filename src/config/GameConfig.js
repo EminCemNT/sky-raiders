@@ -1191,3 +1191,12 @@ export const ELEMENT_STORM = {
   bypassCooldown: false,
   elementalChance: 0.25,
 };
+
+// ───────────────────────────────────────────────────────────────
+// OPT-13 批B B13 图鉴装饰（append-only，纯展示金币出口，不改变收集解锁）：
+//   frame_1 霓虹边框 / frame_2 星尘背景；消费方：Codex.buyDecor / MenuScene.openCodex
+// ───────────────────────────────────────────────────────────────
+export const CODEX_DECOR = {
+  frame_1: { price: 300 },
+  frame_2: { price: 600 },
+};

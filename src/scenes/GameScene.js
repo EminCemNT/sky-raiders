@@ -22,6 +22,7 @@ import { FloatingTextManager, warmFonts } from '../systems/FloatingText.js';
 import { NeonButton } from '../utils/UIWidgets.js';
 import { enableSceneBloom } from '../utils/BloomFX.js';
 import { AchievementManager } from '../systems/AchievementManager.js';
+import { Codex } from '../systems/Codex.js';
 import { audio } from '../systems/AudioSystem.js';
 import * as VFX from '../systems/VFX.js';
 import {
@@ -205,6 +206,7 @@ export default class GameScene extends Phaser.Scene {
     const bound = this.mode === 'bossrush' ? 'pulse' : (startWeapon || ship.weapon || 'pulse');
       this.player.setWeapon(bound);
       AchievementManager.reportWeaponUsed(bound);
+      Codex.record('weapons', bound);   // B13 图鉴收藏：首次使用该武器
       if (ship.tint) { this.player.setTint(ship.tint); this.player.setShipTint(ship.tint); }
       // P2 皮肤装饰：机库所选皮肤纹理覆盖默认 tint（skin 0=默认款，回退既有视觉；皮肤已自带配色）
       const skinId = SaveManager.getSkin(shipIdx);
@@ -527,6 +529,8 @@ export default class GameScene extends Phaser.Scene {
       }
       // 成就系统：Boss 击败实时上报（bossKey 对应各克星/屠龙者成就）
       if (this.boss) AchievementManager.reportBossDefeated(this.boss.bossKey);
+      // B13 图鉴收藏：首次击败该 Boss（独立 codex.bosses，不复用 bossesDefeated，避免污染成就语义）
+      if (this.boss) Codex.record('bosses', this.boss.bossKey);
       this.boss = null;
       if (this.mode === 'bossrush') {
         this.bossRushIndex++;
@@ -1152,6 +1156,7 @@ export default class GameScene extends Phaser.Scene {
         case 'weapon':
           if (this.player.setWeapon) this.player.setWeapon(def.weapon);
           AchievementManager.reportWeaponUsed(def.weapon);
+          Codex.record('weapons', def.weapon);   // B13 图鉴收藏：首次使用该武器
           // P0 留存-关卡勋章：拾取武器箱 = 一次武器切换（singleWeapon 勋章要求 0 次）
           this._weaponSwitchCount = (this._weaponSwitchCount || 0) + 1;
           this._weaponUntil = this.time.now + (def.duration || 15000);
@@ -1400,6 +1405,9 @@ export default class GameScene extends Phaser.Scene {
     // 成就系统：实时上报击杀（含来源/元素），并同步连击峰值
     AchievementManager.reportKill(meta);
     AchievementManager.reportComboPeak(this.maxCombo);
+    // B13 图鉴收藏：首次击杀该类型 / 首次用该元素击杀（纯收集埋点，不影响既有结算与成就）
+    if (meta.enemyType) Codex.record('enemies', meta.enemyType);
+    if (meta.element) Codex.record('elements', meta.element);
     // B11 连击蓄力：击杀后广播蓄力档位变化（不 reset combo/maxCombo，峰值只增不减）
     EventBus.emit(EVENTS.BURST_CHANGED, this.combo, this.getBurstGauge());
     // P0 留存-活动轮换：金币冲刺击杀额外掉金币（池满自动丢弃，不影响玩法）

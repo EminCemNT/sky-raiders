@@ -75,6 +75,11 @@ const DEFAULT_SAVE = {
   //   failStreak={ [levelId]: n } 各关连续失败计数；reliefRuns=救济局累计次数（统计用）
   failStreak: {},
   reliefRuns: 0,
+  // OPT-13 批B B13 图鉴收藏（append-only，只新增字段不改旧字段）：
+  //   codex={ enemies:{}, bosses:{}, weapons:{}, elements:{} } 键=条目 id，值 true（首次解锁写入）
+  //   codexDecor=[] 图鉴页装饰（边框/背景）购买记录（纯展示金币出口）
+  codex: { enemies: {}, bosses: {}, weapons: {}, elements: {} },
+  codexDecor: [],
 };
 
 let cache = null;
@@ -121,6 +126,8 @@ function freshSave() {
     topScores: [],
     failStreak: {},
     reliefRuns: 0,
+    codex: { enemies: {}, bosses: {}, weapons: {}, elements: {} },
+    codexDecor: [],
   };
 }
 
@@ -202,6 +209,14 @@ export const SaveManager = {
         // OPT-13 批A A9 救济局：深拷贝防 DEFAULT_SAVE 被写脏；老存档缺失兜底默认（append-only）
         failStreak: { ...((parsed.failStreak) || {}) },
         reliefRuns: Math.max(0, Math.floor(Number(parsed.reliefRuns) || 0)),
+        // OPT-13 批B B13 图鉴收藏：四分类深拷贝防 DEFAULT_SAVE 被写脏；老存档缺失兜底默认（append-only）
+        codex: {
+          enemies: { ...((parsed.codex && parsed.codex.enemies) || {}) },
+          bosses: { ...((parsed.codex && parsed.codex.bosses) || {}) },
+          weapons: { ...((parsed.codex && parsed.codex.weapons) || {}) },
+          elements: { ...((parsed.codex && parsed.codex.elements) || {}) },
+        },
+        codexDecor: Array.isArray(parsed.codexDecor) ? parsed.codexDecor.slice() : [],
       };
       // 勋章计数是派生字段：每次 load 从 levelMedals 重算，老存档/脏数据自动自愈
       cache.medalCount = Object.values(cache.levelMedals || {})
