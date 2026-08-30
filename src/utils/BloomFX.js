@@ -14,6 +14,8 @@
  *   A2  下采样 + 脏标记：RT 1/2 分辨率 + rt.camera.setZoom(1/d) + setScale(d,d)
  *       （soft bloom，带宽≈4x）；opts.staticMode 时 redraw 走 _bloomDirty 脏标记，
  *       静态场景不每帧重绘（兜底 staticEveryNFrames=5 帧一次）。
+ *       G2-4 降级路径（downscale.enabled:false → 全分辨率 + 仅 A1）同样走脏标记，
+ *       保证降级后静态场景仍限频重绘（不回归为每帧全分辨率重绘）。
  *
  * 开关纪律（与 BLOOM 配置一致）：
  *   - WebGL 才生效（postFX 无 Canvas 实现）；Canvas 模式返回 null 自动降级，无影响。
@@ -56,6 +58,9 @@ export function enableSceneBloom(scene, quality, opts = {}) {
   // OPT-14 A2：下采样开关（d=1 表示全分辨率，走既有行为）
   const ds = (BLOOM && BLOOM.downscale && BLOOM.downscale.enabled) ? (BLOOM.downscale || {}) : null;
   const d = ds ? (ds.factor || 2) : 1;
+  // OPT-14 G2-4：staticMode 脏标记兜底周期独立于 downscale——降级路径（enabled:false →
+  // 全分辨率 RT + 仅 A1）同样限频重绘，避免每帧烧全分辨率 RT（规格 A2 降级兜底语义）。
+  const staticEveryNFrames = Math.max(1, (BLOOM && BLOOM.downscale && BLOOM.downscale.staticEveryNFrames) || 5);
   const rtAlpha = ds
     ? ((ds.rtAlpha != null ? ds.rtAlpha : ((BLOOM && BLOOM.rtAlpha) || 0.3)))
     : ((BLOOM && BLOOM.rtAlpha) || 0.3);
@@ -87,9 +92,12 @@ export function enableSceneBloom(scene, quality, opts = {}) {
   const redraw = () => {
     if (!rt || !rt.active || !rt.visible) return;
     frame++;
-    // OPT-14 A2：静态场景脏标记（staticMode 且下采样开启）——脏标记或到周期才重绘，避免每帧烧成本
-    if (opts.staticMode && ds) {
-      if (dirtyFlag !== true && (frame % (ds.staticEveryNFrames || 5)) !== 0) return;
+    // OPT-14 A2/G2-4：静态场景脏标记（staticMode）——脏标记或到周期才重绘，避免每帧烧成本。
+    // 主路径（downscale enabled）与降级路径（enabled:false → 全分辨率 + 仅 A1）均生效；
+    // 静态菜单/结算/机库限频重绘（≈staticEveryNFrames 帧一次），战斗（staticMode=false）仍每帧，
+    // markDirty()/dirty=true 置脏后下一帧立即重绘、不受限频影响。
+    if (opts.staticMode) {
+      if (dirtyFlag !== true && (frame % staticEveryNFrames) !== 0) return;
       dirtyFlag = false;
     }
     rt.clear();
