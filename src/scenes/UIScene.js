@@ -401,6 +401,15 @@ export default class UIScene extends Phaser.Scene {
     this.ocFill.setSize(Math.max(0, 88 * ratio), 14);
   }
 
+  /** B11 档位名：按 tier.kind 映射 i18n 词条（power→chargePower / clear→chargeClear / energy→chargeEnergy），
+   *  缺失词条时回退 tiers.desc（防未来新增档位裸 key 泄漏；zh/en 下三词条均生效） */
+  _burstTierName(tt) {
+    if (!tt) return '';
+    const key = tt.kind ? `charge${tt.kind.charAt(0).toUpperCase()}${tt.kind.slice(1)}` : '';
+    const localized = key ? t(key) : '';
+    return (localized && localized !== key) ? localized : (tt.desc || '');
+  }
+
   /** 渲染玩家元素指示（元素核心轮换用）：无元素隐藏，有元素显示彩色「元素 · X」 */
   _renderElement(el) {
     if (!this.elementText) return;
@@ -673,7 +682,7 @@ export default class UIScene extends Phaser.Scene {
       if (g >= 1) {
         this.burstBtn.container.setAlpha(1);
         this.burstBtn.icon.setTint(0x7cf3ff);
-        const names = tiers.filter((tt) => c >= (tt.needCombo || 999)).map((tt) => tt.desc).join('+');
+        const names = tiers.filter((tt) => c >= (tt.needCombo || 999)).map((tt) => this._burstTierName(tt)).join('+');
         this.burstBtn.label.setText(names ? `${t('chargeBtn')} · ${names}` : t('chargeBtn')).setColor(THEME.textGold);
         if (PREFERS_REDUCED) {
           this.burstBtn.ring.setAlpha(0.5).setScale(1);
@@ -706,7 +715,7 @@ export default class UIScene extends Phaser.Scene {
       const c = p.combo || 0;
       const names = ((COMBO_BURST && COMBO_BURST.tiers) || [])
         .filter((tt) => c >= (tt.needCombo || 999))
-        .map((tt) => tt.desc).join('+');
+        .map((tt) => this._burstTierName(tt)).join('+');
       this.flashCenter(names ? `${t('chargeBurst')} · ${names}` : t('chargeBurst'), THEME.textGold);
       if (!PREFERS_REDUCED) {
         this.tweens.killTweensOf(this.burstBtn.ring);
