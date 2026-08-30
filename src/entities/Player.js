@@ -107,6 +107,8 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     //   reliefAtkMul       救济选项 B「攻击 +10%」倍率（_emitBullet / 激光 DPS 消费）
     this.tempFireBonusUntil = 0;
     this.reliefAtkMul = 1;
+    // B11 连击蓄力·强化射击：临时伤害倍率（3s，GameScene useBurst 设置 / _updateBurst 到期恢复 1）
+    this.burstAtkMul = 1;
 
     // 尾焰粒子（增强版）
     this.thruster = VFX.attachPlayerThruster(scene, this);
@@ -273,7 +275,9 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
   _emitBullet(p) {
     // P1 聚焦模式：伤害 +20% + 弹幕更集中（侧向速度 ×0.4，弹道收拢）
     // A9 救济选项 B：攻击 +10%（reliefAtkMul，局内临时；非救济恒 1，零回归）
-    const dmgMul = ((this.focusing && FOCUS.DMG_MUL) ? FOCUS.DMG_MUL : 1) * (this.reliefAtkMul || 1);
+    // B11 连击蓄力·强化射击：burstAtkMul 临时伤害 ×1.5（3s，非激活恒 1，零回归）
+    const dmgMul = ((this.focusing && FOCUS.DMG_MUL) ? FOCUS.DMG_MUL : 1)
+      * (this.reliefAtkMul || 1) * (this.burstAtkMul || 1);
     const focusSpread = this.focusing ? 0.4 : 1;
     // 中央脉冲弹按战斗机元素替换元素纹理 key（苍鹰 thunder→bullet_thunder 等）；
     // 其余弹型保持原 key。逻辑 key 不变，伤害/body/命中判定零改动。
@@ -327,7 +331,8 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     this.beamGroup.add(core);
     core.isBeam = true;
     // A9 救济选项 B：攻击 +10% 同样作用于激光 DPS（非救济恒 1，零回归）
-    core.dps = BULLET.LASER_DPS * (this.reliefAtkMul || 1);
+    // B11 连击蓄力·强化射击：burstAtkMul 同样作用于激光 DPS（非激活恒 1，零回归）
+    core.dps = BULLET.LASER_DPS * (this.reliefAtkMul || 1) * (this.burstAtkMul || 1);
     core.element = this.shipElement;
     core.wielder = this;
     const glow = this.scene.add.rectangle(this.x, this.y - GAME_HEIGHT / 2, BULLET.LASER_WIDTH + 12, GAME_HEIGHT, 0x9ff0ff, 0.35)

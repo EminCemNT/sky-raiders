@@ -93,12 +93,16 @@ export default class WaveSystem {
     this._spawnGap = Math.max(this.endless ? 200 : 260, 620 - this.currentWave * 25);
     this._spawnTimer = 0;
     this.state = 'spawning';
-    // A6 精英兜底：每关第 2 波起、非休闲档、低概率追加 1 只精英（_toSpawn+1 = 追加不挤占波次名额）
+    // A6/B10 精英兜底：每关第 2 波起、非休闲档、低概率追加 1 只精英（_toSpawn+1 = 追加不挤占波次名额）。
+    // B10 难度档概率：休闲 0（新手保护）/ 标准 1× / 困难 2× / 地狱 3×（hard/hell 概率更高，可配置）。
     this._elitePending = false;
-    if (!this.endless && this.currentWave >= 2 && !this._isCasual()
-      && Math.random() < ELITE.spawnChance) {
-      this._toSpawn++;
-      this._elitePending = true;
+    if (!this.endless && this.currentWave >= 2 && !this._isCasual()) {
+      const d = this.scene && this.scene.difficultyCfg;
+      const probMul = d && d.id === 'hell' ? 3 : (d && d.id === 'hard' ? 2 : 1);
+      if (Math.random() < ELITE.spawnChance * probMul) {
+        this._toSpawn++;
+        this._elitePending = true;
+      }
     }
     EventBus.emit(EVENTS.WAVE_STARTED, {
       wave: this.currentWave,
@@ -107,10 +111,11 @@ export default class WaveSystem {
     });
   }
 
-  /** A6 休闲档判断：scene.difficultyCfg.id === 'casual'（救济降难度复用同一口径） */
+  /** A6/B10 休闲档判断：scene.difficultyCfg.id === 'casual'；救济降难度（_reliefCombatMul 覆盖到休闲档）同口径，不刷精英 */
   _isCasual() {
     const c = this.scene && this.scene.difficultyCfg;
-    return !!(c && c.id === 'casual');
+    const r = this.scene && this.scene._reliefCombatMul;
+    return !!((c && c.id === 'casual') || (r && r.id === 'casual'));
   }
 
   /** 当前波次难度系数：无尽模式每 5 波 +10%（相对关卡基础难度递增） */

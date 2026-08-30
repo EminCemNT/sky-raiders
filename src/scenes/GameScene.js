@@ -3,7 +3,7 @@ import {
   SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, COLORS, PLAYER, BULLET, LEVELS, BOSS_RUSH, SHIPS, ELEMENTS, WINGMAN,
   DIFFICULTIES, getDifficulty, POWERUP, GRAZE, OVERDRIVE, OVERCHARGE, FOCUS, bossRushScale, PERFORMANCE, POOL, COMBAT_PERF,
   EVENT_MODES, getCurrentEvent, MODULE_DROP_CHANCE, getShipSkins, TOWER, TOWER_BUFFS, LIGHTS, TRANSITION,
-  RELIEF,
+  RELIEF, COMBO_BURST,
 } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
@@ -67,6 +67,8 @@ export default class GameScene extends Phaser.Scene {
     // 成就统计
     this.maxCombo = 0;
     this.usedSuperCount = 0;
+    // B11 连击蓄力爆发（局内临时，不入存档）：_burstUntil = 强化射击到期时刻（0=未激活）
+    this._burstUntil = 0;
     // 第二主动技能（P2）：当前技能槽（星风暴 ↔ 过载），由 SKILL_SWITCHED 轮换
     this.activeSkill = DEFAULT_SKILL;
     this._overdriveUntil = 0;
@@ -244,6 +246,7 @@ export default class GameScene extends Phaser.Scene {
     this.bombKey = this.input.keyboard.addKey('SPACE');
     this.focusKey = this.input.keyboard.addKey('F'); // 第三版③集火指令：切换僚机集火
     this.shiftKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT); // P1 聚焦模式（按住 Shift）
+    this.burstKey = this.input.keyboard.addKey('C'); // B11 连击蓄力爆发（不占用空格炸弹 / 技能 / FOCUS 键位）
 
     // 波次系统（Boss Rush 模式不生成普通波次，改为纯 Boss 序列；
     // endless 复用同一 WaveSystem，开无尽循环 + 难度递增；
@@ -671,6 +674,8 @@ export default class GameScene extends Phaser.Scene {
 
     // P2 过载：到期恢复射速
     this._updateOverdrive(time);
+    // B11 连击蓄力·强化射击：到期恢复伤害倍率
+    this._updateBurst(time);
     // P1 超载：到期恢复射速 + 得分倍率；每帧结算 bonus（真实玩法一帧内即见 ×1.2）
     this._updateOvercharge(time);
     this._flushOverchargeBonus();
@@ -729,6 +734,16 @@ export default class GameScene extends Phaser.Scene {
     if (Phaser.Input.Keyboard.JustDown(this.bombKey)) this.useBomb();
     // 第三版③集火指令：F 键切换僚机集火（无僚机/无目标时安全降级为空操作）
     if (Phaser.Input.Keyboard.JustDown(this.focusKey) && this.wingmanSystem) this.wingmanSystem.toggleFocus();
+    // B11 连击蓄力爆发：C 键（combo 达标才生效；未达标 useBurst 内部安全返回 false）
+    if (Phaser.Input.Keyboard.JustDown(this.burstKey)) this.useBurst();
+  }
+
+  /** B11 每帧：强化射击到期恢复伤害倍率（mul=1 → 零 diff；与 _updateOverdrive 同模式） */
+  _updateBurst(time) {
+    if (this._burstUntil && time > this._burstUntil) {
+      this._burstUntil = 0;
+      if (this.player) this.player.burstAtkMul = 1;
+    }
   }
 
   /** 激光束持续 DPS（B4）：对列内敌机/Boss 结算，手动包围盒判定。
@@ -1312,6 +1327,8 @@ export default class GameScene extends Phaser.Scene {
     // 成就系统：实时上报击杀（含来源/元素），并同步连击峰值
     AchievementManager.reportKill(meta);
     AchievementManager.reportComboPeak(this.maxCombo);
+    // B11 连击蓄力：击杀后广播蓄力档位变化（不 reset combo/maxCombo，峰值只增不减）
+    EventBus.emit(EVENTS.BURST_CHANGED, this.combo, this.getBurstGauge());
     // P0 留存-活动轮换：金币冲刺击杀额外掉金币（池满自动丢弃，不影响玩法）
     if (this.mode === 'coin_rush' && !meta.noEventCoin) {
       const n = (this.eventCfg && this.eventCfg.extraCoinsPerKill) || 2;
@@ -1329,6 +1346,65 @@ export default class GameScene extends Phaser.Scene {
   breakCombo() {
     if (this.combo > 0) EventBus.emit(EVENTS.COMBO_CHANGED, 0, 1);
     this.combo = 0;
+    // B11 连击蓄力：断连后蓄力档位归 0（峰值 maxCombo/session.comboPeak 不受影响）
+    EventBus.emit(EVENTS.BURST_CHANGED, 0, 0);
+  }
+
+  /**
+   * B11 当前可触发蓄力档位（0/1/2/3，用于 HUD 按钮置灰）：
+   *   combo >= 10 → 1（强化射击）；>= 15 → 2（+清屏）；>= 20 → 3（+回能）。
+   * 只读 this.combo，绝不改 maxCombo / session.comboPeak。
+   */
+  getBurstGauge() {
+    const tiers = (COMBO_BURST && COMBO_BURST.tiers) || [];
+    let g = 0;
+    for (const t of tiers) if (this.combo >= (t.needCombo || 999)) g++;
+    return g;
+  }
+
+  /**
+   * B11 连击蓄力爆发：消耗当前击杀 combo 触发三档累计效果。
+   *   power  ≥10 强化射击：3s 伤害 ×1.5（Player.burstAtkMul）
+   *   clear  ≥15 清屏：清敌弹 + 全场敌机中等伤害 + Boss 固定伤害（复用 useBomb 逻辑，不耗炸弹）
+   *   energy ≥20 回能：能量槽直接充满（addEnergy / ENERGY_MAX）
+   * 触发后 breakCombo()（只清 this.combo，峰值只增不减）。返回是否成功触发。
+   */
+  useBurst() {
+    if (this.gameEnded || !this.player || !this.player.active) return false;
+    const gauge = this.getBurstGauge();
+    if (gauge <= 0) return false;
+    const comboAtFire = this.combo;
+    const cfg = (COMBO_BURST && COMBO_BURST.tiers) ? COMBO_BURST : { tiers: [] };
+    for (const tier of cfg.tiers || []) {
+      if (comboAtFire < (tier.needCombo || 999)) continue;
+      if (tier.kind === 'power') {
+        this.player.burstAtkMul = cfg.powerDmgMul || 1.5;
+        this._burstUntil = this.time.now + (cfg.powerMs || 3000);
+      } else if (tier.kind === 'clear') {
+        this._burstClear(cfg);
+      } else if (tier.kind === 'energy') {
+        this.addEnergy(ENERGY_MAX);
+      }
+    }
+    // 广播：蓄力激活（payload 含触发档位与连击），随后断连（HUD 蓄力条归零）
+    EventBus.emit(EVENTS.BURST_ACTIVATED, { gauge, combo: comboAtFire });
+    this.breakCombo();
+    // 视觉/音效反馈（reduced-motion 由 VFX/tween 内部降级）
+    this.cameras.main.flash(220, 160, 220, 255);
+    VFX.shake(this, 'light');
+    audio.sfx('super');
+    EventBus.emit(EVENTS.FLOAT_SCORE, { x: this.player.x, y: this.player.y - 44, special: true, label: t('chargeBurst') });
+    return true;
+  }
+
+  /** B11 清屏档：清全场敌弹 + 全场敌机中等伤害 + Boss 固定伤害（复用 useBomb 清屏思路，不耗炸弹） */
+  _burstClear(cfg) {
+    this.enemyBullets.children.each((b) => { if (b.active) this.killBullet(b); });
+    this.enemies.children.each((e) => {
+      if (e.active && e.hit(cfg.clearDmg || 150)) this.registerKill(e.x, e.y);
+    });
+    if (this.boss && this.boss.active) this.boss.hit(cfg.clearBossDmg || 300);
+    VFX.bombShockwave(this, this.player.x, this.player.y);
   }
 
   // ---- 擦弹 Graze（P2）----

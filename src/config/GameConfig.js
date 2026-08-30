@@ -79,8 +79,9 @@ export const EVENTS = {
   HUD_SCORE: '__hud_score',        // HUD 得分刷新（原裸字符串 '__hud_score' 登记，payload = 总分）
   HUD_BOMBS: '__hud_bombs',        // HUD 炸弹数刷新（原裸字符串 '__hud_bombs' 登记，payload = 炸弹数）
   SAVE_FAILED: '__save_failed',    // A1：本地存档写入失败（仅首次提示，避免刷屏）
-  BURST_CHANGED: '__burst_changed',// B11：连击蓄力值变化（预留登记）
-  BURST_ACTIVATED: '__burst_activated', // B11：连击蓄力激活（预留登记）
+  BURST_CHANGED: '__burst_changed',// B11：连击蓄力值变化，payload = (combo, gauge)
+  BURST_ACTIVATED: '__burst_activated', // B11：连击蓄力激活，payload = { gauge, combo }
+  USE_BURST: 'use-burst',           // B11：HUD 蓄力按钮/键盘 C 触发 useBurst
   MUTATION_CHANGED: '__mutation_changed', // A8：无尽变异变更，payload = { id, name, type, mul, label }
 };
 
@@ -1019,6 +1020,26 @@ export const RELIEF = {
   tempBuffLife: 1,
   reviveFireBonusMs: 2000,
   fireBonus: 1,
+};
+
+// ───────────────────────────────────────────────────────────────
+// OPT-13 批B B11 连击蓄力爆发（append-only，纯数据配置）：
+//   基于 GameScene.registerKill 的击杀 combo（this.combo），与 WINGMAN.COMBO 完全无关。
+//   tiers 三档累计生效（≥20 同时强化+清屏+回能；≥15 强化+清屏；≥10 强化）。
+//   powerMs / powerDmgMul 强化射击持续与伤害倍率（Player.burstAtkMul 消费）；
+//   clearDmg / clearBossDmg 清屏对敌机中等伤害与 Boss 固定伤害（复用 useBomb 清屏逻辑，不耗炸弹）。
+// 消费方：GameScene.useBurst / getBurstGauge / _burstClear / _updateBurst / UIScene HUD。
+// ───────────────────────────────────────────────────────────────
+export const COMBO_BURST = {
+  powerMs: 3000,
+  powerDmgMul: 1.5,
+  clearDmg: 150,
+  clearBossDmg: 300,
+  tiers: [
+    { needCombo: 10, kind: 'power',  desc: '强化射击' },
+    { needCombo: 15, kind: 'clear',  desc: '清屏' },
+    { needCombo: 20, kind: 'energy', desc: '回能' },
+  ],
 };
 
 // ───────────────────────────────────────────────────────────────
