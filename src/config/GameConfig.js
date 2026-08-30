@@ -1137,3 +1137,37 @@ export const TOUCH = {
   LERP_BASE: 0.35,
   LERP_CAP: 0.6,
 };
+
+// ───────────────────────────────────────────────────────────────
+// OPT-13 批B B12 称号系统（append-only，纯数据配置）：
+//   称号表 8 个，按稀有度升序排列（common < rare < epic < legendary；
+//   同稀有度按表序取前者 = 派生时优先取表中靠前的那个）。
+//   cond 为解锁条件（TitleSystem 读时从既有持久化字段派生，零写入、零新增存档字段）：
+//     { type: 'levelStars', any: true }      存档已有任意关卡星级即解锁
+//     { type: 'totalKills', n }              历史累计击杀 ≥ n
+//     { type: 'grazes', n }                  newbiePlan.progress.grazes 累计擦弹 ≥ n
+//     { type: 'towerTop', n }                深空爬塔最高层 ≥ n
+//     { type: 'medalCount', n }              关卡勋章累计 ≥ n
+//     { type: 'achievement', id }            成就 id（26 个既有 id，不新增）
+//     and / or                               组合条件（全满足 / 任一满足）
+// 消费方：TitleSystem（getTitle/getUnlockedTitles/getCurrentTitle）+
+//         ResultScene（结算页称号行）/ ResultScene.buildShareCard（B15 分享卡称号行）。
+// ───────────────────────────────────────────────────────────────
+export const TITLES = [
+  { id: 'rookie', name: '苍穹新兵', nameEn: 'Sky Rookie', rarity: 'common',
+    cond: { type: 'levelStars', any: true } },
+  { id: 'veteran', name: '百战老兵', nameEn: 'Veteran', rarity: 'rare',
+    cond: { or: [{ type: 'totalKills', n: 500 }, { type: 'achievement', id: 'kill_500' }] } },
+  { id: 'grazer', name: '擦弹大师', nameEn: 'Graze Master', rarity: 'rare',
+    cond: { type: 'grazes', n: 300 } },
+  { id: 'climber', name: '深空攀登者', nameEn: 'Tower Climber', rarity: 'rare',
+    cond: { type: 'towerTop', n: 10 } },
+  { id: 'slayer', name: '屠龙者', nameEn: 'Dragon Slayer', rarity: 'epic',
+    cond: { type: 'achievement', id: 'boss_all' } },
+  { id: 'maniac', name: '连击狂人', nameEn: 'Combo Maniac', rarity: 'epic',
+    cond: { type: 'achievement', id: 'combo_30' } },
+  { id: 'perfectionist', name: '完美主义者', nameEn: 'Perfectionist', rarity: 'epic',
+    cond: { type: 'achievement', id: 'three_star' } },
+  { id: 'skyOverlord', name: '苍穹霸主', nameEn: 'Sky Overlord', rarity: 'legendary',
+    cond: { and: [{ type: 'achievement', id: 'all_clear' }, { type: 'medalCount', n: 6 }, { type: 'towerTop', n: 10 }] } },
+];

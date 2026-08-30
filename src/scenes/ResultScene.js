@@ -4,6 +4,7 @@ import { SaveManager } from '../utils/SaveManager.js';
 import { t } from '../config/Locale.js';
 import { createStarfield } from '../systems/Starfield.js';
 import { transition } from '../systems/TransitionManager.js';
+import { TitleSystem } from '../systems/TitleSystem.js';
 import { NeonButton, NeonBar, THEME } from '../utils/UIWidgets.js';
 import { enableSceneBloom } from '../utils/BloomFX.js';
 
@@ -55,6 +56,15 @@ export default class ResultScene extends Phaser.Scene {
     this.add.text(cx, 200, title, {
       fontFamily: THEME.fontFamily, fontSize: '48px', fontStyle: '800', color: titleColor,
     }).setOrigin(0.5).setShadow(0, 0, titleColor, 20, true, true);
+
+    // OPT-13 批B B12 称号系统：结算页展示当前称号（标题下方一行，纯派生只读展示）。
+    // 标题底 ~224 / 星级顶 ~250，称号行放 y=236（16px）不遮挡既有元素、不移动布局；
+    // reduced-motion 友好：静态文本无弹跳/缩放动画。
+    const _curTitle = TitleSystem.getCurrentTitle(SaveManager.load());
+    this.add.text(cx, 236, _curTitle ? t('title_' + _curTitle.id) : t('titleNone'), {
+      fontFamily: THEME.fontFamily, fontSize: '16px', fontStyle: '800',
+      color: _curTitle ? TitleSystem.getRarityColor(_curTitle.rarity) : THEME.textSecondary,
+    }).setOrigin(0.5).setAlpha(_curTitle ? 0.92 : 0.55);
 
     // Phase C：胜利全屏爆闪
     if (r.victory) {
