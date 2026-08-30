@@ -117,15 +117,26 @@ push('精英 scale≈1.2 + 发光 + 射速提速', elite.scaleX > 1.19 && elite.
   `scale=${elite.scaleX} glow=${elite.hasGlow} fireRateEff=${elite.fireRateEff}`);
 
 // ── 6) 精英击杀必掉 BOSS_DROP_TABLE ──
+// QA 加固（2026-08-30 回归轮）：Enemy.die() 同时跑 spawnEliteDrops + maybeDropItem +
+// maybeDropPower 三条随机掉落；原探针用 spawnItem 钩子捕获全部掉落，会把随机掉出的
+// magnet/shield/power 也计入并断言必须属于 BOSS_DROP_TABLE，约 25% 概率误判 FAIL（已复现
+// 3 次：PASS/PASS/FAIL(keys=wingman,power)）。精英必掉验证只关心 spawnEliteDrops：
+// 该测试时段 stub 掉两条随机路径，使断言确定性通过（非代码回归，探针设计缺陷修复）。
 const drop = await page.evaluate(() => {
   const gs = window.__SKY__.scene.getScene('GameScene');
   const e = gs.spawnEnemy(200, 150, 'mid', 'straight', 1, 'straight', true);
   const before = gs.items.countActive(true);
   const spawnedKeys = [];
   const origSpawn = gs.spawnItem.bind(gs);
+  const origItem = gs.maybeDropItem;
+  const origPower = gs.maybeDropPower;
   gs.spawnItem = (x, y, key) => { spawnedKeys.push(key); origSpawn(x, y, key); };
+  gs.maybeDropItem = () => {};
+  gs.maybeDropPower = () => {};
   e.hit(99999, 'fire');
   gs.spawnItem = origSpawn;
+  gs.maybeDropItem = origItem;
+  gs.maybeDropPower = origPower;
   const after = gs.items.countActive(true);
   return { before, after, spawnedKeys };
 });
