@@ -3,7 +3,7 @@ import {
   SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, COLORS, PLAYER, BULLET, LEVELS, BOSS_RUSH, SHIPS, ELEMENTS, WINGMAN,
   DIFFICULTIES, getDifficulty, POWERUP, GRAZE, OVERDRIVE, OVERCHARGE, FOCUS, bossRushScale, PERFORMANCE, POOL, COMBAT_PERF,
   EVENT_MODES, getCurrentEvent, MODULE_DROP_CHANCE, getShipSkins, TOWER, TOWER_BUFFS, LIGHTS, TRANSITION,
-  RELIEF, COMBO_BURST, ELEMENT_STORM,
+  RELIEF, COMBO_BURST, ELEMENT_STORM, EASE,
 } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
@@ -1385,7 +1385,7 @@ export default class GameScene extends Phaser.Scene {
       if (p._recoilTween) p._recoilTween.stop();
       p.setScale(1, 1);
       p._recoilTween = this.tweens.add({
-        targets: p, scaleY: 0.9, duration: 50, yoyo: true, ease: 'Quad.easeOut',
+        targets: p, scaleY: 0.9, duration: 50, yoyo: true, ease: EASE.feedback,
         onComplete: () => { if (p.active) p.setScale(1, 1); p._recoilTween = null; },
       });
     }
@@ -2281,7 +2281,7 @@ export default class GameScene extends Phaser.Scene {
         const star = this.add.image(sx, GAME_HEIGHT + 20, 'item_energy')
           .setDepth(59).setScale(1.6);
         this.tweens.add({
-          targets: star, y: -40, duration: 520, ease: 'Cubic.in',
+          targets: star, y: -40, duration: 520, ease: EASE.exit,
           onComplete: () => star.destroy(),
         });
       });

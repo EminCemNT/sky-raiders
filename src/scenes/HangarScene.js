@@ -1,13 +1,14 @@
 import Phaser from 'phaser';
 import {
   SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, UPGRADE_TREE, SHIPS, WEAPONS, ELEMENTS, MODULES, MODULE_SLOTS, MODULE_QUALITY, MODULE_SHOP,
-  LEVELS, PLAYER, calcPower, recommendLevel, SKIN_PRICE, getShipSkins, shipSkinKey,
+  LEVELS, PLAYER, calcPower, recommendLevel, SKIN_PRICE, getShipSkins, shipSkinKey, EASE,
 } from '../config/GameConfig.js';
 import { SaveManager } from '../utils/SaveManager.js';
 import { t } from '../config/Locale.js';
 import { createStarfield, HANGAR_BG_THEME } from '../systems/Starfield.js';
 import { transition } from '../systems/TransitionManager.js';
 import { NeonButton, THEME, drawGlassPanel } from '../utils/UIWidgets.js';
+import { applyFilmLayer } from '../utils/FilmFX.js';
 
 /**
  * HangarScene：机库 / 部件升级界面（Sky Force 风格金币升级树）
@@ -33,6 +34,8 @@ export default class HangarScene extends Phaser.Scene {
 
     // 背景滚动星空（UI P2：淡星云 + 陨石剪影；星空色调随所选战机 tint 跟随）
     this.starfield = createStarfield(this, { theme: HANGAR_BG_THEME });
+    // OPT-14 A3：机库电影层（常驻暗角 + 静态颗粒；grainSpeed=false 防闪烁；无 bloom 接入点）
+    this.filmFX = applyFilmLayer(this, { key: 'hangar' });
 
     // 标题（辉光副本层 + 呼吸脉动，与 MenuScene Phase A 统一）
     this.titleGlow = this.add.text(cx, 92, t('hangarTitle'), {
@@ -59,8 +62,8 @@ export default class HangarScene extends Phaser.Scene {
     this.skinsOpen = false;
 
     if (!reduceMotion) {
-      this.tweens.add({ targets: this.titleGlow, scale: { from: 1, to: 1.03 }, duration: 1700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-      this.tweens.add({ targets: this.titleGlow, alpha: { from: 0.24, to: 0.46 }, duration: 1700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+      this.tweens.add({ targets: this.titleGlow, scale: { from: 1, to: 1.03 }, duration: 1700, yoyo: true, repeat: -1, ease: EASE.breathe });
+      this.tweens.add({ targets: this.titleGlow, alpha: { from: 0.24, to: 0.46 }, duration: 1700, yoyo: true, repeat: -1, ease: EASE.breathe });
     }
 
     // 金币余额
@@ -171,8 +174,8 @@ export default class HangarScene extends Phaser.Scene {
       this.tweens.add({ targets: this.shipPreview, alpha: 1, duration: 380, ease: 'Back.easeOut' });
       this.tweens.add({ targets: this.shipLabel, alpha: 1, duration: 380, delay: 120, ease: 'Back.easeOut' });
       this.tweens.add({ targets: this.shipAura, alpha: 0.5, duration: 420, ease: 'Back.easeOut' });
-      this.tweens.add({ targets: this.shipPreview, y: y - 5, duration: 1600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-      this.tweens.add({ targets: this.shipAura, alpha: { from: 0.32, to: 0.58 }, duration: 1400, delay: 460, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+      this.tweens.add({ targets: this.shipPreview, y: y - 5, duration: 1600, yoyo: true, repeat: -1, ease: EASE.breathe });
+      this.tweens.add({ targets: this.shipAura, alpha: { from: 0.32, to: 0.58 }, duration: 1400, delay: 460, yoyo: true, repeat: -1, ease: EASE.breathe });
     }
 
     const mkArrow = (sx, dir) => {

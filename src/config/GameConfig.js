@@ -1066,6 +1066,18 @@ export const BLOOM = {
   //   rtAlpha     辉光叠加层透明度（越低越克制泛白；0.30→0.24）
   params: { color: 0xffffff, offsetX: 1.5, offsetY: 1.5, blurStrength: 0.5, strength: 0.55, steps: 4, threshold: 0.6 },
   rtAlpha: 0.24,
+  // OPT-14 A1：UI 层不进辉光（depth>64 视为 UI：飘字 80 / 战斗弹窗 600+；gameplay 最高 60 + 4px 缓冲）。
+  //   BloomFX redraw 按 depth 过滤，只画 gameplay 层（≤64），飘字/弹窗保持锐利 + 减每帧 RT 绘制内容。
+  excludeUI: true,
+  excludeUIDepth: 64,
+  // OPT-14 A2：RT 下采样 soft bloom（540×960 → 270×480，带宽≈4x）+ 静态场景脏标记（staticMode）。
+  //   rtAlpha 由 0.24 → 0.20 补偿下采样后的更柔叠加，防整体过柔泛白。
+  downscale: {
+    enabled: true,          // 总开关（enabled:false 一键回退全分辨率 + 仅 A1/静态脏标记）
+    factor: 2,              // 2=1/2 分辨率(270×480) / 4=1/4(135×240)；推荐 2
+    rtAlpha: 0.20,          // 下采样后叠加 alpha 补偿（原 0.24 → 0.20）
+    staticEveryNFrames: 5,  // staticMode 脏标记兜底重绘周期（≈83ms）
+  },
 };
 
 // ───────────────────────────────────────────────────────────────
@@ -1081,6 +1093,43 @@ export const FILM = {
   grainAlpha: 0.04,
   grainSpeed: true,
   grainLowAlpha: 0.02,
+  // OPT-14 A3：全场景预置档（combat 兼容 FILM 原字段；menu/result/hangar 低 alpha + 颗粒静态防闪）。
+  //   消费方：FilmFX.applyFilmLayer(scene, { key })；未传 key 时回退 FILM 原字段（combat 语义）。
+  presets: {
+    combat: { vignetteAlpha: 0.16, grainAlpha: 0.04, grainSpeed: true },
+    menu:   { vignetteAlpha: 0.10, grainAlpha: 0.02, grainSpeed: false },
+    result: { vignetteAlpha: 0.12, grainAlpha: 0.025, grainSpeed: false },
+    hangar: { vignetteAlpha: 0.11, grainAlpha: 0.02, grainSpeed: false },
+  },
+};
+
+// ───────────────────────────────────────────────────────────────
+// OPT-14 C1：缓动表统一（全库按语义引用 EASE.*，仅改 ease 字符串，不动 duration/yoyo/delay/onComplete）
+//   enter    入场/推进（从动到静）：面板、横幅、光效
+//   pop      弹跳强调：星级、按钮、卡片、飘字
+//   breathe  呼吸脉动：标题、光晕、星云、能量环
+//   feedback 按压/受击微反馈：按钮按下、受击缩放
+//   exit     离场/坠落：飘字离场、星暴上浮、闪光消失
+// 注：Phaser 3 中 'Cubic.out' ≡ 'Cubic.easeOut'、'Back.out' ≡ 'Back.easeOut' 等，替换统一为完整形式（行为零变化）。
+// ───────────────────────────────────────────────────────────────
+export const EASE = {
+  enter:    'Cubic.easeOut',  // 入场/推进（从动到静）
+  pop:      'Back.easeOut',   // 弹跳强调
+  breathe:  'Sine.easeInOut', // 呼吸脉动
+  feedback: 'Quad.easeOut',   // 按压/受击微反馈
+  exit:     'Cubic.easeIn',   // 离场/坠落
+};
+
+// ───────────────────────────────────────────────────────────────
+// OPT-14 B2：爆炸残像拖尾（motion smear · 爆炸观感提升）
+//   glow_soft + ADD 低 alpha 慢衰减副本，逐帧上浮，作爆炸底光（depth 49，explosion 50 之下）。
+//   small/mid=1 残影；boss=2（更大更淡、上浮更高）；reduced/low 不生成（纯视觉优先保帧）。
+// ───────────────────────────────────────────────────────────────
+export const AFTERGLOW = {
+  small: { count: 1, alpha: 0.22, scale: 0.9, ms: 260, rise: 10 },
+  mid:   { count: 1, alpha: 0.22, scale: 0.9, ms: 260, rise: 10 },
+  boss:  { count: 2, alpha: 0.28, scale: [0.9, 1.3], ms: [260, 320], rise: [10, 16] },
+  depth: 49,
 };
 
 // ───────────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, LEVELS, WEAPONS, SHIPS, WINGMAN, PLAYER, EVENT_MODES, OVERCHARGE, PERFORMANCE, FILM, COMBO_BURST } from '../config/GameConfig.js';
+import { SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, LEVELS, WEAPONS, SHIPS, WINGMAN, PLAYER, EVENT_MODES, OVERCHARGE, PERFORMANCE, EASE, COMBO_BURST } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
 import { t } from '../config/Locale.js';
@@ -7,6 +7,7 @@ import { audio } from '../systems/AudioSystem.js';
 import { transition } from '../systems/TransitionManager.js';
 import { NeonBar, NeonButton, makeIconButton, THEME } from '../utils/UIWidgets.js';
 import { SKILLS, DEFAULT_SKILL } from '../config/Skills.js';
+import { applyFilmLayer } from '../utils/FilmFX.js';
 
 const PREFERS_REDUCED = (typeof window !== 'undefined' && window.matchMedia
   && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
@@ -109,7 +110,7 @@ export default class UIScene extends Phaser.Scene {
     // 炸弹常驻辉光（轻脉动，区分"始终可用"与能量技能）
     this.tweens.add({
       targets: this.bombIcon.ring, alpha: { from: 0.12, to: 0.34 },
-      duration: 1100, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+      duration: 1100, yoyo: true, repeat: -1, ease: EASE.breathe,
     });
 
     // 技能按钮（右下角图标化，能量满时发光脉冲）。
@@ -197,7 +198,7 @@ export default class UIScene extends Phaser.Scene {
     // 外圈轻微 alpha 脉冲
     this.tweens.add({
       targets: this.pauseBtn, alpha: { from: 1, to: 0.7 },
-      duration: 900, yoyo: true, repeat: -1, ease: 'Sine.inOut',
+      duration: 900, yoyo: true, repeat: -1, ease: EASE.breathe,
     });
 
     // 暂停遮罩（默认隐藏）
@@ -276,7 +277,7 @@ export default class UIScene extends Phaser.Scene {
       this.time.delayedCall(1800, () => this.tweens.add({ targets: cont, alpha: 0, duration: 400, onComplete: () => cont.destroy() }));
     } else {
       cont.setScale(0.6).setAlpha(0);
-      this.tweens.add({ targets: cont, scale: 1, alpha: 1, duration: 420, ease: 'Back.easeOut' });
+      this.tweens.add({ targets: cont, scale: 1, alpha: 1, duration: 420, ease: EASE.pop });
       this.tweens.add({ targets: cont, alpha: 0, delay: 1700, duration: 500, onComplete: () => cont.destroy() });
     }
   }
@@ -565,7 +566,7 @@ export default class UIScene extends Phaser.Scene {
         this.tweens.killTweensOf(this.comboText);   // 防叠加：先清旧脉冲再放新脉冲
         this.comboText.setScale(1.35);
         this.tweens.add({
-          targets: this.comboText, scale: 1.0, duration: 180, ease: 'Back.easeOut',
+          targets: this.comboText, scale: 1.0, duration: 180, ease: EASE.pop,
         });
       }
     };
@@ -720,7 +721,7 @@ export default class UIScene extends Phaser.Scene {
       if (!PREFERS_REDUCED) {
         this.tweens.killTweensOf(this.burstBtn.ring);
         this.burstBtn.ring.setAlpha(1);
-        this.tweens.add({ targets: this.burstBtn.ring, alpha: 0, scale: 1.4, duration: 340, ease: 'Cubic.out' });
+        this.tweens.add({ targets: this.burstBtn.ring, alpha: 0, scale: 1.4, duration: 340, ease: EASE.enter });
       }
     };
     EventBus.on(EVENTS.BURST_ACTIVATED, this._onBurstActivated);
@@ -731,17 +732,7 @@ export default class UIScene extends Phaser.Scene {
   }
 
   update() {
-    // 画质精修三件·B：胶片颗粒逐帧抖动 1-2px（模拟胶片呼吸）；reduced-motion 下静态居中
-    if (this._filmGrain) {
-      if (FILM.grainSpeed && !PREFERS_REDUCED) {
-        this._filmGrain.setPosition(
-          GAME_WIDTH / 2 + Phaser.Math.Between(-1, 1),
-          GAME_HEIGHT / 2 + Phaser.Math.Between(-1, 1),
-        );
-      } else {
-        this._filmGrain.setPosition(GAME_WIDTH / 2, GAME_HEIGHT / 2);
-      }
-    }
+    // （胶片颗粒逐帧抖动已由 FilmFX.applyFilmLayer 的 update 监听接管：战斗动态 / 静态场景居中 / reduced 静态）
     // P2 技能键：F 发 USE_SKILL（按 activeSkill 派发）；Q 发 SKILL_SWITCHED（轮换技能槽）
     if (this.skillKey && Phaser.Input.Keyboard.JustDown(this.skillKey)) {
       EventBus.emit(EVENTS.USE_SKILL);
@@ -851,43 +842,15 @@ export default class UIScene extends Phaser.Scene {
     this._lowHpBase = 0;
   }
 
-  /** 画质精修三件·B：常驻暗角 + 胶片颗粒（电影感，纯视觉零业务）。
-   *  常驻暗角：径向渐变（中心透明→四角黑），depth 88 高于背景低于低血暗角(90)/HUD(100)；
-   *            alpha = FILM.vignetteAlpha（≈0.16，低血时低血暗角叠加在其上更深）。
-   *  胶片颗粒：TextureFactory 已生成 grain_tex（128×128 随机灰点），全屏 Image 铺满，
-   *            alpha = FILM.grainAlpha（low 性能档减半）；每帧 update 抖动 1-2px 模拟呼吸，
-   *            reduced-motion 下颗粒静态（不抖动）。
-   *  测试钩子：this._permVignette / this._filmGrain / this._filmGrainQuality。 */
+  /** OPT-14 A3：常驻暗角 + 胶片颗粒（战斗档动态颗粒；抽 FilmFX.applyFilmLayer 复用，四场景统一）。
+   *  测试钩子兼容：this._permVignette / this._filmGrain / this._filmGrainQuality（原探针口径保留）。 */
   _buildFilmLayers() {
     const quality = (SaveManager.load().quality) || PERFORMANCE.defaultTier;
     this._filmGrainQuality = quality;
-
-    // 常驻暗角：程序生成径向渐变纹理（中心透明→四角黑），与低血红角互不冲突
-    const vk = 'vignette-perm';
-    if (!this.textures.exists(vk)) {
-      const W = GAME_WIDTH, H = GAME_HEIGHT;
-      const ct = this.textures.createCanvas(vk, W, H);
-      const ctx = ct.getContext();
-      const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.34, W / 2, H / 2, Math.max(W, H) * 0.72);
-      g.addColorStop(0, 'rgba(0,0,0,0)');
-      g.addColorStop(0.62, 'rgba(0,0,0,0)');
-      g.addColorStop(1, 'rgba(0,0,0,0.95)');
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, W, H);
-      ct.refresh();
-    }
-    this._permVignette = this.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, vk)
-      .setDepth(88)
-      .setAlpha(FILM.vignetteAlpha);
-
-    // 胶片颗粒：全屏 Image（NORMAL 混合，微弱颗粒感；纹理随机内容放大无接缝）
-    if (this.textures.exists('grain_tex')) {
-      const gAlpha = quality === 'low' ? (FILM.grainLowAlpha != null ? FILM.grainLowAlpha : FILM.grainAlpha * 0.5) : FILM.grainAlpha;
-      this._filmGrain = this.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, 'grain_tex')
-        .setDepth(96)
-        .setAlpha(gAlpha)
-        .setScale(GAME_WIDTH / 128, GAME_HEIGHT / 128)
-        .setBlendMode(Phaser.BlendModes.NORMAL);
+    this._filmCtl = applyFilmLayer(this, { key: 'combat', grainSpeed: true });
+    if (this._filmCtl) {
+      this._permVignette = this._filmCtl.vignette;
+      this._filmGrain = this._filmCtl.grain;
     }
   }
 
@@ -944,11 +907,11 @@ export default class UIScene extends Phaser.Scene {
     const ds = this.add.text(-w / 2 + 54, 20, desc, { fontFamily: THEME.fontFamily, fontSize: '11px', color: THEME.textMuted }).setOrigin(0, 0.5);
     c.add([bg, ico, tag, nm, ds]);
     this.tweens.add({
-      targets: c, y: 100, duration: 220, ease: 'Cubic.out',
+      targets: c, y: 100, duration: 220, ease: EASE.enter,
       onComplete: () => {
         this.time.delayedCall(2200, () => {
           this.tweens.add({
-            targets: c, y: -60, duration: 220, ease: 'Cubic.in',
+            targets: c, y: -60, duration: 220, ease: EASE.exit,
             onComplete: () => { c.destroy(); onDone(); },
           });
         });

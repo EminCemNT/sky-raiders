@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { COLORS } from '../config/GameConfig.js';
+import { COLORS, EASE } from '../config/GameConfig.js';
 
 // ── 全局视觉主题（统一各场景配色，避免魔法数散落）─────────────────
 export const THEME = {
@@ -204,10 +204,10 @@ export class NeonButton {
       useHandCursor: true,
     };
     this.container.setSize(this.w, this.h).setDepth(opts.depth ?? 10).setInteractive(this._hitConfig);
-    this.container.on('pointerover', () => { this._drawBg(this._hover, stroke, 1); if (this.glow) this.scene.tweens.add({ targets: this.glowG, alpha: 0.4, duration: 160 }); });
-    this.container.on('pointerout', () => { this._drawSelected(); if (this.glow) this.scene.tweens.add({ targets: this.glowG, alpha: this.selected ? 0.5 : 0, duration: 160 }); });
+    this.container.on('pointerover', () => { this._drawBg(this._hover, stroke, 1); if (this.glow) this.scene.tweens.add({ targets: this.glowG, alpha: 0.4, duration: 160, ease: EASE.breathe }); });
+    this.container.on('pointerout', () => { this._drawSelected(); if (this.glow) this.scene.tweens.add({ targets: this.glowG, alpha: this.selected ? 0.5 : 0, duration: 160, ease: EASE.breathe }); });
     this.container.on('pointerdown', () => {
-      scene.tweens.add({ targets: this.container, scale: 0.96, duration: 80, yoyo: true });
+      scene.tweens.add({ targets: this.container, scale: 0.96, duration: 80, yoyo: true, ease: EASE.feedback });
     });
     if (opts.onDown) this.container.on('pointerdown', opts.onDown);
   }
@@ -246,7 +246,7 @@ export class NeonButton {
   setSelected(sel) {
     this.selected = !!sel;
     this._drawSelected();
-    if (this.glow) this.scene.tweens.add({ targets: this.glowG, alpha: this.selected ? 0.5 : 0, duration: 160 });
+    if (this.glow) this.scene.tweens.add({ targets: this.glowG, alpha: this.selected ? 0.5 : 0, duration: 160, ease: EASE.breathe });
   }
 
   _drawSelected() {
@@ -283,7 +283,7 @@ export function makeIconButton(scene, x, y, iconKey, opts = {}) {
   });
   c.on('pointerdown', (p, x2, y2, e) => {
     if (e) e.stopPropagation();
-    scene.tweens.add({ targets: c, scale: 0.92, duration: 90, yoyo: true });
+    scene.tweens.add({ targets: c, scale: 0.92, duration: 90, yoyo: true, ease: EASE.feedback });
     if (opts.onDown) opts.onDown();
   });
   return { container: c, ring, bg, icon, label, count };

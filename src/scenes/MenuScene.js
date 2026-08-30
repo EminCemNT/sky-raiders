@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, LEVELS, DIFFICULTIES, PERFORMANCE, MEDALS, getCurrentEvent, TOUCH, CODEX_DECOR } from '../config/GameConfig.js';
+import { SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, LEVELS, DIFFICULTIES, PERFORMANCE, MEDALS, getCurrentEvent, TOUCH, CODEX_DECOR, EASE } from '../config/GameConfig.js';
 import { SaveManager } from '../utils/SaveManager.js';
 import { t, setLocale } from '../config/Locale.js';
 import { Ads } from '../systems/Ads.js';
@@ -10,6 +10,7 @@ import { transition } from '../systems/TransitionManager.js';
 import { audio } from '../systems/AudioSystem.js';
 import { NeonButton, THEME, drawGlassPanel } from '../utils/UIWidgets.js';
 import { enableSceneBloom } from '../utils/BloomFX.js';
+import { applyFilmLayer } from '../utils/FilmFX.js';
 import HangarScene from './HangarScene.js';
 
 /**
@@ -34,8 +35,11 @@ export default class MenuScene extends Phaser.Scene {
     // 背景滚动星空（UI P2：主题化 = 星云脉动 + 近景剪影，reduced-motion 自动降级为静态）
     this.starfield = createStarfield(this, { theme: MENU_BG_THEME });
 
-    // P1 表现工程·PostFX 辉光（可选场景；按性能档开，low 关 / Canvas 自动降级）
-    this.bloomFX = enableSceneBloom(this, SaveManager.load().quality || PERFORMANCE.defaultTier);
+    // P1 表现工程·PostFX 辉光（可选场景；按性能档开，low 关 / Canvas 自动降级）。
+    // OPT-14 A2：静态场景加脏标记（staticMode），避免每帧重绘烧成本。
+    this.bloomFX = enableSceneBloom(this, SaveManager.load().quality || PERFORMANCE.defaultTier, { staticMode: true });
+    // OPT-14 A3：菜单电影层（常驻暗角 + 静态颗粒；grainSpeed=false 防闪烁，红线）
+    this.filmFX = applyFilmLayer(this, { key: 'menu' });
 
     // 动态注册机库场景（GameConfig 只读，未登记 HANGAR，故运行时注册一次）
     if (!this.scene.get('HangarScene')) {
@@ -49,14 +53,14 @@ export default class MenuScene extends Phaser.Scene {
     this.title = this.add.text(cx, 218, t('title'), {
       fontFamily: THEME.fontFamily, fontSize: '58px', fontStyle: '800', color: THEME.titleBright,
     }).setOrigin(0.5).setShadow(0, 0, THEME.titleShadow, 24, true, true).setDepth(2);
-    this.tweens.add({ targets: [this.title, this.titleGlow], scale: { from: 1, to: 1.035 }, duration: 1700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-    this.tweens.add({ targets: this.titleGlow, alpha: { from: 0.26, to: 0.5 }, duration: 1700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    this.tweens.add({ targets: [this.title, this.titleGlow], scale: { from: 1, to: 1.035 }, duration: 1700, yoyo: true, repeat: -1, ease: EASE.breathe });
+    this.tweens.add({ targets: this.titleGlow, alpha: { from: 0.26, to: 0.5 }, duration: 1700, yoyo: true, repeat: -1, ease: EASE.breathe });
 
     // 英文名（宽字距 + 副色呼吸）
     this.subTitle = this.add.text(cx, 284, t('subtitle'), {
       fontFamily: THEME.fontFamily, fontSize: '17px', color: THEME.subBright, fontStyle: '700',
     }).setOrigin(0.5).setAlpha(0.75).setDepth(2).setLetterSpacing(8);
-    this.tweens.add({ targets: this.subTitle, alpha: { from: 0.5, to: 0.95 }, duration: 2200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    this.tweens.add({ targets: this.subTitle, alpha: { from: 0.5, to: 0.95 }, duration: 2200, yoyo: true, repeat: -1, ease: EASE.breathe });
 
     // 标题能量环装饰（缓慢旋转 + 脉动）
     this.energyRing = this.add.graphics().setPosition(cx, 218).setDepth(0);
@@ -64,7 +68,7 @@ export default class MenuScene extends Phaser.Scene {
     this.energyRing.lineStyle(1, 0xffffff, 0.25).strokeCircle(0, 0, 120);
     this.energyRing.lineStyle(2, 0x66ccff, 0.3).strokeCircle(0, 0, 144);
     this.tweens.add({ targets: this.energyRing, angle: 360, duration: 28000, repeat: -1 });
-    this.tweens.add({ targets: this.energyRing, scale: { from: 0.97, to: 1.05 }, duration: 3200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    this.tweens.add({ targets: this.energyRing, scale: { from: 0.97, to: 1.05 }, duration: 3200, yoyo: true, repeat: -1, ease: EASE.breathe });
 
     // OPT-13 批B B13 图鉴收藏入口（收集型玩家长期目标；面板内可购买装饰金币出口）
     new NeonButton(this, cx, 330, t('btnCodex'), { stroke: 0x9a6fd6, glow: true, onDown: () => {
@@ -962,7 +966,7 @@ export default class MenuScene extends Phaser.Scene {
         // 点亮动画：解锁条目一次性轻微缩放（reduced-motion 下静态，零粒子）
         if (unlocked && !this.reduceMotion) {
           icon.setScale(unlocked ? 1 : 0.9);
-          this.tweens.add({ targets: icon, scale: { from: unlocked ? 1 : 0.9, to: 1.15, yoyo: true, duration: 260 }, ease: 'Quad.out' });
+          this.tweens.add({ targets: icon, scale: { from: unlocked ? 1 : 0.9, to: 1.15, yoyo: true, duration: 260 }, ease: EASE.feedback });
         }
       });
     };
@@ -1196,7 +1200,7 @@ export default class MenuScene extends Phaser.Scene {
     ov.add(glow);
     ov.add(title);
     if (!this.reduceMotion) {
-      this.tweens.add({ targets: glow, alpha: { from: 0.22, to: 0.46 }, duration: 1700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+      this.tweens.add({ targets: glow, alpha: { from: 0.22, to: 0.46 }, duration: 1700, yoyo: true, repeat: -1, ease: EASE.breathe });
     }
     return { glow, title };
   }
@@ -1206,7 +1210,7 @@ export default class MenuScene extends Phaser.Scene {
     if (this.reduceMotion) { ov.setAlpha(1); return; }
     ov.setAlpha(0);
     ov.y = 18;
-    this.tweens.add({ targets: ov, alpha: 1, y: 0, duration: 260, ease: 'Cubic.out' });
+    this.tweens.add({ targets: ov, alpha: 1, y: 0, duration: 260, ease: EASE.enter });
   }
 
   /** 统一的内嵌霓虹面板背景：玻璃拟态卡片（半透 + 内发光 + 顶部高光），套在 dim 之上、内容之下 */

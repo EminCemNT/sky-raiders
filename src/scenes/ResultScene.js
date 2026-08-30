@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, LEVELS, SHIPS, getShipSkins, PERFORMANCE } from '../config/GameConfig.js';
+import { SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, LEVELS, SHIPS, getShipSkins, PERFORMANCE, EASE } from '../config/GameConfig.js';
 import { SaveManager } from '../utils/SaveManager.js';
 import { t } from '../config/Locale.js';
 import { createStarfield } from '../systems/Starfield.js';
@@ -7,6 +7,7 @@ import { transition } from '../systems/TransitionManager.js';
 import { TitleSystem } from '../systems/TitleSystem.js';
 import { NeonButton, NeonBar, THEME } from '../utils/UIWidgets.js';
 import { enableSceneBloom } from '../utils/BloomFX.js';
+import { applyFilmLayer } from '../utils/FilmFX.js';
 
 /**
  * ResultScene：关卡结算。显示胜负、星级、分数、金币，提供重来/返回。
@@ -39,8 +40,11 @@ export default class ResultScene extends Phaser.Scene {
 
     this.starfield = createStarfield(this, { layers: 4, starTints: theme.starTints });
 
-    // P1 表现工程·PostFX 辉光（可选场景；按性能档开，low 关 / Canvas 自动降级）
-    this.bloomFX = enableSceneBloom(this, SaveManager.load().quality || PERFORMANCE.defaultTier);
+    // P1 表现工程·PostFX 辉光（可选场景；按性能档开，low 关 / Canvas 自动降级）。
+    // OPT-14 A2：静态场景加脏标记（staticMode），避免每帧重绘烧成本。
+    this.bloomFX = enableSceneBloom(this, SaveManager.load().quality || PERFORMANCE.defaultTier, { staticMode: true });
+    // OPT-14 A3：结算电影层（常驻暗角 + 静态颗粒；grainSpeed=false 防闪烁）
+    this.filmFX = applyFilmLayer(this, { key: 'result' });
 
     // 霓虹装饰边框（Phase C）
     const frame = this.add.graphics().setDepth(10);
@@ -73,7 +77,7 @@ export default class ResultScene extends Phaser.Scene {
     // Phase C：胜利全屏爆闪
     if (r.victory) {
       const flash = this.add.rectangle(cx, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xffffff, 0.85).setDepth(40);
-      this.tweens.add({ targets: flash, alpha: 0, duration: 650, ease: 'Cubic.out', onComplete: () => flash.destroy() });
+      this.tweens.add({ targets: flash, alpha: 0, duration: 650, ease: EASE.exit, onComplete: () => flash.destroy() });
     }
 
     // 星级
@@ -249,13 +253,13 @@ export default class ResultScene extends Phaser.Scene {
       if (filled) {
         star.setScale(0);
         this.tweens.add({
-          targets: star, scale: 1, duration: 400, delay: i * 220, ease: 'Back.out',
+          targets: star, scale: 1, duration: 400, delay: i * 220, ease: EASE.pop,
         });
         // Phase C：星级弹入爆闪光圈
         const burst = this.add.circle(x, y, 8, 0xfff3b0, 0.5).setScale(0.3).setDepth(2);
         this.tweens.add({
           targets: burst, scale: 6, alpha: 0, duration: 440, delay: i * 220,
-          ease: 'Cubic.out', onComplete: () => burst.destroy(),
+          ease: EASE.enter, onComplete: () => burst.destroy(),
         });
       }
     }

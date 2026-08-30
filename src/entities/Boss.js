@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GAME_WIDTH, GAME_HEIGHT, BULLET, EVENTS, COLORS, RAGE } from '../config/GameConfig.js';
+import { GAME_WIDTH, GAME_HEIGHT, BULLET, EVENTS, COLORS, RAGE, EASE } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { audio } from '../systems/AudioSystem.js';
 import * as VFX from '../systems/VFX.js';
@@ -99,7 +99,7 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
       this._entering = false;
     } else {
       scene.tweens.add({
-        targets: this, y: ENTRY_Y, duration: 500, ease: 'Back.easeOut',
+        targets: this, y: ENTRY_Y, duration: 500, ease: EASE.pop,
         onComplete: () => {
           if (!this.active) return;
           this._entering = false;
@@ -647,8 +647,8 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
       if (this.scene.requestHitStop) this.scene.requestHitStop(180); // 阶段切换：中强定格
       EventBus.emit(EVENTS.BOSS_PHASE, newPhase);                    // 阶段演出：UIScene 提示文字
       // 变身脉冲：短暂放大+白闪，强化「进场变身」感（能量环叠加层同步放大）
-      this.scene.tweens.add({ targets: this, scaleX: 1.18, scaleY: 1.18, duration: 220, yoyo: true, ease: 'Quad.easeOut' });
-      if (this.fxG) this.scene.tweens.add({ targets: this.fxG, scaleX: 1.18, scaleY: 1.18, duration: 220, yoyo: true, ease: 'Quad.easeOut' });
+      this.scene.tweens.add({ targets: this, scaleX: 1.18, scaleY: 1.18, duration: 220, yoyo: true, ease: EASE.feedback });
+      if (this.fxG) this.scene.tweens.add({ targets: this.fxG, scaleX: 1.18, scaleY: 1.18, duration: 220, yoyo: true, ease: EASE.feedback });
     }
     // P2 体验细节·慢放子弹时间：血线首次降至 50% / 25% 触发 slowMotion(300ms)（纯演出，复用 scene.slowMotion）
     // 两条 if 独立判断：大额伤害一次性压过 50%+25% 时两个血线都会触发，slowMotion 内部叠加计数安全。
@@ -693,16 +693,16 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
     // P3 弹性缩放死亡演出：1→1.25 Back.easeOut(90ms)→0 Back.easeIn(260ms)，fxG 同步 yoyo
     if (!PREFERS_REDUCED) {
       this.scene.tweens.add({
-        targets: this, scaleX: 1.25, scaleY: 1.25, duration: 90, ease: 'Back.easeOut',
+        targets: this, scaleX: 1.25, scaleY: 1.25, duration: 90, ease: EASE.pop,
         onComplete: () => {
           this.scene.tweens.add({
-            targets: this, scaleX: 0, scaleY: 0, duration: 260, ease: 'Back.easeIn',
+            targets: this, scaleX: 0, scaleY: 0, duration: 260, ease: EASE.exit,
           });
         },
       });
       if (this.fxG) {
         this.scene.tweens.add({
-          targets: this.fxG, scaleX: 1.25, scaleY: 1.25, duration: 90, yoyo: true, ease: 'Back.easeOut',
+          targets: this.fxG, scaleX: 1.25, scaleY: 1.25, duration: 90, yoyo: true, ease: EASE.pop,
         });
       }
     }

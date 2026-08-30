@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { BULLET, GAME_HEIGHT, GAME_WIDTH, EVENTS, ELEMENTS, ELITE } from '../config/GameConfig.js';
+import { BULLET, GAME_HEIGHT, GAME_WIDTH, EVENTS, ELEMENTS, ELITE, EASE } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { audio } from '../systems/AudioSystem.js';
 import * as VFX from '../systems/VFX.js';
@@ -490,7 +490,7 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
       targets: this,
       scaleX: 1.16, scaleY: 0.86,
       angle: Phaser.Math.Between(-6, 6),
-      duration: 70, yoyo: true, ease: 'Quad.easeOut',
+      duration: 70, yoyo: true, ease: EASE.feedback,
       onComplete: () => { this.setScale(1, 1); this.angle = 0; this._flinchTween = null; },
     });
   }
@@ -572,10 +572,10 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     if (this.scene.requestHitStop) this.scene.requestHitStop(60);
     if (PREFERS_REDUCED) { this.recycle(); return; }
     this.scene.tweens.add({
-      targets: this, scaleX: 1.28, scaleY: 1.28, duration: 90, ease: 'Back.easeOut',
+      targets: this, scaleX: 1.28, scaleY: 1.28, duration: 90, ease: EASE.pop,
       onComplete: () => {
         this.scene.tweens.add({
-          targets: this, scaleX: 0, scaleY: 0, duration: 150, ease: 'Back.easeIn',
+          targets: this, scaleX: 0, scaleY: 0, duration: 150, ease: EASE.exit,
           onComplete: () => this.recycle(),
         });
       },

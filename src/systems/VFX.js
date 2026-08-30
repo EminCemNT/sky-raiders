@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { COLORS, ELEMENTS, GAME_WIDTH, LIGHTS, VFX_COLORS, EVENTS } from '../config/GameConfig.js';
+import { COLORS, ELEMENTS, GAME_WIDTH, LIGHTS, VFX_COLORS, EVENTS, EASE, AFTERGLOW } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 
 /**
@@ -36,6 +36,9 @@ const LOCAL_COLORS = {
 let _localIllumActive = 0;   // 当前活跃亮斑数
 let _localIllumTotal = 0;    // 累计发射数（QA 探针观测）
 const LOCAL_ILLUM_MAX = 3;   // 并发上限（验收 peak≤3）
+
+// OPT-14 B2：爆炸残像拖尾并发计数（QA 探针 _dynLight.afterglowActive 观测；reduced/low 不生成）
+let _afterglowActive = 0;    // 当前活跃残影 Image 数（每张 +1，onComplete/shutdown 各 -1）
 
 /**
  * 通用爆炸：击杀敌机、道具引爆等。
@@ -105,7 +108,7 @@ export function shockwaveRing(scene, x, y, color, opts = {}) {
   }
   scene.tweens.add({
     targets: ring, scale: radius / 8, lineWidth: 1, alpha: 0, duration,
-    ease: 'Cubic.out',
+    ease: EASE.enter,
     onComplete: () => { if (ring && ring.active) ring.destroy(); },
   });
   return ring;
@@ -186,6 +189,83 @@ export function explosionLayered(scene, x, y, color, opts = {}) {
   } else {
     scene.time.delayedCall(160, spawnResidueLater);
   }
+  // OPT-14 B2：爆炸残像拖尾（motion smear · 爆炸余温与体积感）。
+  // reduced/low 内部短路；small/mid=1，boss=2；与五层时序并行，不改变既有延迟。
+  _spawnExplosionAfterglow(scene, x, y, color, tier);
+}
+
+/**
+ * OPT-14 B2：爆炸残像拖尾（motion smear · 爆炸观感提升）
+ * 爆炸点残留 1-2 个低 alpha、慢衰减、逐帧上浮的 glow_soft 副本（ADD），作爆炸底光
+ * （depth 49，explosion 50 之下，不遮挡粒子本体）。
+ *   reduced-motion 直接 return；low 档（qs<0.6）不生成；small/mid=1，boss=2。
+ *   alpha 曲线 0.22→0（boss 0.28 起）、Cubic.easeOut 衰减（前快后慢，余温感）；
+ *   残影错峰 40ms/100ms，上浮 10~16px，260~320ms 衰减后 destroy。
+ * 生命周期：tween 完成 destroy；场景 shutdown 兜底销毁（仿 localIllum 防泄漏模式，
+ * tween 被 kill 不触发 onComplete 时仍清掉残影并释放计数）。
+ * @param {Phaser.Scene} scene
+ * @param {number} x
+ * @param {number} y
+ * @param {number} color 机体/主色
+ * @param {string} tier 'small'|'mid'|'boss'
+ */
+function _spawnExplosionAfterglow(scene, x, y, color, tier) {
+  if (prefersReduced) return;              // reduced-motion 跳过
+  const qs = _qualityScale(scene);
+  if (qs < 0.6) return;                    // low 档不生成（纯视觉优先保帧）
+  const cfg = (AFTERGLOW && AFTERGLOW[tier]) || (AFTERGLOW && AFTERGLOW.small)
+    || { count: 1, alpha: 0.22, scale: 0.9, ms: 260, rise: 10 };
+  const count = cfg.count != null ? cfg.count : 1;
+  const depth = (AFTERGLOW && AFTERGLOW.depth != null) ? AFTERGLOW.depth : 49;
+  const images = [];
+  let destroyed = false;
+  const cleanup = () => {
+    if (destroyed) return;
+    destroyed = true;
+    scene.events.off('shutdown', cleanup);
+    for (let k = 0; k < images.length; k++) {
+      const im = images[k];
+      scene.tweens.killTweensOf(im);
+      if (im && im.active) im.destroy();
+    }
+    _afterglowActive = Math.max(0, _afterglowActive - images.length); // 释放未完成残影
+    images.length = 0;
+  };
+  _afterglowActive += count;
+  for (let i = 0; i < count; i++) {
+    const scale = Array.isArray(cfg.scale) ? (cfg.scale[i] != null ? cfg.scale[i] : cfg.scale[0]) : cfg.scale;
+    const ms = Array.isArray(cfg.ms) ? (cfg.ms[i] != null ? cfg.ms[i] : cfg.ms[0]) : cfg.ms;
+    const rise = Array.isArray(cfg.rise) ? (cfg.rise[i] != null ? cfg.rise[i] : cfg.rise[0]) : cfg.rise;
+    const alpha = Math.max(0, (cfg.alpha != null ? cfg.alpha : 0.22) - i * 0.06); // 残影2更淡
+    const delay = 40 + i * 60;             // 残影错峰：40ms / 100ms
+    const img = scene.add.image(
+      x + Phaser.Math.Between(-8, 8),
+      y + Phaser.Math.Between(-4, 6),
+      'glow_soft')
+      .setDepth(depth)                     // 在 explosion(50) 之下，作底光
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setTint(color)
+      .setScale(0.1, 0.1)
+      .setAlpha(0);
+    images.push(img);
+    scene.tweens.add({
+      targets: img,
+      delay,
+      scaleX: scale,
+      scaleY: scale,
+      y: img.y - rise,                     // 上浮 10~16px
+      alpha,                               // 起始 alpha（Cubic.easeOut 衰减 → 0）
+      duration: ms,                        // 衰减 260~320ms
+      ease: 'Cubic.easeOut',
+      onComplete: () => {
+        const idx = images.indexOf(img);
+        if (idx >= 0) images.splice(idx, 1);
+        _afterglowActive = Math.max(0, _afterglowActive - 1);
+        if (img && img.active) img.destroy();
+      },
+    });
+  }
+  scene.events.once('shutdown', cleanup);
 }
 
 /** 子弹击中目标时的点状闪光（星形火花） */
@@ -517,7 +597,7 @@ export function reactionRing(scene, x, y, element) {
     return;
   }
   scene.tweens.add({
-    targets: ring, scale: 3.2, alpha: 0, duration: 360, ease: 'Cubic.out',
+    targets: ring, scale: 3.2, alpha: 0, duration: 360, ease: EASE.enter,
     onComplete: () => { if (ring && ring.active) ring.destroy(); },
   });
 }
@@ -704,7 +784,7 @@ export function playerLight(scene, player, opts = {}) {
       duration: breathMs / 2,
       yoyo: true,
       repeat: -1,
-      ease: 'Sine.easeInOut',
+      ease: EASE.breathe,
     });
   }
   player.once('destroy', () => ctl.destroy());
@@ -759,7 +839,7 @@ export function bossAmbient(scene, boss, color, opts = {}) {
       scaleX: radius * 1.12, scaleY: radius * 1.12,
       duration: phaseMs / 2,
       yoyo: true,
-      ease: 'Sine.easeInOut',
+      ease: EASE.breathe,
       onComplete: () => {
         if (image.active) image.setAlpha(alpha).setScale(radius, radius);
       },
@@ -811,7 +891,7 @@ export function localIllum(scene, x, y, color, opts = {}) {
     scale: radius,
     alpha: 0,
     duration: ms,
-    ease: 'Cubic.out',
+    ease: EASE.enter,
     onComplete: () => {
       release();
       scene.events.off('shutdown', release);
@@ -838,6 +918,8 @@ export function installLightProbes(scene) {
         localPulseActive: _localIllumActive,
         localPulseCount: _localIllumTotal,
         localPulseCap: LOCAL_ILLUM_MAX,
+        // OPT-14 B2：爆炸残像拖尾当前活跃数（只读；QA 探针观测残影出现/衰减/销毁）
+        afterglowActive: _afterglowActive,
       };
     },
   });

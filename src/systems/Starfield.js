@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GAME_WIDTH, GAME_HEIGHT, PERFORMANCE } from '../config/GameConfig.js';
+import { GAME_WIDTH, GAME_HEIGHT, PERFORMANCE, EASE } from '../config/GameConfig.js';
 import { SaveManager } from '../utils/SaveManager.js';
 
 /**
@@ -219,7 +219,7 @@ export function createStarfield(scene, { layers = 4, starTints = null, theme = n
           duration: 2600 + i * 400,
           yoyo: true,
           repeat: -1,
-          ease: 'Sine.easeInOut',
+          ease: EASE.breathe,
         });
       });
     }
