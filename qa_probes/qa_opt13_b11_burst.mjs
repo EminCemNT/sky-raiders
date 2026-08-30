@@ -15,6 +15,8 @@
 //   G. 峰值只增不减：多轮爆发后 maxCombo 仍为 20（绝不因消耗降低）【6.4】
 //   H. 三档位 HUD 文案：gauge1「强化射击」/ gauge2「+清屏」/ gauge3「+回能」
 //   I. 零 pageerror / console.error
+//   EN. en 环境三档位文案（B11-4 回归）：初始 "Burst" / combo10 "Burst · Power Shot" / 15 "+Clear" / 20 "+Energy"，
+//       全程无 CJK 混入 + C 键回灰 + en 页零报错（tiers.desc 硬编码中文已改走 t('charge'+kind) 词条）
 import { chromium } from 'playwright';
 
 const URL = process.env.QA_URL || process.env.QA_BASE_URL || 'http://127.0.0.1:5059';
@@ -225,6 +227,81 @@ push('G1. 峰值只增不减：三轮爆发后 maxCombo 保持 20（绝不因消
 
 // ── I. 零 pageerror / console.error ──
 push('I1. 全链路零 pageerror / console.error', errors.length === 0, errors.slice(0, 3).join(' | '));
+
+// ── EN. en 环境三档位文案（B11-4 回归：tiers.desc 硬编码中文已改走 i18n，无 CJK 混入）──
+// 独立 en 页面（隔离 zh init script），复用 startScenes；覆盖 chargePower/chargeClear/chargeEnergy 词条真实消费。
+const enPage = await browser.newPage({ viewport: { width: 540, height: 960 } });
+const enErrors = [];
+enPage.on('pageerror', (e) => enErrors.push('pageerror: ' + e.message));
+enPage.on('console', (m) => { if (m.type() === 'error') enErrors.push('console.error: ' + m.text()); });
+await enPage.addInitScript(() => {
+  try {
+    localStorage.setItem('sky_raiders_save_v1', JSON.stringify({ lang: 'en', tutorialDone: true, quality: 'high', selectedDifficulty: 'standard' }));
+  } catch (e) { /* ignore */ }
+});
+await enPage.goto(URL, { waitUntil: 'domcontentloaded' });
+await enPage.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 20000 });
+await startScenes(enPage);
+await enPage.evaluate(() => {
+  const gs = window.__SKY;
+  if (gs.waves) { gs.waves.state = 'idle'; gs.waves._toSpawn = 0; }
+  gs.enemies.children.each((e) => { if (e.active) { e.setActive(false); e.setVisible(false); if (e.body) e.body.enable = false; } });
+  if (gs.combo > 0) gs.breakCombo();
+  gs.maxCombo = 0;
+  gs.energy = 0;
+});
+
+const enInit = await enPage.evaluate(() => {
+  const ui = window.__SKY__.scene.getScene('UIScene');
+  return { label: ui.burstBtn.label.text, count: ui.burstBtn.count.text };
+});
+push('EN1. en 初始按钮文案为 chargeBtn（Burst）', enInit.label === 'Burst' && enInit.count === 'x0', `label=${enInit.label} count=${enInit.count}`);
+
+const enT1 = await enPage.evaluate(() => {
+  const gs = window.__SKY;
+  for (let i = 0; i < 10; i++) gs.registerKill(100 + i, 200, { enemyType: 'small' });
+  const ui = window.__SKY__.scene.getScene('UIScene');
+  return { label: ui.burstBtn.label.text, count: ui.burstBtn.count.text };
+});
+push('EN2. en combo=10 → "Burst · Power Shot"（chargePower 生效）',
+  enT1.label === 'Burst · Power Shot' && enT1.count === 'x10', `label=${enT1.label} count=${enT1.count}`);
+
+const enT2 = await enPage.evaluate(() => {
+  const gs = window.__SKY;
+  for (let i = 0; i < 5; i++) gs.registerKill(100 + i, 200, { enemyType: 'small' });
+  const ui = window.__SKY__.scene.getScene('UIScene');
+  return { label: ui.burstBtn.label.text, count: ui.burstBtn.count.text };
+});
+push('EN3. en combo=15 → "Burst · Power Shot+Clear"（chargeClear 生效）',
+  enT2.label === 'Burst · Power Shot+Clear' && enT2.count === 'x15', `label=${enT2.label} count=${enT2.count}`);
+
+const enT3 = await enPage.evaluate(() => {
+  const gs = window.__SKY;
+  for (let i = 0; i < 5; i++) gs.registerKill(100 + i, 200, { enemyType: 'small' });
+  const ui = window.__SKY__.scene.getScene('UIScene');
+  return { label: ui.burstBtn.label.text, count: ui.burstBtn.count.text };
+});
+push('EN4. en combo=20 → "Burst · Power Shot+Clear+Energy"（chargeEnergy 生效）',
+  enT3.label === 'Burst · Power Shot+Clear+Energy' && enT3.count === 'x20', `label=${enT3.label} count=${enT3.count}`);
+
+// 无 CJK 检查：直接对已收集的三档 label 判重（含初始 EN1）
+push('EN5. en 档位文案全程无 CJK 混入（初始+三档均纯英文）',
+  !/[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/.test(enInit.label + enT1.label + enT2.label + enT3.label),
+  `labels=[${enInit.label}|${enT1.label}|${enT2.label}|${enT3.label}]`);
+
+await enPage.keyboard.down('c');
+await enPage.waitForTimeout(140);
+await enPage.keyboard.up('c');
+const enAfter = await enPage.evaluate(() => {
+  const ui = window.__SKY__.scene.getScene('UIScene');
+  const gs = window.__SKY;
+  return { label: ui.burstBtn.label.text, combo: gs.combo, alpha: ui.burstBtn.container.alpha };
+});
+push('EN6. en C 键触发 → 回灰 + 文案回到 chargeBtn（Burst）',
+  enAfter.combo === 0 && enAfter.alpha === 0.45 && enAfter.label === 'Burst', `label=${enAfter.label} combo=${enAfter.combo} alpha=${enAfter.alpha}`);
+
+push('EN7. en 页零 pageerror / console.error', enErrors.length === 0, enErrors.slice(0, 3).join(' | '));
+await enPage.close();
 
 await browser.close();
 const failed = checks.filter((c) => !c.ok);
