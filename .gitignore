@@ -26,3 +26,6 @@ qa_probes/_*.txt
 
 # QA 临时报告文本
 qa_probes/_final.txt
+
+# 发布包（构建产物，按 DISTRIBUTION.md 约定不进 git；d89b7fc 恢复对象库时误 add，8529f28 之后移除）
+sky-raiders-web.zip
