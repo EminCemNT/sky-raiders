@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GAME_WIDTH, EVENTS, LEVELS } from '../config/GameConfig.js';
+import { GAME_WIDTH, EVENTS, LEVELS, ELITE } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 
 /**
@@ -31,8 +31,25 @@ export default class WaveSystem {
     this._nextWaveDelay = 1200;
     this._delayTimer = 0;
     this.bossSpawned = false;
+    // A6 波次变体：局随机锁定 1 套变体表（同局内不换表）；无 waveVariants 回退 null（走 wavePlan）
+    this.variantPlan = this._pickVariantPlan(this.level, this.endless);
 
     this.startNextWave();
+  }
+
+  /** A6 局随机锁定变体表：优先取 level.waveVariants 随机 1 套；无则 null（回退 wavePlan）。无尽不适用。 */
+  _pickVariantPlan(level, endless) {
+    if (endless) return null;
+    const variants = level && level.waveVariants;
+    if (!variants || variants.length === 0) return null;
+    return variants[Math.floor(Math.random() * variants.length)];
+  }
+
+  /** A6 当前变体 id（调试/展示用）：'L{levelId}-V{n}'；未启用变体时返回 'base' */
+  getVariantId() {
+    if (!this.variantPlan) return 'base';
+    const idx = (this.level.waveVariants || []).indexOf(this.variantPlan);
+    return `L${this.level.id}-V${idx + 1}`;
   }
 
   startNextWave() {
@@ -60,8 +77,9 @@ export default class WaveSystem {
       }
       return;
     }
-    // 数据表驱动：优先读取本关 wavePlan（无尽模式不用，走程序化兜底）；缺失则程序化兜底
-    const plan = this.endless ? null : this.level.wavePlan;
+    // 数据表驱动：A6 优先读取本关局内锁定的变体表（variantPlan），缺省回退既有 wavePlan
+    // （无尽模式不用，走程序化兜底）；两者都缺失则程序化兜底。
+    const plan = this.endless ? null : (this.variantPlan || this.level.wavePlan);
     const waveDef = plan && plan[this.currentWave - 1];
     if (waveDef) {
       this._toSpawn = waveDef.count;
@@ -75,11 +93,24 @@ export default class WaveSystem {
     this._spawnGap = Math.max(this.endless ? 200 : 260, 620 - this.currentWave * 25);
     this._spawnTimer = 0;
     this.state = 'spawning';
+    // A6 精英兜底：每关第 2 波起、非休闲档、低概率追加 1 只精英（_toSpawn+1 = 追加不挤占波次名额）
+    this._elitePending = false;
+    if (!this.endless && this.currentWave >= 2 && !this._isCasual()
+      && Math.random() < ELITE.spawnChance) {
+      this._toSpawn++;
+      this._elitePending = true;
+    }
     EventBus.emit(EVENTS.WAVE_STARTED, {
       wave: this.currentWave,
       total: this.endless ? null : this.totalWaves,
       endless: this.endless,
     });
+  }
+
+  /** A6 休闲档判断：scene.difficultyCfg.id === 'casual'（救济降难度复用同一口径） */
+  _isCasual() {
+    const c = this.scene && this.scene.difficultyCfg;
+    return !!(c && c.id === 'casual');
   }
 
   /** 当前波次难度系数：无尽模式每 5 波 +10%（相对关卡基础难度递增） */
@@ -128,14 +159,38 @@ export default class WaveSystem {
     this.scene.time.delayedCall(this._nextWaveDelay, () => this.startNextWave());
   }
 
+  /** A6 精英兜底追加：本波 roll 到精英时优先刷出（作为波次追加的第 1 只） */
+  _spawnOneElite() {
+    if (!this.scene.spawnEnemy) return;
+    let typeKey = 'mid';
+    if (this._comp && this._comp.length) {
+      const candidates = [];
+      for (const entry of this._comp) {
+        const tk = Array.isArray(entry) ? (entry[0] || 'small') : (entry.typeKey || entry.type || 'small');
+        if (tk !== 'turret' && candidates.indexOf(tk) < 0) candidates.push(tk);
+      }
+      if (candidates.length) typeKey = candidates[Phaser.Math.Between(0, candidates.length - 1)];
+    }
+    const moveMode = typeKey === 'diver' ? 'dive' : (typeKey === 'kamikaze' ? 'kamikaze' : 'straight');
+    this.scene.spawnEnemy(Phaser.Math.Between(40, GAME_WIDTH - 40), -40, typeKey, moveMode, this.getDifficulty(), null, true);
+  }
+
   spawnOne() {
     if (!this.scene.spawnEnemy) return;
+    // A6：本波追加的精英先刷出（不占 comp 名额）
+    if (this._elitePending) {
+      this._elitePending = false;
+      this._spawnOneElite();
+      return;
+    }
     let x = Phaser.Math.Between(40, GAME_WIDTH - 40);
     let typeKey = 'small';
     let moveMode = 'straight';
     let firePattern = null;
+    let elite = false;
     if (this._comp && this._comp.length) {
-      // 归一化 comp 条目：支持 [type, mode, weight, pattern] 元组 或 { typeKey, mode, pattern, weight } 对象
+      // 归一化 comp 条目：支持 [type, mode, weight, pattern, elite?] 元组 或
+      // { typeKey, mode, pattern, weight, elite? } 对象（A6 精英标记透传）
       const norm = (entry) => {
         if (Array.isArray(entry)) {
           return {
@@ -143,6 +198,7 @@ export default class WaveSystem {
             mode: entry[1] || 'straight',
             weight: entry[2] != null ? entry[2] : 1,
             pattern: entry[3] || null,
+            elite: !!entry[4],
           };
         }
         return {
@@ -150,6 +206,7 @@ export default class WaveSystem {
           mode: entry.mode || 'straight',
           weight: entry.weight != null ? entry.weight : 1,
           pattern: entry.pattern || null,
+          elite: !!entry.elite,
         };
       };
       const entries = this._comp.map(norm);
@@ -163,6 +220,7 @@ export default class WaveSystem {
       typeKey = picked.typeKey;
       moveMode = picked.mode;
       firePattern = picked.pattern;
+      elite = picked.elite;
     } else {
       // 兜底：程序化随机（波次越高越难）；无尽模式 mid 占比上限略高
       const cap = this.endless ? 0.6 : 0.5;
@@ -199,6 +257,6 @@ export default class WaveSystem {
         : Phaser.Math.Between(Math.ceil(GAME_WIDTH * 0.62), GAME_WIDTH - 44);
       y = GAME_HEIGHT - Phaser.Math.Between(110, 170);
     }
-    this.scene.spawnEnemy(x, y, typeKey, moveMode, this.getDifficulty(), firePattern);
+    this.scene.spawnEnemy(x, y, typeKey, moveMode, this.getDifficulty(), firePattern, elite);
   }
 }

@@ -146,6 +146,9 @@ const session = {
   stars: 0,
   maxLevel: MAX_LEVEL,
   gameClears: 0,
+  // A9 救济局抑制开关（附加式，不改任何 id / condition / progress）：
+  // ignore=true 时 _checkLive/_checkAll 不解锁、reportRun 短路写盘，防救济局刷成就。
+  ignore: false,
   // 累计（预载）
   totalKills: 0,
   wingmanKillsTotal: 0,
@@ -173,7 +176,19 @@ function loadCumulative() {
 export const AchievementManager = {
   init() { loadCumulative(); },
 
-  startRun(mode, levelId) {
+  /**
+   * 本局开始：重置会话态并预载累计数据。
+   * 兼容两种调用形式：
+   *   startRun(mode, levelId, { ignore })   —— GameScene.init 既有调用
+   *   startRun({ mode, levelId, ignore })   —— 架构规格新增对象形式
+   * ignore=true 时本局不计成就（A9 救济局抑制）。
+   */
+  startRun(mode, levelId, opts) {
+    if (mode && typeof mode === 'object') {
+      opts = mode;
+      mode = opts.mode;
+      levelId = opts.levelId;
+    }
     session.kills = 0;
     session.wingmanKillsRun = 0;
     session.elementCombosRun = 0;
@@ -188,7 +203,19 @@ export const AchievementManager = {
     session.mode = mode || 'normal';
     session.stars = 0;
     session.gameClears = 0;
+    session.ignore = !!(opts && opts.ignore);
     loadCumulative();
+  },
+
+  /** A9 救济局抑制开关（局中救济被接受时调用，附加式；不解锁任何成就） */
+  setIgnore(ignore) {
+    session.ignore = !!ignore;
+    return session.ignore;
+  },
+
+  /** A9 当前是否抑制成就（救济局为 true） */
+  isIgnored() {
+    return session.ignore === true;
   },
 
   reportKill(opts = {}) {
@@ -223,6 +250,9 @@ export const AchievementManager = {
   reportWeaponUsed(w) { if (w) session.weaponsUsed[w] = true; this._checkLive(); },
 
   reportRun(ctx = {}) {
+    // A9 救济局抑制：ctx.ignore 短路写盘与解锁（bestScore/topScores 等由 GameScene 侧一并拦截）
+    if (ctx.ignore !== undefined) session.ignore = !!ctx.ignore;
+    if (session.ignore) return [];
     session.victory = !!ctx.victory;
     session.damageTaken = ctx.damageTaken || 0;
     session.stars = ctx.stars || 0;
@@ -242,6 +272,8 @@ export const AchievementManager = {
   },
 
   _checkLive() {
+    // A9 救济局抑制：全程不解锁（不改任何 id / condition / progress）
+    if (session.ignore) return [];
     const out = [];
     for (const a of ACHIEVEMENTS) {
       if (!a.live || SaveManager.hasAchievement(a.id)) continue;
@@ -253,6 +285,8 @@ export const AchievementManager = {
   },
 
   _checkAll() {
+    // A9 救济局抑制：全程不解锁（不改任何 id / condition / progress）
+    if (session.ignore) return [];
     const out = [];
     for (const a of ACHIEVEMENTS) {
       if (SaveManager.hasAchievement(a.id)) continue;
@@ -307,6 +341,7 @@ export const AchievementManager = {
     session.damageTaken = 0;
     session.stars = 0;
     session.gameClears = 0;
+    session.ignore = false;
     loadCumulative();  // 重新预载累计（totalKills / wingmanKillsTotal / elementCombosTotal 等）
   },
 };

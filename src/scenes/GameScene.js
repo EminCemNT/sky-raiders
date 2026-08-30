@@ -1,8 +1,9 @@
 import Phaser from 'phaser';
 import {
   SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, COLORS, PLAYER, BULLET, LEVELS, BOSS_RUSH, SHIPS, ELEMENTS, WINGMAN,
-  DIFFICULTIES, getDifficulty, POWERUP, GRAZE, OVERDRIVE, OVERCHARGE, FOCUS, bossRushScale, PERFORMANCE,
+  DIFFICULTIES, getDifficulty, POWERUP, GRAZE, OVERDRIVE, OVERCHARGE, FOCUS, bossRushScale, PERFORMANCE, POOL, COMBAT_PERF,
   EVENT_MODES, getCurrentEvent, MODULE_DROP_CHANCE, getShipSkins, TOWER, TOWER_BUFFS, LIGHTS, TRANSITION,
+  RELIEF,
 } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
@@ -27,6 +28,7 @@ import {
   ITEMS, ITEM_DROP_CHANCE, ITEM_DROP_WEIGHTS, BOSS_DROP_TABLE,
 } from '../config/Items.js';
 import { ENERGY_MAX, DEFAULT_SKILL, SKILLS } from '../config/Skills.js';
+import { MUTATION_EVERY_LAYERS, MUTATIONS, rollMutation } from '../config/Mutations.js';
 
 /**
  * GameScene：核心战斗场景。
@@ -96,6 +98,19 @@ export default class GameScene extends Phaser.Scene {
     this.towerBonuses = { fireRate: 0, extraShot: 0, speed: 0, graze: 0, hp: 0, coin: 0 };
     this._towerBuffOpen = false;
     this._towerBuffOverlay = null;
+    // OPT-13 批A A9 连续失败救济局（仅 normal 主线；局内临时，不入存档）：
+    //   _reliefRun        本局是否为救济局（选 A/B 后置 true；选「拒绝」保持 false）
+    //   _reliefEligible   failStreak[levelId] >= RELIEF.failStreakThreshold（create 判定）
+    //   _reliefCombatMul  选项 A：休闲档敌人/Boss 战斗系数（session 覆盖，不写 selectedDifficulty）
+    //   _reliefAtkPicked  选项 B：已选 +10% 攻击（Player.reliefAtkMul 消费）
+    //   _reliefOverlay/_reliefCtl  救济提示面板（与爬塔增益面板同款）
+    this._reliefRun = false;
+    this._reliefEligible = false;
+    this._reliefCombatMul = null;
+    this._reliefAtkPicked = false;
+    this._reliefOpen = false;
+    this._reliefOverlay = null;
+    this._reliefCtl = null;
     // 成就系统：本局开始，重置会话态并预载累计数据
     AchievementManager.startRun(this.mode, this.levelId);
   }
@@ -131,18 +146,26 @@ export default class GameScene extends Phaser.Scene {
 
     // 对象池
     this.playerBullets = this.physics.add.group({ defaultKey: 'bullet_pulse', maxSize: 200 });
-    this.enemyBullets = this.physics.add.group({ defaultKey: 'bullet_enemy', maxSize: 400 });
+    this.enemyBullets = this.physics.add.group({ defaultKey: 'bullet_enemy', maxSize: POOL.enemyBullets });
     this.enemies = this.physics.add.group({ classType: Enemy, maxSize: 60, runChildUpdate: false });
     this.coins = this.physics.add.group({ defaultKey: 'coin', maxSize: 120 });
     this.items = this.physics.add.group({ classType: Item, defaultKey: 'item_energy', maxSize: 60, runChildUpdate: false });
 
-    // 激光束组（B4）：与 playerBullets 分离，避免被 killBullet 回收
-    this.playerBeams = this.physics.add.group();
+    // 激光束组（B4）：与 playerBullets 分离，避免被 killBullet 回收；A4 上限防无界增长
+    this.playerBeams = this.physics.add.group({ maxSize: POOL.playerBeams });
 
     // 预填敌人池
     for (let i = 0; i < 30; i++) {
       const e = new Enemy(this);
       this.enemies.add(e);
+    }
+
+    // A4 预填敌弹池：避免首帧冷启动 Group.get() 逐发创建的开销（与 enemies/items 预填对齐）
+    for (let i = 0; i < POOL.enemyBullets; i++) {
+      const b = this.physics.add.sprite(0, -200, 'bullet_enemy');
+      b.setActive(false).setVisible(false);
+      b.body.enable = false;
+      this.enemyBullets.add(b);
     }
 
     // 预填道具池
@@ -232,6 +255,8 @@ export default class GameScene extends Phaser.Scene {
     if (this.isTower) {
       this.towerFloor = 0;
       this.towerBonuses = { fireRate: 0, extraShot: 0, speed: 0, graze: 0, hp: 0, coin: 0 };
+      // A8 无尽变异层（局内临时不入存档）：id → 累计次数，幂等叠加
+      this.mutations = {};
     }
     if (this.mode !== 'bossrush') {
       this.waves = new WaveSystem(this, this.levelId, {
@@ -326,6 +351,13 @@ export default class GameScene extends Phaser.Scene {
 
     // 首玩教程：首次进入游戏显示操作引导（Boss Rush / 无尽 / 活动模式跳过，避免阻塞）；forceTutorial 供菜单"教程"按钮重看
     if (this.mode !== 'bossrush' && this.mode !== 'endless' && !this.eventCfg && (!SaveManager.get('tutorialDone') || this.forceTutorial)) this.showTutorial();
+
+    // A9 连续失败救济局（仅 normal 主线）：failStreak[levelId] >= 3 → 开局弹三选一
+    //（降难度 session 覆盖 / 临时增益 +1 命或 +10% 攻击 / 拒绝）。无尽已有广告复活兜底，不触发。
+    if (this.mode === 'normal' && !this._tutorialCtl) {
+      this._reliefEligible = SaveManager.getFailStreak(this.levelId) >= (RELIEF.failStreakThreshold || 3);
+      if (this._reliefEligible) this.showReliefPanel();
+    }
 
     // Boss Rush：直接进入 Boss 序列
     if (this.mode === 'bossrush') this.startBossRush();
@@ -504,6 +536,10 @@ export default class GameScene extends Phaser.Scene {
         // P1 留存·深空爬塔：Boss 击破 → 层数 +1 → 记录最高层 → 弹 3 选 1 增益 → 继续下一波
         this.towerFloor = (this.towerFloor || 0) + 1;
         SaveManager.recordTowerTop(this.towerFloor);
+        // A8 无尽变异：每 MUTATION_EVERY_LAYERS 层（5/10/15…）roll 一个全局变异（叠在 3 选 1 增益之上）
+        if (this.towerFloor % MUTATION_EVERY_LAYERS === 0) {
+          this.applyMutation();
+        }
         // Boss 波结束：波次系统回 idle，等增益面板选择后 continueAfterWave 推进下一波
         if (this.waves) this.waves.state = 'idle';
         this.time.delayedCall(1200, () => {
@@ -608,8 +644,14 @@ export default class GameScene extends Phaser.Scene {
       this.boss.update(time, dt);
       this.checkBossHits();
     }
-    // 激光束持续伤害（B4，独立于 Boss，每帧）
-    this.checkBeamHits();
+    // 激光束持续伤害（B4，独立于 Boss）。A2：每帧累积真实 dt，按 COMBAT_PERF.HIT_CHECK_EVERY
+    // 降频执行命中检测，并用累积 dt 补偿 DPS（跳帧精度补偿，平均 DPS 与旧行为等价）。
+    this._beamAccDt = (this._beamAccDt || 0) + (this.game.loop.delta / 1000);
+    this._beamCheckTick = (this._beamCheckTick || 0) + 1;
+    if (this._beamCheckTick % COMBAT_PERF.HIT_CHECK_EVERY === 0) {
+      this.checkBeamHits(this._beamAccDt);
+      this._beamAccDt = 0;
+    }
 
     // 波次
     if (this.waves) this.waves.update(time, dt);
@@ -689,18 +731,23 @@ export default class GameScene extends Phaser.Scene {
     if (Phaser.Input.Keyboard.JustDown(this.focusKey) && this.wingmanSystem) this.wingmanSystem.toggleFocus();
   }
 
-  /** 激光束持续 DPS（B4）：每帧对列内敌机/Boss 结算，手动包围盒判定 */
-  checkBeamHits() {
+  /** 激光束持续 DPS（B4）：对列内敌机/Boss 结算，手动包围盒判定。
+   *  A2：dt 传跳帧累积真实秒数（精度补偿）；包围盒走手算 AABB（零 Rectangle 分配）。 */
+  checkBeamHits(dt) {
     if (!this.playerBeams || !this.playerBeams.children || this.playerBeams.children.size === 0) return;
-    const dt = this.game.loop.delta / 1000;
+    if (dt == null) dt = this.game.loop.delta / 1000;
     // P1 聚焦模式：激光束伤害同样 +DMG_MUL（与弹幕伤害一致）
     const focusDmg = (this.player && this.player.focusing && FOCUS.DMG_MUL) ? FOCUS.DMG_MUL : 1;
+    const ab1 = this._ab1 || (this._ab1 = { left: 0, top: 0, right: 0, bottom: 0 });
+    const ab2 = this._ab2 || (this._ab2 = { left: 0, top: 0, right: 0, bottom: 0 });
     this.playerBeams.children.each((beam) => {
       if (!beam.active) return;
       const dps = (beam.dps || 0) * focusDmg;
+      this._goBounds(beam, ab1);
       this.enemies.children.each((e) => {
         if (!e.active) return;
-        if (Phaser.Geom.Intersects.RectangleToRectangle(beam.getBounds(), e.getBounds())) {
+        this._goBounds(e, ab2);
+        if (ab1.left <= ab2.right && ab1.right >= ab2.left && ab1.top <= ab2.bottom && ab1.bottom >= ab2.top) {
           if (e.hit(dps * dt, beam.element)) {
             this.registerKill(e.x, e.y, { element: beam.element });
             this.addEnergy(2);
@@ -709,17 +756,50 @@ export default class GameScene extends Phaser.Scene {
       });
       if (this.boss && this.boss.active) {
         // P1 可破坏护盾部位：激光（宽光束）同时命中护盾（独立 HP，不触发阶段）
-        if (this.boss.shieldPart && !this.boss._shieldBroken &&
-            Phaser.Geom.Intersects.RectangleToRectangle(beam.getBounds(), this.boss.shieldPart.getBounds())) {
-          this.boss.hitShieldPart(dps * dt, beam.element);
+        if (this.boss.shieldPart && !this.boss._shieldBroken) {
+          this._goBounds(this.boss.shieldPart, ab2);
+          if (ab1.left <= ab2.right && ab1.right >= ab2.left && ab1.top <= ab2.bottom && ab1.bottom >= ab2.top) {
+            this.boss.hitShieldPart(dps * dt, beam.element);
+          }
         }
-        if (Phaser.Geom.Intersects.RectangleToRectangle(beam.getBounds(), this.boss.getBounds())) {
+        this._goBounds(this.boss, ab2);
+        if (ab1.left <= ab2.right && ab1.right >= ab2.left && ab1.top <= ab2.bottom && ab1.bottom >= ab2.top) {
           this.boss.hit(dps * dt, beam.element);
           this._beamFxTick = (this._beamFxTick || 0) + dt;
           if (this._beamFxTick > 0.1) { VFX.hitSpark(this, this.boss.x, this.boss.y, beam.element || 'ice'); this._beamFxTick = 0; }
         }
       }
     });
+  }
+
+  /** A2 手算 AABB（零 Rectangle 分配）：语义对齐 Phaser.getBounds——含 origin/scale/rotation。
+   *  复用 out 对象，避免每帧 getBounds()×N 的对象分配（GC 热点）。 */
+  _goBounds(go, out) {
+    const w = (go.displayWidth != null) ? go.displayWidth : go.width;
+    const h = (go.displayHeight != null) ? go.displayHeight : go.height;
+    const ox = (go.originX != null) ? go.originX : 0.5;
+    const oy = (go.originY != null) ? go.originY : 0.5;
+    const x0 = go.x - w * ox;
+    const y0 = go.y - h * oy;
+    if (!go.rotation) {
+      out.left = x0; out.top = y0; out.right = x0 + w; out.bottom = y0 + h;
+      return out;
+    }
+    // 旋转四角（RotateAround 语义，取轴对齐外接盒）
+    const cos = Math.cos(go.rotation), sin = Math.sin(go.rotation);
+    const cx = go.x, cy = go.y;
+    const x1 = x0 + w, y1 = y0 + h;
+    let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+    for (const [px, py] of [[x0, y0], [x1, y0], [x0, y1], [x1, y1]]) {
+      const rx = cx + (px - cx) * cos - (py - cy) * sin;
+      const ry = cy + (px - cx) * sin + (py - cy) * cos;
+      if (rx < left) left = rx;
+      if (rx > right) right = rx;
+      if (ry < top) top = ry;
+      if (ry > bottom) bottom = ry;
+    }
+    out.left = left; out.top = top; out.right = right; out.bottom = bottom;
+    return out;
   }
 
   /** 玩家子弹 vs Boss 手动检测 */
@@ -796,11 +876,16 @@ export default class GameScene extends Phaser.Scene {
   }
 
   // ---- 供其他模块回调的工厂方法（WaveSystem/Enemy 依赖）----
-  spawnEnemy(x, y, typeKey, moveMode, difficulty = 1, firePattern = 'straight') {
+  spawnEnemy(x, y, typeKey, moveMode, difficulty = 1, firePattern = 'straight', elite = false, hpMul, speedMul) {
     const e = this.enemies.get();
     if (!e) return null;
-    const cfg = this.difficultyCfg || { hpMul: 1, speedMul: 1 };
-    e.spawn(x, y, typeKey, moveMode, difficulty, firePattern, cfg.hpMul, cfg.speedMul);
+    // A9 救济局选项 A：敌人 HP/速度按休闲档（session 覆盖，不写 selectedDifficulty；得分/金币仍按所选难度）
+    const cfg = this._reliefCombatMul || this.difficultyCfg || { hpMul: 1, speedMul: 1 };
+    // A6 参数序：elite 在 firePattern 之后、hpMul/speedMul 之前；未传 hpMul/speedMul 时用难度档系数
+    e.spawn(x, y, typeKey, moveMode, difficulty, firePattern,
+      hpMul != null ? hpMul : cfg.hpMul,
+      speedMul != null ? speedMul : cfg.speedMul,
+      elite);
     this.stats.spawned++;
     return e;
   }
@@ -841,7 +926,9 @@ export default class GameScene extends Phaser.Scene {
     const base = (this.level && this.level.boss) || {};
     const cfg = Object.assign({}, base, overrides || {});
     // 难度档 bossBulletMul 乘到 Boss.difficulty 上（Boss.js 弹速计算零改动；标准档 ×1.0）
-    const bossBulletMul = (this.difficultyCfg && this.difficultyCfg.bossBulletMul) || 1;
+    // A9 救济局选项 A：Boss 弹速同样按休闲档（session 覆盖）
+    const bossBulletMul = (this._reliefCombatMul && this._reliefCombatMul.bossBulletMul)
+      || (this.difficultyCfg && this.difficultyCfg.bossBulletMul) || 1;
     const baseDifficulty = (overrides && overrides.difficulty) || (this.level && this.level.difficulty) || 1;
     this.boss = new Boss(this, bossKey, {
       ...cfg,
@@ -948,6 +1035,16 @@ export default class GameScene extends Phaser.Scene {
   maybeDropPower(x, y) {
     if (Math.random() > POWERUP.DROP_CHANCE) return;
     this.spawnItem(x, y, 'power');
+  }
+
+  /** A6/B10 精英击杀必掉：从 BOSS_DROP_TABLE 随机 1 件高价值道具（复用 spawnItem）。 */
+  spawnEliteDrops(x, y) {
+    const key = BOSS_DROP_TABLE[Phaser.Math.Between(0, BOSS_DROP_TABLE.length - 1)];
+    if (key) this.spawnItem(
+      Phaser.Math.Clamp(x + Phaser.Math.Between(-14, 14), 30, GAME_WIDTH - 30),
+      Phaser.Math.Clamp(y + Phaser.Math.Between(-14, 14), 30, GAME_HEIGHT - 200),
+      key,
+    );
   }
 
   /** Boss 必掉：按 BOSS_DROP_TABLE 撒一圈高价值道具。
@@ -1268,7 +1365,10 @@ export default class GameScene extends Phaser.Scene {
     this.grazeCount = (this.grazeCount || 0) + 1;
     const chainBonus = Math.min(this.grazeChain * GRAZE.CHAIN_SCORE, GRAZE.CHAIN_MAX);
     const total = GRAZE.SCORE + chainBonus;
-    this.addEnergy(GRAZE.ENERGY_GAIN);
+    // A8 擦弹之泉变异：擦弹回能 ×2^N（非塔模式恒 1）
+    const grazeEnergyMul = (this.mutations && this.mutations.grazeWell)
+      ? Math.pow(2, this.mutations.grazeWell) : 1;
+    this.addEnergy(Math.round(GRAZE.ENERGY_GAIN * grazeEnergyMul));
     EventBus.emit(EVENTS.SCORE_CHANGED, total);
     EventBus.emit(EVENTS.FLOAT_SCORE, { x, y, amount: total, special: true, label: t('fl_graze') });
     EventBus.emit(EVENTS.GRAZE_CHANGED, { count: this.grazeCount, chain: this.grazeChain });
@@ -1437,6 +1537,11 @@ export default class GameScene extends Phaser.Scene {
   respawnPlayer() {
     const p = this.player;
     p.revive(this.playerSpawnX, this.playerSpawnY, this.time.now + PLAYER.RESPAWN_INVULN);
+
+    // A9 救济局复活福利：追加「临时火力 +1 持续 2 秒」（独立临时字段，不写 powerLevel）
+    if (this._reliefRun && RELIEF.reviveFireBonusMs > 0) {
+      p.tempFireBonusUntil = this.time.now + RELIEF.reviveFireBonusMs;
+    }
 
     // 清屏救场：清掉所有敌弹，给玩家安全空间
     this.enemyBullets.children.each((b) => {
@@ -1610,7 +1715,7 @@ export default class GameScene extends Phaser.Scene {
     switch (id) {
       case 'fireRate':
         b.fireRate = (b.fireRate || 0) + 1;
-        if (p.setFireRateMul) p.setFireRateMul(Math.pow(0.9, b.fireRate));
+        this._refreshFireRate();   // A8：与 rapidFire 变异合并重算（tower × mutation）
         break;
       case 'extraShot':
         b.extraShot = (b.extraShot || 0) + 1;
@@ -1640,9 +1745,236 @@ export default class GameScene extends Phaser.Scene {
     EventBus.emit(EVENTS.FLOAT_SCORE, { x: p.x, y: p.y - 44, special: true, label: t('fl_buff') });
   }
 
+  // ───────────────────────────────────────────────────────────────
+  // A9 连续失败救济局（仅 normal 主线）
+  // 触发：failStreak[levelId] >= RELIEF.failStreakThreshold（create 判定，_reliefEligible）
+  // 面板三选一：
+  //   A 降低难度：本局 session 覆盖休闲档战斗系数（不写 selectedDifficulty 存档）
+  //   B 临时增益：+1 命（默认）或 攻击 +10%（子按钮二选一）
+  //   拒绝：按原难度硬刚（_reliefRun 保持 false，计数保留）
+  // 任何救济接受 → _reliefRun=true + AchievementManager.setIgnore(true)（成就全程抑制）
+  // ───────────────────────────────────────────────────────────────
+
+  /** 全局守卫：救济局返回 false（该局「写盘/成就/排行/勋章」链路短路），其余 true */
+  _shouldRecordPersist() {
+    return !this._reliefRun;
+  }
+
+  /**
+   * 弹「救济提示」面板三选一（静态弹窗 + 按钮，无粒子；reduced-motion 零动画）。
+   * 面板弹出期间冻结物理世界，选择后恢复并开始本局。
+   * @returns {boolean} 面板是否弹出
+   */
+  showReliefPanel() {
+    if (this.gameEnded || this._reliefOpen || !this.player || !this.player.active) return false;
+    const cx = GAME_WIDTH / 2, cy = GAME_HEIGHT / 2;
+    const ov = this.add.container(0, 0).setDepth(800);
+    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.72)
+      .setOrigin(0).setInteractive();
+    const panel = this.add.rectangle(cx, cy, 460, 500, 0x0d2236, 0.98)
+      .setStrokeStyle(2, COLORS.accent);
+    const title = this.add.text(cx, cy - 192, t('reliefTitle'), {
+      fontFamily: 'sans-serif', fontSize: '28px', fontStyle: '800', color: COLORS.accent,
+    }).setOrigin(0.5).setShadow(0, 0, '#000000', 8, true, true);
+    const sub = this.add.text(cx, cy - 150, t('reliefSub', { level: this.levelId, n: SaveManager.getFailStreak(this.levelId) }), {
+      fontFamily: 'sans-serif', fontSize: '15px', color: '#cfe8ff',
+    }).setOrigin(0.5);
+    ov.add([dim, panel, title, sub]);
+
+    let done = false;
+    const finish = (pickId, buffChoice) => {
+      if (done) return;
+      done = true;
+      this._reliefOpen = false;
+      this._reliefOverlay = null;
+      if (ov.active) ov.destroy();
+      if (this.physics && this.physics.world && this.physics.world.isPaused) this.physics.world.resume();
+      if (pickId) this._applyRelief(pickId, buffChoice);
+    };
+
+    // 选项 A：降低难度（整卡可点）
+    const mkCard = (y, titleText, descText, stroke, cb, subBtns) => {
+      const card = this.add.container(cx, y).setDepth(801);
+      const bg = this.add.rectangle(0, 0, 400, subBtns ? 92 : 66, 0x123a5a, 0.98)
+        .setStrokeStyle(2, stroke);
+      card.add(bg);
+      card.add(this.add.text(-180, subBtns ? -26 : -16, titleText, {
+        fontFamily: 'sans-serif', fontSize: '21px', fontStyle: '800', color: '#aef6ff',
+      }).setOrigin(0, 0.5));
+      card.add(this.add.text(-180, subBtns ? 4 : 16, descText, {
+        fontFamily: 'sans-serif', fontSize: '14px', color: '#88bbdd',
+      }).setOrigin(0, 0.5));
+      if (subBtns) {
+        subBtns.forEach((sb, i) => {
+          const bw = 150, bx = -92 + i * 184;
+          const btn = this.add.rectangle(bx, 34, bw, 42, 0x1b5580, 1)
+            .setStrokeStyle(1, sb.stroke || COLORS.accent).setInteractive({ useHandCursor: true });
+          const lbl = this.add.text(bx, 34, sb.label, {
+            fontFamily: 'sans-serif', fontSize: '17px', fontStyle: '800', color: sb.color || '#eaf6ff',
+          }).setOrigin(0.5);
+          btn.on('pointerover', () => btn.setFillStyle(0x2a6a9a, 1));
+          btn.on('pointerout', () => btn.setFillStyle(0x1b5580, 1));
+          btn.on('pointerdown', () => { audio.sfx('ui'); finish('tempBuff', sb.key); });
+          card.add([btn, lbl]);
+        });
+      } else if (cb) {
+        card.setSize(400, 66).setInteractive({
+          hitArea: new Phaser.Geom.Rectangle(-200, -33, 400, 66),
+          hitAreaCallback: (rect, x, y) => rect.contains(x, y),
+          useHandCursor: true,
+        });
+        card.on('pointerover', () => bg.setFillStyle(0x1b5580, 1));
+        card.on('pointerout', () => bg.setFillStyle(0x123a5a, 0.98));
+        card.on('pointerdown', () => { audio.sfx('ui'); cb(); });
+      }
+      ov.add(card);
+      return card;
+    };
+
+    mkCard(cy - 92, t('reliefLowerDiff'), t('reliefLowerDiffDesc'), COLORS.accent,
+      () => finish('lowerDiff'));
+    // 选项 B：临时增益 —— 子按钮「+1 命（默认）/ 攻击 +10%」
+    mkCard(cy + 4, t('reliefTempBuff'), t('reliefTempBuffDesc'), 0xffd54a, null, [
+      { key: 'life', label: t('reliefBuffLife'), stroke: 0xffd54a, color: '#ffe9a0' },
+      { key: 'atk', label: t('reliefBuffAtk'), stroke: 0xff9a4a, color: '#ffd0a0' },
+    ]);
+    mkCard(cy + 100, t('reliefDecline'), t('reliefDeclineDesc'), 0x88bbdd,
+      () => finish(null));
+
+    // 面板弹出期间冻结物理世界（选择后恢复；与爬塔增益/广告复活面板同款）
+    if (this.physics && this.physics.world) this.physics.world.pause();
+    this._reliefOpen = true;
+    this._reliefOverlay = ov;
+    // 测试钩子（与 window.__SKY 同性质，不影响玩法）
+    this._reliefCtl = { finish, overlay: ov, open: true, decline: () => finish(null) };
+    return true;
+  }
+
+  /**
+   * 应用救济选择（仅本局，不持久化、不叠加；每次救济局独立结算）。
+   *   lowerDiff：session 覆盖休闲档战斗系数（不写 selectedDifficulty；得分/金币仍按所选难度）
+   *   tempBuff 'life'：lives +RELIEF.tempBuffLife（默认 +1）
+   *   tempBuff 'atk' ：Player.reliefAtkMul = 1 + RELIEF.tempBuffAtk（主炮/导弹/炸弹/激光 DPS 消费）
+   * 接受任何救济 → _reliefRun=true + AchievementManager.setIgnore(true)（成就全程抑制）
+   */
+  _applyRelief(pickId, buffChoice) {
+    this._reliefRun = true;
+    AchievementManager.setIgnore(true);
+    const p = this.player;
+    if (pickId === 'lowerDiff') {
+      this._reliefCombatMul = getDifficulty(RELIEF.lowerDiff) || this.difficultyCfg;
+      if (p) EventBus.emit(EVENTS.FLOAT_SCORE, { x: p.x, y: p.y - 44, special: true, label: t('reliefLowerDiff') });
+    } else if (pickId === 'tempBuff') {
+      if (buffChoice === 'atk') {
+        this._reliefAtkPicked = true;
+        if (p) p.reliefAtkMul = 1 + (RELIEF.tempBuffAtk || 0);
+      } else {
+        this.lives = (this.lives || 0) + (RELIEF.tempBuffLife || 1);
+        EventBus.emit(EVENTS.LIVES_CHANGED, this.lives);
+      }
+      if (p) EventBus.emit(EVENTS.FLOAT_SCORE, { x: p.x, y: p.y - 44, special: true, label: t('reliefTempBuff') });
+    }
+  }
+
+  // ───────────────────────────────────────────────────────────────
+  // A8 无尽变异规则（深空爬塔全局变异层，叠在 TOWER_BUFFS 3 选 1 之上）
+  // 触发：towerFloor % MUTATION_EVERY_LAYERS === 0（5/10/15… 层 Boss 波通关后）
+  // 正面 5 / 负面 4；负面生效前 1s 先出警示（不可静默生效）；幂等叠加，局内临时不入存档。
+  // 普通关 / BossRush / 活动模式 mutations 为空 → _mutationMul 全 1.0（零回归）。
+  // ───────────────────────────────────────────────────────────────
+
+  /**
+   * roll 一个变异并进入待生效状态。
+   * 负面：先 emit warning（生效前 1s 警示），1s 后 _commitMutation 真正生效；
+   * 正面：立即生效。
+   * @returns {{id:string, polarity:string, name:string, desc:string, stats:Object}}
+   */
+  applyMutation() {
+    const m = rollMutation();
+    const result = { id: m.id, polarity: m.polarity, name: m.name, desc: m.desc, stats: m.stats || {} };
+    if (m.polarity === 'negative') {
+      // 负面变异不可静默生效：先警示文字，1s 后再落地
+      EventBus.emit(EVENTS.MUTATION_CHANGED, { ...result, type: 'warning', label: t('mutWarning') });
+      this.time.delayedCall(1000, () => {
+        if (this.gameEnded || !this.player || !this.player.active) return;
+        this._commitMutation(result);
+      });
+    } else {
+      this._commitMutation(result);
+    }
+    return result;
+  }
+
+  /** 变异真正落地：幂等叠加 + 直接生效型 apply + emit applied（UIScene 横幅/图标） */
+  _commitMutation(m) {
+    const stack = this.mutations || (this.mutations = {});
+    stack[m.id] = (stack[m.id] || 0) + 1;
+    const p = this.player;
+    const def = MUTATIONS[m.id] || {};
+    switch (def.apply) {
+      case 'magnet':   // 磁力风暴：全屏吸金 6s
+        this.buffs.magnetUntil = this.time.now + 6000;
+        EventBus.emit(EVENTS.MAGNET_CHANGED, true);
+        break;
+      case 'shield':   // 过载护盾：8s 护盾 + 回血 10
+        this.buffs.shieldUntil = this.time.now + 8000;
+        if (p) { p.hp = Math.min(p.maxHp, p.hp + 10); EventBus.emit(EVENTS.HP_CHANGED, p.hp, p.maxHp); }
+        EventBus.emit(EVENTS.SHIELD_CHANGED, true);
+        break;
+      case 'fireRate': // 急速射击：与 tower fireRate 合并重算
+        this._refreshFireRate();
+        break;
+      case 'coin':     // 双倍金币：endGame 结算消费
+      case 'grazeEnergy': // 擦弹之泉：_grantGraze 消费
+      case 'bulletSpeed': // 弹速风暴：_mutationMul().bulletSpeed 消费（敌/Boss 弹速）
+      case 'grazeRadius': // 擦弹环缩小：_mutationMul().grazeRadius（接口预留，后续接线）
+      case 'incomingDmg': // 玻璃大炮：playerHit 消费
+      case 'spawn':       // 蜂群：_mutationMul 接口预留（WaveSystem 后续接线）
+        break;
+      default:
+        break;
+    }
+    EventBus.emit(EVENTS.MUTATION_CHANGED, {
+      id: m.id, polarity: m.polarity, name: m.name, desc: m.desc, stats: m.stats || {}, type: 'applied',
+    });
+  }
+
+  /**
+   * 当前变异对战斗数值的倍率（新配置键，标准路径全 1.0 = 零回归）。
+   * @returns {{dmg:number, hp:number, speed:number, bulletSpeed:number, grazeRadius:number, incomingDmg:number}}
+   */
+  _mutationMul() {
+    const out = { dmg: 1, hp: 1, speed: 1, bulletSpeed: 1, grazeRadius: 1, incomingDmg: 1 };
+    if (!this.isTower || !this.mutations) return out;
+    for (const id in this.mutations) {
+      const n = this.mutations[id];
+      const def = MUTATIONS[id];
+      if (!def || !def.stats) continue;
+      const s = def.stats;
+      if (s.dmgMul) out.dmg *= Math.pow(s.dmgMul, n);
+      if (s.hpMul) out.hp *= Math.pow(s.hpMul, n);
+      if (s.speedMul) out.speed *= Math.pow(s.speedMul, n);
+      if (s.bulletSpeedMul) out.bulletSpeed *= Math.pow(s.bulletSpeedMul, n);
+      if (s.grazeRadiusMul) out.grazeRadius *= Math.pow(s.grazeRadiusMul, n);
+      if (s.incomingDmgMul) out.incomingDmg *= Math.pow(s.incomingDmgMul, n);
+    }
+    return out;
+  }
+
+  /** 合并 tower fireRate + rapidFire 变异，统一写 player.setFireRateMul（默认 1 = 零回归） */
+  _refreshFireRate() {
+    const p = this.player;
+    if (!p || !p.setFireRateMul) return;
+    const tower = Math.pow(0.9, (this.towerBonuses && this.towerBonuses.fireRate) || 0);
+    const mut = Math.pow(1 / 1.2, (this.mutations && this.mutations.rapidFire) || 0);
+    p.setFireRateMul(tower * mut);
+  }
+
   playerHit(dmg) {
     // 护盾激活时吸收全部伤害
     if (this.time.now < (this.buffs.shieldUntil || 0)) return;
+    // A8 玻璃大炮变异：受击伤害 ×1.3^N（非塔模式恒 1）
+    dmg *= this._mutationMul().incomingDmg;
     // 是否真正"落地"：无敌期内敌弹穿过不视为受击（不扣火力，避免 1.5s 内连掉多级）
     const landed = this.time.now >= (this.player.invulnUntil || 0);
     this.stats.damageTaken += dmg;
@@ -1788,6 +2120,14 @@ export default class GameScene extends Phaser.Scene {
     if (b.pierce) b.pierce = 0;
     if (b._lastHit) b._lastHit = null;
     if (b._wmTinted) { b._wmTinted = false; }
+    // A4 池复用复位契约（append-only）：敌弹 eHoming / 玩家弹 homing / isBomb / element / damage
+    // 全部复位——Boss.spawnBulletAt 等路径不重设 eHoming，复用追踪弹会残留转向（C3 幽灵转向）；
+    // 各 spawn 路径都会重写所需字段，此处复位零副作用。
+    if (b.eHoming) b.eHoming = false;
+    if (b.homing) b.homing = false;
+    if (b.isBomb) { b.isBomb = false; }
+    b.element = null;
+    b.damage = 0;
     // clearTint 无条件执行：combo 染色路径与 lv3 元素弹共用 _wmTinted，但历史上存在
     // 只 setTint 未置标记的分支；无条件清一次成本可忽略，能彻底杜绝主炮弹被染色残留。
     b.clearTint();
@@ -1826,6 +2166,16 @@ export default class GameScene extends Phaser.Scene {
     if (this.gameEnded) return;
     this.gameEnded = true;
 
+    // A9 连续失败救济局（仅 normal 主线）：
+    //   failStreak/reliefRuns 为唯一计数（胜 归0 / 负 +1；救济局照常计数，恢复逻辑不变）
+    if (this.mode === 'normal') {
+      if (victory) SaveManager.resetFailStreak(this.levelId);
+      else SaveManager.incFailStreak(this.levelId);
+    }
+    if (this._reliefRun) SaveManager.incReliefRuns();
+    // A9 全局守卫：救济局短路下方「写盘/成就/排行/勋章」链路（金币照常入账）
+    const recordPersist = this._shouldRecordPersist();
+
     // P0 留存-活动轮换：事件模式结算按活动规则（金币冲刺 ×2 / 限时生存 按波次），不计星级/勋章/关卡进度
     const eventCfg = this.eventCfg;
     const isEvent = !!eventCfg;
@@ -1844,7 +2194,7 @@ export default class GameScene extends Phaser.Scene {
     if (!victory) stars = Math.min(stars, 1);
     if (isEvent) stars = 0;
 
-    if (victory && isNormal) SaveManager.recordLevelStars(this.levelId, stars);
+    if (victory && isNormal && recordPersist) SaveManager.recordLevelStars(this.levelId, stars);
 
     // P0 四档难度结算：得分 ×scoreMul，金币 ×coinMul（标准档全 1.0 = 现状零回归）。
     // 金币在局中已按 1:1 入账；这里仅对正差额（困难/地狱档）补发，休闲/标准档不回退，避免"低难度倒扣金币"的诡异体验。
@@ -1855,8 +2205,11 @@ export default class GameScene extends Phaser.Scene {
     // P1 留存·深空爬塔：局内「金币 +20%」增益（towerBonuses.coin 次 → 结算 ×1.2^N）
     const towerCoinMul = (this.isTower && this.towerBonuses && this.towerBonuses.coin > 0)
       ? Math.pow(1.2, this.towerBonuses.coin) : 1;
+    // A8 双倍金币变异：金币 ×2^N（非塔模式恒 1）
+    const mutationCoinMul = (this.isTower && this.mutations && this.mutations.doubleCoin)
+      ? Math.pow(2, this.mutations.doubleCoin) : 1;
     const scaledScore = Math.round(this.score * scoreMul);
-    const coinTarget = Math.round(this.stats.coins * coinMul * towerCoinMul);
+    const coinTarget = Math.round(this.stats.coins * coinMul * towerCoinMul * mutationCoinMul);
     let coinDelta = coinTarget - this.stats.coins;
     // P2 Boss Rush 差异化：机库等级金币倍率补发（hangarLv=0 → coinMul=1 → 零 diff）。
     // rushReward 透传给 ResultScene 展示「Boss Rush 奖励」行。
@@ -1888,45 +2241,48 @@ export default class GameScene extends Phaser.Scene {
     const finalCoins = coinDelta > 0 ? this.stats.coins + coinDelta : this.stats.coins;
 
     // 最高分存档：比较 scaledScore 与全局 bestScore，破纪录则写回（胜负都记）
-    const isNewBest = SaveManager.recordBestScore(scaledScore);
+    // A9 救济局不更新 bestScore（救济有加成，避免刷最高分）
+    const isNewBest = recordPersist ? SaveManager.recordBestScore(scaledScore) : false;
     const bestScore = SaveManager.getBestScore();
 
     // P2 系统扩展·无尽周赛：无尽模式分数写入 league（取本周最高，纯本地假组）
-    if (this.mode === 'endless') SaveManager.recordLeagueScore(scaledScore);
+    if (recordPersist && this.mode === 'endless') SaveManager.recordLeagueScore(scaledScore);
 
-    // P1 留存·每日活跃宝箱：每局游玩 +1（endGame 唯一入口，一次性计数）
+    // P1 留存·每日活跃宝箱：每局游玩 +1（endGame 唯一入口，一次性计数；救济局也算游玩）
     SaveManager.addDailyAct();
 
     // P1 留存·社交排行（本地）：每次结算插入历史 Top10（按 score 降序，最多 10 条）
-    const topScoreRes = SaveManager.addTopScore({
+    // A9 救济局不入榜（防救济加成刷榜）
+    const topScoreRes = recordPersist ? SaveManager.addTopScore({
       score: scaledScore,
       levelId: this.levelId,
       mode: this.mode,
       date: SaveManager._todayStr(),
-    });
+    }) : { entered: false, rank: -1, list: SaveManager.getTopScores() };
 
     // P1 留存·深空爬塔：记录最高层数（towerFloor 为本次已通过 Boss 波数）
     let towerTop = 0;
     let isNewTowerTop = false;
-    if (this.isTower) {
+    if (recordPersist && this.isTower) {
       const prev = SaveManager.getTowerTop();
       towerTop = SaveManager.recordTowerTop(this.towerFloor || 0);
       isNewTowerTop = (this.towerFloor || 0) > 0 && (this.towerFloor || 0) > prev;
     }
 
     // P0 留存-新手计划：跨模式累计进度（与 addDailyProgress 一样不立即存盘，由下方 save() 统一 flush）
-    if (this.mode === 'normal') {
+    // A9 救济局跳过每日任务/新手计划进度（防刷），金币照常入账
+    if (recordPersist && this.mode === 'normal') {
       if (victory) {
         SaveManager.addNewbieProgress('clears', 1);      // D1 通关任意关
         SaveManager.addNewbieProgress('levelClears', 1); // D7 累计通关关数
         SaveManager.addDailyProgress('clears', 1);       // P1 留存-每日任务：通关任意一关
       }
-    } else if (this.mode === 'bossrush') {
+    } else if (recordPersist && this.mode === 'bossrush') {
       if (victory) {
         SaveManager.addNewbieProgress('bossRushClears', 1); // D4 通关 Boss Rush
         SaveManager.addDailyProgress('bossRushClears', 1);  // P1 留存-每日任务：通关 Boss Rush
       }
-    } else if (this.mode === 'endless') {
+    } else if (recordPersist && this.mode === 'endless') {
       const w = this.waves ? this.waves.currentWave : 0;
       SaveManager.addNewbieProgress('endlessWaves', w); // D5 无尽波次
       SaveManager.addDailyProgress('endlessWaves', w);  // P1 留存-每日任务：无尽累计波数
@@ -1937,7 +2293,7 @@ export default class GameScene extends Phaser.Scene {
     // P0 留存-关卡勋章：普通关胜利后按关卡 challenges 判定达成（killRate 用 stats.kills/spawned；
     // timeLimit 用耗时；singleWeapon 用局内武器切换次数===0）
     let achievedMedals = [];
-    if (victory && isNormal) {
+    if (victory && isNormal && recordPersist) {
       const lvl = LEVELS.find((l) => l.id === this.levelId);
       if (lvl && Array.isArray(lvl.challenges) && lvl.challenges.length) {
         const elapsedSec = (this.time.now - (this._levelStartTime || this.time.now)) / 1000;
@@ -1976,12 +2332,14 @@ export default class GameScene extends Phaser.Scene {
 
     // 成就评估（#成就）：事件已实时上报，这里做局末兜底评估（无伤/通关/BossRush 等）。
     // 活动模式胜利不计"通关任意一关/无伤"类成就（victory 仅透传给结算展示，reportRun 按活动压制）
+    // A9 救济局 ignore=true：reportRun 短路写盘与解锁（AchievementManager 全程抑制）
     result.newAchievements = AchievementManager.reportRun({
       victory: isEvent ? false : victory,
       mode: this.mode,
       stars,
       levelId: this.levelId,
       damageTaken: this.stats.damageTaken,
+      ignore: !recordPersist,
     });
 
     this.time.delayedCall(600, () => {
@@ -2065,6 +2423,9 @@ export default class GameScene extends Phaser.Scene {
     if (this._adReviveOverlay) { this._adReviveOverlay.destroy(); this._adReviveOverlay = null; }
     // P1 留存·深空爬塔：清理 3 选 1 增益面板并恢复物理
     if (this._towerBuffOverlay) { this._towerBuffOverlay.destroy(); this._towerBuffOverlay = null; }
+    // A9 连续失败救济局：清理救济提示面板并恢复物理（避免切场景残留冻结）
+    if (this._reliefOverlay) { this._reliefOverlay.destroy(); this._reliefOverlay = null; }
+    this._reliefOpen = false;
     if (this.physics && this.physics.world && this.physics.world.isPaused) this.physics.world.resume();
     if (this.wingmanSystem) { this.wingmanSystem.destroy(); this.wingmanSystem = null; }
     if (this.starfield) this.starfield.destroy();

@@ -202,6 +202,34 @@ export const LEVELS = [
       { count: 9,  comp: [['small', 'straight', 1], ['small', 'dive', 1], ['mid', 'sine', 1]] },
       { count: 10, comp: [['small', 'sine', 2], ['mid', 'straight', 1], ['mid', 'dive', 1]] },
     ],
+    // OPT-13 批A A6 波次变体（append-only）：与 wavePlan 同构、同难度（difficulty 不变）。
+    // 局内随机锁定 1 套变体，本局所有波次均用该套表；缺省回退 wavePlan（零回归）。
+    waveVariants: [
+      [ // V1 俯冲突袭：diver 提前登场、dive 密集
+        { count: 6,  comp: [['small', 'straight', 1], ['small', 'dive', 1]] },
+        { count: 8,  comp: [['small', 'sine', 1], ['small', 'dive', 1]] },
+        { count: 8,  comp: [['small', 'dive', 2], ['small', 'sine', 1]] },
+        { count: 7,  comp: [['small', 'dive', 2], ['diver', 'dive', 1]] },
+        { count: 9,  comp: [['small', 'sine', 1], ['small', 'dive', 2], ['diver', 'dive', 1]] },
+        { count: 10, comp: [['small', 'dive', 2], ['diver', 'dive', 1], ['mid', 'sine', 1]] },
+      ],
+      [ // V2 中型压迫：mid 提前出现、压制波
+        { count: 6,  comp: [['small', 'straight', 1], ['small', 'sine', 1]] },
+        { count: 8,  comp: [['small', 'sine', 2], ['mid', 'straight', 1]] },
+        { count: 8,  comp: [['small', 'sine', 1], ['mid', 'straight', 1]] },
+        { count: 7,  comp: [['small', 'sine', 1], ['mid', 'straight', 2]] },
+        { count: 9,  comp: [['small', 'straight', 1], ['mid', 'sine', 2]] },
+        { count: 10, comp: [['small', 'sine', 1], ['mid', 'straight', 2], ['mid', 'dive', 1]] },
+      ],
+      [ // V3 交叠弹幕：straight/sine/dive 混合
+        { count: 6,  comp: [['small', 'straight', 2], ['small', 'sine', 1]] },
+        { count: 8,  comp: [['small', 'sine', 1], ['small', 'dive', 1]] },
+        { count: 8,  comp: [['small', 'straight', 1], ['small', 'sine', 1], ['mid', 'straight', 1]] },
+        { count: 7,  comp: [['small', 'sine', 2], ['mid', 'dive', 1]] },
+        { count: 9,  comp: [['small', 'dive', 1], ['mid', 'straight', 1], ['mid', 'sine', 1]] },
+        { count: 10, comp: [['small', 'sine', 1], ['small', 'dive', 1], ['mid', 'straight', 1], ['mid', 'dive', 1]] },
+      ],
+    ],
   },
   {
     id: 2, name: '陨石带', bg: 'bg_belt', waves: 7, bossKey: 'boss_crusher',
@@ -228,6 +256,35 @@ export const LEVELS = [
       { count: 11, comp: [['small', 'dive', 2], ['mid', 'straight', 1], ['mid', 'sine', 2], ['diver', 'dive', 1]] },
       { count: 12, comp: [['small', 'sine', 2], ['mid', 'dive', 2], ['mid', 'straight', 1], ['diver', 'dive', 1], ['turret', 'turret', 1, 'aimed']] },
       { count: 13, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['mid', 'sine', 1], ['mid', 'dive', 1], ['diver', 'dive', 1], ['kamikaze', 'kamikaze', 1, 'straight']] },
+    ],
+    waveVariants: [
+      [ // V1 陨石疾风：diver/kamikaze 更早登场
+        { count: 8,  comp: [['small', 'straight', 1], ['small', 'dive', 1]] },
+        { count: 9,  comp: [['small', 'sine', 2], ['diver', 'dive', 1]] },
+        { count: 10, comp: [['small', 'dive', 2], ['mid', 'straight', 1]] },
+        { count: 10, comp: [['small', 'sine', 1], ['mid', 'straight', 1], ['diver', 'dive', 1]] },
+        { count: 11, comp: [['small', 'dive', 2], ['mid', 'straight', 1], ['diver', 'dive', 2]] },
+        { count: 12, comp: [['small', 'sine', 1], ['mid', 'dive', 2], ['diver', 'dive', 1], ['kamikaze', 'kamikaze', 1, 'straight']] },
+        { count: 13, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['mid', 'sine', 1], ['diver', 'dive', 2], ['kamikaze', 'kamikaze', 1, 'straight']] },
+      ],
+      [ // V2 装甲纵队：mid/turret 弹幕压制
+        { count: 8,  comp: [['small', 'straight', 1], ['small', 'sine', 1]] },
+        { count: 9,  comp: [['small', 'sine', 1], ['mid', 'straight', 1]] },
+        { count: 10, comp: [['small', 'sine', 2], ['mid', 'straight', 1], ['mid', 'dive', 1]] },
+        { count: 10, comp: [['small', 'straight', 1], ['mid', 'sine', 2], ['turret', 'turret', 1, 'aimed']] },
+        { count: 11, comp: [['small', 'dive', 1], ['mid', 'straight', 2], ['turret', 'turret', 1, 'aimed']] },
+        { count: 12, comp: [['small', 'sine', 1], ['mid', 'dive', 2], ['mid', 'straight', 1], ['turret', 'turret', 1, 'aimed']] },
+        { count: 13, comp: [['small', 'straight', 1], ['mid', 'sine', 2], ['mid', 'dive', 1], ['turret', 'turret', 1, 'aimed'], ['kamikaze', 'kamikaze', 1, 'straight']] },
+      ],
+      [ // V3 混合突击：各型平衡
+        { count: 8,  comp: [['small', 'straight', 1], ['small', 'sine', 1], ['small', 'dive', 1]] },
+        { count: 9,  comp: [['small', 'sine', 2], ['mid', 'straight', 1], ['diver', 'dive', 1]] },
+        { count: 10, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['mid', 'sine', 1]] },
+        { count: 10, comp: [['small', 'sine', 1], ['mid', 'straight', 1], ['mid', 'dive', 1], ['diver', 'dive', 1]] },
+        { count: 11, comp: [['small', 'dive', 1], ['mid', 'sine', 2], ['diver', 'dive', 1], ['kamikaze', 'kamikaze', 1, 'straight']] },
+        { count: 12, comp: [['small', 'sine', 1], ['mid', 'dive', 2], ['mid', 'straight', 1], ['diver', 'dive', 1], ['turret', 'turret', 1, 'aimed']] },
+        { count: 13, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['mid', 'sine', 1], ['mid', 'dive', 1], ['diver', 'dive', 1], ['kamikaze', 'kamikaze', 1, 'straight']] },
+      ],
     ],
   },
   {
@@ -257,6 +314,38 @@ export const LEVELS = [
       { count: 14, comp: [['small', 'sine', 2], ['mid', 'dive', 2], ['mid', 'straight', 1], ['mid', 'sine', 1], ['diver', 'dive', 1], ['summoner', 'straight', 1, 'ring']] },
       { count: 16, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['small', 'sine', 1], ['mid', 'dive', 1], ['mid', 'sine', 1], ['diver', 'dive', 1], ['kamikaze', 'kamikaze', 1, 'straight']] },
     ],
+    waveVariants: [
+      [ // V1 要塞强袭：summoner 提早、召唤流
+        { count: 9,  comp: [['small', 'straight', 1], ['small', 'dive', 1]] },
+        { count: 10, comp: [['small', 'sine', 2], ['mid', 'straight', 1], ['summoner', 'straight', 1, 'ring']] },
+        { count: 11, comp: [['small', 'dive', 2], ['mid', 'sine', 2], ['mid', 'straight', 1]] },
+        { count: 12, comp: [['small', 'sine', 1], ['mid', 'dive', 2], ['summoner', 'straight', 1, 'ring']] },
+        { count: 12, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['mid', 'sine', 2], ['summoner', 'straight', 1, 'ring']] },
+        { count: 13, comp: [['small', 'dive', 2], ['mid', 'sine', 2], ['mid', 'straight', 2], ['diver', 'dive', 1], ['turret', 'turret', 1, 'aimed']] },
+        { count: 14, comp: [['small', 'sine', 1], ['mid', 'dive', 2], ['mid', 'straight', 1], ['diver', 'dive', 1], ['summoner', 'straight', 1, 'ring']] },
+        { count: 16, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['small', 'sine', 1], ['mid', 'dive', 1], ['diver', 'dive', 1], ['kamikaze', 'kamikaze', 1, 'straight']] },
+      ],
+      [ // V2 炮阵压制：turret/kamikaze 交叉火力
+        { count: 9,  comp: [['small', 'straight', 1], ['mid', 'straight', 1]] },
+        { count: 10, comp: [['small', 'sine', 2], ['mid', 'straight', 1], ['turret', 'turret', 1, 'aimed']] },
+        { count: 11, comp: [['small', 'dive', 2], ['mid', 'sine', 2], ['mid', 'straight', 1]] },
+        { count: 12, comp: [['small', 'sine', 2], ['mid', 'dive', 2], ['mid', 'straight', 1], ['turret', 'turret', 1, 'aimed']] },
+        { count: 12, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['mid', 'sine', 2], ['kamikaze', 'kamikaze', 1, 'straight']] },
+        { count: 13, comp: [['small', 'dive', 2], ['mid', 'sine', 2], ['mid', 'straight', 2], ['diver', 'dive', 1], ['turret', 'turret', 1, 'aimed']] },
+        { count: 14, comp: [['small', 'sine', 1], ['mid', 'dive', 2], ['mid', 'straight', 1], ['diver', 'dive', 1], ['kamikaze', 'kamikaze', 1, 'straight']] },
+        { count: 16, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['small', 'sine', 1], ['mid', 'dive', 1], ['mid', 'sine', 1], ['diver', 'dive', 1], ['turret', 'turret', 1, 'aimed']] },
+      ],
+      [ // V3 混合精英波：各型均衡
+        { count: 9,  comp: [['small', 'straight', 1], ['small', 'sine', 1], ['small', 'dive', 1]] },
+        { count: 10, comp: [['small', 'sine', 2], ['mid', 'straight', 1], ['mid', 'dive', 1]] },
+        { count: 11, comp: [['small', 'dive', 2], ['mid', 'sine', 2], ['mid', 'straight', 1], ['diver', 'dive', 1]] },
+        { count: 12, comp: [['small', 'sine', 2], ['mid', 'dive', 2], ['mid', 'straight', 1], ['summoner', 'straight', 1, 'ring']] },
+        { count: 12, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['mid', 'sine', 2], ['diver', 'dive', 1]] },
+        { count: 13, comp: [['small', 'dive', 2], ['mid', 'sine', 2], ['mid', 'straight', 2], ['diver', 'dive', 1], ['turret', 'turret', 1, 'aimed']] },
+        { count: 14, comp: [['small', 'sine', 1], ['mid', 'dive', 2], ['mid', 'straight', 1], ['mid', 'sine', 1], ['diver', 'dive', 1], ['summoner', 'straight', 1, 'ring']] },
+        { count: 16, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['small', 'sine', 1], ['mid', 'dive', 1], ['mid', 'sine', 1], ['diver', 'dive', 1], ['kamikaze', 'kamikaze', 1, 'straight']] },
+      ],
+    ],
   },
   {
     id: 4, name: '终焉星核', bg: 'bg_abyss', waves: 9, bossKey: 'boss_annihilator',
@@ -285,6 +374,41 @@ export const LEVELS = [
       { count: 16, comp: [['small', 'sine', 2], ['mid', 'dive', 2], ['mid', 'straight', 1], ['mid', 'sine', 1], ['diver', 'dive', 2], ['turret', 'turret', 1, 'aimed']] },
       { count: 18, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['small', 'sine', 1], ['mid', 'dive', 1], ['mid', 'sine', 1], ['diver', 'dive', 2], ['summoner', 'straight', 1, 'ring'], ['kamikaze', 'kamikaze', 1, 'straight']] },
       { count: 20, comp: [['small', 'sine', 2], ['mid', 'dive', 2], ['mid', 'straight', 1], ['mid', 'sine', 1], ['diver', 'dive', 3], ['shield', 'straight', 1, 'spread'], ['kamikaze', 'kamikaze', 1, 'straight']] },
+    ],
+    waveVariants: [
+      [ // V1 湮灭浪潮：diver 狂潮 + summoner 支援
+        { count: 10, comp: [['small', 'straight', 1], ['small', 'sine', 1], ['small', 'dive', 1]] },
+        { count: 11, comp: [['small', 'sine', 2], ['mid', 'straight', 1], ['diver', 'dive', 1]] },
+        { count: 12, comp: [['small', 'dive', 2], ['mid', 'sine', 2], ['mid', 'straight', 1]] },
+        { count: 13, comp: [['small', 'sine', 1], ['mid', 'dive', 2], ['diver', 'dive', 2]] },
+        { count: 14, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['mid', 'sine', 2], ['diver', 'dive', 2]] },
+        { count: 15, comp: [['small', 'dive', 2], ['mid', 'sine', 2], ['mid', 'straight', 2], ['diver', 'dive', 2]] },
+        { count: 16, comp: [['small', 'sine', 1], ['mid', 'dive', 2], ['mid', 'straight', 1], ['diver', 'dive', 2], ['summoner', 'straight', 1, 'ring'], ['turret', 'turret', 1, 'aimed']] },
+        { count: 18, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['small', 'sine', 1], ['mid', 'dive', 1], ['diver', 'dive', 3], ['summoner', 'straight', 1, 'ring'], ['kamikaze', 'kamikaze', 1, 'straight']] },
+        { count: 20, comp: [['small', 'sine', 2], ['mid', 'dive', 2], ['mid', 'straight', 1], ['mid', 'sine', 1], ['diver', 'dive', 3], ['shield', 'straight', 1, 'spread'], ['kamikaze', 'kamikaze', 1, 'straight']] },
+      ],
+      [ // V2 星核炮阵：turret 密集 + shield 坚壁
+        { count: 10, comp: [['small', 'straight', 1], ['small', 'sine', 1], ['mid', 'straight', 1]] },
+        { count: 11, comp: [['small', 'sine', 2], ['mid', 'straight', 1], ['turret', 'turret', 1, 'aimed']] },
+        { count: 12, comp: [['small', 'dive', 2], ['mid', 'sine', 2], ['mid', 'straight', 1]] },
+        { count: 13, comp: [['small', 'sine', 2], ['mid', 'dive', 2], ['mid', 'straight', 1], ['turret', 'turret', 1, 'aimed']] },
+        { count: 14, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['mid', 'sine', 2], ['shield', 'straight', 1, 'spread']] },
+        { count: 15, comp: [['small', 'dive', 2], ['mid', 'sine', 2], ['mid', 'straight', 2], ['diver', 'dive', 1], ['turret', 'turret', 1, 'aimed']] },
+        { count: 16, comp: [['small', 'sine', 1], ['mid', 'dive', 2], ['mid', 'straight', 1], ['mid', 'sine', 1], ['shield', 'straight', 1, 'spread'], ['turret', 'turret', 1, 'aimed']] },
+        { count: 18, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['small', 'sine', 1], ['mid', 'dive', 1], ['mid', 'sine', 1], ['diver', 'dive', 2], ['shield', 'straight', 1, 'spread'], ['kamikaze', 'kamikaze', 1, 'straight']] },
+        { count: 20, comp: [['small', 'sine', 2], ['mid', 'dive', 2], ['mid', 'straight', 1], ['mid', 'sine', 1], ['diver', 'dive', 3], ['shield', 'straight', 1, 'spread'], ['kamikaze', 'kamikaze', 1, 'straight'], ['turret', 'turret', 1, 'aimed']] },
+      ],
+      [ // V3 终焉混编：全型均衡终极压力
+        { count: 10, comp: [['small', 'straight', 1], ['small', 'sine', 1], ['small', 'dive', 1]] },
+        { count: 11, comp: [['small', 'sine', 2], ['mid', 'straight', 1], ['mid', 'dive', 1]] },
+        { count: 12, comp: [['small', 'dive', 2], ['mid', 'sine', 2], ['mid', 'straight', 1], ['diver', 'dive', 1]] },
+        { count: 13, comp: [['small', 'sine', 2], ['mid', 'dive', 2], ['mid', 'straight', 1], ['diver', 'dive', 1]] },
+        { count: 14, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['mid', 'sine', 2], ['diver', 'dive', 1], ['shield', 'straight', 1, 'spread']] },
+        { count: 15, comp: [['small', 'dive', 2], ['mid', 'sine', 2], ['mid', 'straight', 2], ['diver', 'dive', 1], ['turret', 'turret', 1, 'aimed']] },
+        { count: 16, comp: [['small', 'sine', 2], ['mid', 'dive', 2], ['mid', 'straight', 1], ['mid', 'sine', 1], ['diver', 'dive', 2], ['turret', 'turret', 1, 'aimed']] },
+        { count: 18, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['small', 'sine', 1], ['mid', 'dive', 1], ['mid', 'sine', 1], ['diver', 'dive', 2], ['summoner', 'straight', 1, 'ring'], ['kamikaze', 'kamikaze', 1, 'straight']] },
+        { count: 20, comp: [['small', 'sine', 2], ['mid', 'dive', 2], ['mid', 'straight', 1], ['mid', 'sine', 1], ['diver', 'dive', 3], ['shield', 'straight', 1, 'spread'], ['kamikaze', 'kamikaze', 1, 'straight']] },
+      ],
     ],
   },
 ];
@@ -808,6 +932,93 @@ export const PERFORMANCE = {
   tiers: ['high', 'mid', 'low'],
   defaultTier: 'high',
   scale: { high: 1.0, mid: 0.7, low: 0.45 },
+};
+
+// ───────────────────────────────────────────────────────────────
+// OPT-13 批A A4 对象池纪律（append-only，纯技术配置）：
+//   enemyBullets 敌弹池上限（创建时预填，避免首帧冷启动创建开销）
+//   playerBeams  玩家激光束组上限（防无界增长）
+// 低性能档可在运行时按 PERFORMANCE.scale 降低预填/上限（本版保持常量）。
+// ───────────────────────────────────────────────────────────────
+export const POOL = {
+  enemyBullets: 400,
+  playerBeams: 64,
+};
+
+// ───────────────────────────────────────────────────────────────
+// OPT-13 批A A2 光束命中热点优化（append-only，纯技术配置）：
+//   HIT_CHECK_EVERY：激光束命中检测每 N 帧执行一次（1=旧行为逐帧；默认 2 降频一半）。
+//   跳帧期间累积真实 dt，结算时按累积 dt 补偿 DPS，避免降频后伤害失真。
+//   低端机可调 3；Boss 激光扫射（_patternLaserSweep 走点到线段距离判定）不受本配置影响。
+// ───────────────────────────────────────────────────────────────
+export const COMBAT_PERF = {
+  HIT_CHECK_EVERY: 2,
+};
+
+// ───────────────────────────────────────────────────────────────
+// OPT-13 批A A6/B10 精英敌人 mini-boss 配置（append-only，纯技术/数据配置）：
+//   hpMul      血量倍率（在既有 difficulty×难度档系数之上再 ×5）
+//   dmgMul     弹幕伤害倍率（射速 ×1.5，走既有 firePattern）
+//   scoreMul   击杀得分倍率（×3）
+//   dropChance 击杀必掉 BOSS_DROP_TABLE 高价值道具概率（1.0 = 必掉）
+//   spawnChance 兜底随机追加概率（每关第 2 波起，休闲档不出现）
+//   tint       发光描边色
+// 消费方：Enemy.spawn（isElite 数值/外观）/ WaveSystem.spawnOne（兜底追加）/
+//         GameScene.spawnEliteDrops（必掉掉落）/ Enemy.die（得分 ×3）。
+// ───────────────────────────────────────────────────────────────
+export const ELITE = {
+  hpMul: 5,
+  dmgMul: 1.3,
+  scoreMul: 3,
+  dropChance: 1.0,
+  spawnChance: 0.08,
+  tint: 0xffd24a,
+};
+
+// ───────────────────────────────────────────────────────────────
+// OPT-13 批A A7 Boss 狂暴终结技（append-only，纯数据配置）：
+//   hpThreshold     hp < maxHp × 15% 触发狂暴（叠加在既有 phase 3 之上，不碰 0.66/0.33 阶段机）
+//   windowMs        DPS 检查窗口时长（ms）
+//   needDmgRatio    窗口内需造成 maxHp × 10% 伤害 → 触发破绽
+//   failHealRatio   失败回血至 maxHp × 20% + 释放一次全屏弹幕（可重复）
+//   staggerMs       破绽硬直持续（ms）
+//   dmgMulOnStagger 破绽期间 Boss 受击 ×2
+//   moveSpeedMul    狂暴期横移速度倍率（0.5 = 减半，便于集火）
+//   gapMul          全屏弹幕安全缝隙 ≥ 玩家机身 ×3（硬性设计红线：禁止无缝隙全屏弹幕）
+//   fireGapMs       狂暴专属弹幕组间歇（≥0.5s）
+// 消费方：Boss.js（狂暴状态机）/ UIScene（复用 BOSS_PHASE≥3『狂暴』横幅）。
+// ───────────────────────────────────────────────────────────────
+export const RAGE = {
+  hpThreshold: 0.15,
+  windowMs: 8000,
+  needDmgRatio: 0.10,
+  failHealRatio: 0.20,
+  staggerMs: 2000,
+  dmgMulOnStagger: 2,
+  moveSpeedMul: 0.5,
+  gapMul: 3,
+  fireGapMs: 500,
+};
+
+// ───────────────────────────────────────────────────────────────
+// OPT-13 批A A9 连续失败救济局（append-only，纯数据配置）：
+//   failStreakThreshold  同一关 normal 连续失败达该值 → 下一局开局弹「救济提示」三选一
+//   lowerDiff            选项 A：本局 session 覆盖为休闲档系数（不写 selectedDifficulty 存档）
+//   tempBuffAtk          选项 B：攻击 +10%（reliefAtkMul 消费于 Player._emitBullet / 激光 DPS）
+//   tempBuffLife         选项 B：+1 命（默认点选，lives 即时 +1）
+//   reviveFireBonusMs    救济局内 respawnPlayer 追加「临时火力 +1 持续 2s」
+//   fireBonus            临时火力额外并列弹数量（+1，不写 powerLevel，独立临时字段）
+// 消费方：GameScene（救济面板/_reliefRun/_shouldRecordPersist/endGame 拦截/failStreak 计数）+
+//         Player（tempFireBonusUntil / reliefAtkMul）+ SaveManager（failStreak/reliefRuns 计数）。
+// 救济仅 normal 主线；无尽/爬塔/BossRush/活动模式不触发（无尽已有广告复活兜底）。
+// ───────────────────────────────────────────────────────────────
+export const RELIEF = {
+  failStreakThreshold: 3,
+  lowerDiff: 'casual',
+  tempBuffAtk: 0.10,
+  tempBuffLife: 1,
+  reviveFireBonusMs: 2000,
+  fireBonus: 1,
 };
 
 // ───────────────────────────────────────────────────────────────

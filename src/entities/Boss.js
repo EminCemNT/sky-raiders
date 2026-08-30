@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GAME_WIDTH, BULLET, EVENTS, COLORS } from '../config/GameConfig.js';
+import { GAME_WIDTH, GAME_HEIGHT, BULLET, EVENTS, COLORS, RAGE } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { audio } from '../systems/AudioSystem.js';
 import * as VFX from '../systems/VFX.js';
@@ -71,6 +71,21 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
     // A5 激光扫射递归取消：标志 + 残留视觉引用（防 Boss 死亡后幽灵扫射链）
     this._sweeping = false;
     this._sweepWarn = null; this._sweepBeam = null; this._sweepGlow = null;
+
+    // A7 Boss 狂暴终结技（叠加在既有 phase 3 之上，零改动 0.66/0.33 阶段机）
+    //   _enrageTriggered 已进入狂暴（一次性，防止重复触发/双横幅）
+    //   _enraging         狂暴态生效中（触发后保持，DPS 窗口可重复检查）
+    //   _enrageDmgAcc     当前 DPS 窗口内累计伤害
+    //   _enrageEscUntil   破绽（硬直）结束时间（scene.time.now ms；期间受击 ×2 且 Boss 停火停移）
+    this._enrageTriggered = false;
+    this._enraging = false;
+    this._enrageDmgAcc = 0;
+    this._enrageEscUntil = 0;
+    // 狂暴内部节奏（append-only 派生字段）
+    this._enrageWindowStart = 0;  // 当前 DPS 窗口起始时间
+    this._enrageFireUntil = 0;    // 下一组狂暴弹幕最早发射时间
+    this._enrageStormGroup = 0;   // 3 组弹幕轮换索引
+    this._enrageStormAng = 0;     // 安全缝隙旋转角
 
     // 画质精修三件·C：Boss 入场仪式（纯演出，血量/阶段/掉落/成就链路零改动）。
     // 初始 y 已在屏外上方（super y=-120），冲入目标位 y=150（400-600ms + Back 轻微回弹）；
@@ -212,16 +227,26 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
     }
 
     if (!this._entering) {
-      // 左右横移
-      this.x += this._dir * 90 * (dt / 1000);
-      if (this.x < 90) { this.x = 90; this._dir = 1; }
-      if (this.x > GAME_WIDTH - 90) { this.x = GAME_WIDTH - 90; this._dir = -1; }
+      // A7 破绽硬直：Boss 停火停移（纯硬直），狂暴弹幕节奏由 _updateEnrage 接管
+      const staggered = this._isStaggered();
+      if (!staggered) {
+        // 左右横移（A7 狂暴期移速 ×0.5，便于集火）
+        const moveSpeed = 90 * (this._enraging ? RAGE.moveSpeedMul : 1);
+        this.x += this._dir * moveSpeed * (dt / 1000);
+        if (this.x < 90) { this.x = 90; this._dir = 1; }
+        if (this.x > GAME_WIDTH - 90) { this.x = GAME_WIDTH - 90; this._dir = -1; }
+      }
 
-      // 弹幕（阶段越高越频繁）
-      const fireGap = this.phase === 1 ? 900 : this.phase === 2 ? 650 : 420;
-      if (time - this._lastFire > fireGap) {
-        this.firePattern();
-        this._lastFire = time;
+      if (this._enraging) {
+        // 狂暴态：弹幕节奏走 _updateEnrage（专属风暴 + DPS 窗口/破绽/回血）
+        this._updateEnrage(dt);
+      } else if (!staggered) {
+        // 弹幕（阶段越高越频繁）
+        const fireGap = this.phase === 1 ? 900 : this.phase === 2 ? 650 : 420;
+        if (time - this._lastFire > fireGap) {
+          this.firePattern();
+          this._lastFire = time;
+        }
       }
     }
   }
@@ -245,7 +270,107 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
 
   /** 盾破期间弹幕密度系数（>1 = 更密集；无盾时 1.4） */
   _density() {
-    return this._shieldBroken ? 1.4 : 1;
+    let d = this._shieldBroken ? 1.4 : 1;
+    // A7 狂暴全屏弹幕：reduced-motion / 性能档 low 下密度减半（保证可玩 + 无障碍）
+    if (this._enraging) {
+      const low = this.scene && this.scene.qualityScale != null && this.scene.qualityScale < 0.7;
+      if (PREFERS_REDUCED || low) d *= 0.5;
+    }
+    return d;
+  }
+
+  // ───────────────────────────────────────────────────────────────
+  // A7 Boss 狂暴终结技（叠加在既有 phase 3 之上，零改动 0.66/0.33 阶段机）
+  // 触发：hp < maxHp×15% → 狂暴态。狂暴期专属全屏弹幕（3 组轮换、每组含旋转安全缝隙
+  // ≥ 玩家机身×3），横移 -50%；DPS 窗口内造成 maxHp×10% → 破绽 2s（受击 ×2 + 硬直），
+  // 失败 → 回血至 maxHp×20% + 全屏弹幕（可重复）。击杀仍走正常 die() → BOSS_DEFEATED。
+  // ───────────────────────────────────────────────────────────────
+
+  /** 狂暴破绽（硬直）中？破绽期间 Boss 停火停移、受击 ×2 */
+  _isStaggered() {
+    return this._enraging && this.scene.time.now < this._enrageEscUntil;
+  }
+
+  /** 进入狂暴态（一次性命中 <15% 触发一次；数值按各自 maxHp 比例，主线/爬塔/BossRush 复用） */
+  _triggerEnrage() {
+    if (this._enrageTriggered || this._entering || !this.active || this.hp <= 0) return;
+    if (this.hp >= this.maxHp * RAGE.hpThreshold) return;
+    this._enrageTriggered = true;
+    this._enraging = true;
+    this._enrageDmgAcc = 0;
+    this._enrageEscUntil = 0;
+    this._enrageWindowStart = this.scene.time.now;
+    this._enrageFireUntil = this.scene.time.now + RAGE.fireGapMs;
+    // 演出：狂暴横幅（复用 UIScene BOSS_PHASE≥3『狂暴』文案）+ 红屏闪烁（reduced-motion 降级）
+    EventBus.emit(EVENTS.BOSS_PHASE, 3);
+    if (!PREFERS_REDUCED) this.scene.cameras.main.flash(180, 140, 16, 16);
+    VFX.shockwaveRing(this.scene, this.x, this.y, 0xff4455, { radius: 200, duration: 420, depth: 56 });
+  }
+
+  /**
+   * 安全缝隙半角（弧度）：以 Boss 为圆心、玩家典型距离为半径，
+   * 保证缺口线性宽度 ≥ 玩家机身 × RAGE.gapMul（硬性红线：禁止无缝隙全屏弹幕）。
+   */
+  _enrageGapHalf() {
+    const playerW = (this.scene.player && this.scene.player.displayWidth) || 40;
+    const dist = Math.max(120, GAME_HEIGHT - this.y - 40);
+    const ratio = (playerW * RAGE.gapMul) / (2 * dist);
+    return Math.asin(Math.min(1, ratio)) + 0.04; // +4% 余量，防贴边擦伤
+  }
+
+  /** 狂暴专属全屏弹幕：3 组轮换，每组含旋转安全缝隙（缺口 ≥ 玩家机身 3 倍） */
+  _patternEnrageStorm() {
+    const R = RAGE;
+    const group = this._enrageStormGroup % 3;
+    this._enrageStormGroup += 1;
+    // 旋转安全缝隙：朝向在「向下帘幕」范围内缓摆
+    this._enrageStormAng += 0.55;
+    const lo = Math.PI * 0.18, hi = Math.PI * 0.82;
+    const gapHalf = this._enrageGapHalf();
+    const raw = Math.PI / 2 + Math.sin(this._enrageStormAng) * 0.9;
+    const gapCenter = Phaser.Math.Clamp(raw, lo + gapHalf + 0.06, hi - gapHalf - 0.06);
+    // 密度：基础 × 阶段 + 盾破增强（reduced-motion / low 档由 _density 减半）
+    const total = Math.round((22 + this.phase * 5) * this._density());
+    const speedMul = [0.85, 1.0, 1.15][group] || 1;
+    for (let i = 0; i < total; i++) {
+      const ang = lo + ((hi - lo) / Math.max(1, total - 1)) * i;
+      if (Math.abs(ang - gapCenter) < gapHalf) continue; // 安全缝隙：缺口内不落弹
+      this.spawnBullet(ang, this.bulletSpeed * speedMul);
+    }
+  }
+
+  /** 狂暴态驱动：DPS 窗口判定（破绽/回血）+ 专属弹幕组间歇（≥0.5s） */
+  _updateEnrage(dt) {
+    const R = RAGE;
+    const now = this.scene.time.now;
+    // 破绽硬直中：不检查 DPS 窗口、不开火（update() 已跳过移动）
+    if (this._isStaggered()) return;
+    if (!this._enrageWindowStart) this._enrageWindowStart = now;
+
+    // DPS 窗口结算
+    if (now - this._enrageWindowStart >= R.windowMs) {
+      const need = this.maxHp * R.needDmgRatio;
+      if (this._enrageDmgAcc >= need) {
+        // 成功：破绽 2s（受击 ×2 + 硬直）
+        this._enrageEscUntil = now + R.staggerMs;
+        EventBus.emit(EVENTS.FLOAT_SCORE, { x: this.x, y: this.y, special: true, label: '破绽！' });
+      } else {
+        // 失败：回血至 maxHp×20% + 立即释放一次全屏弹幕，狂暴态继续
+        this.hp = this.maxHp * R.failHealRatio;
+        EventBus.emit(EVENTS.BOSS_HP_CHANGED, this.hp, this.maxHp);
+        this._patternEnrageStorm();
+        EventBus.emit(EVENTS.FLOAT_SCORE, { x: this.x, y: this.y, special: true, label: '狂暴回涌' });
+        if (!PREFERS_REDUCED) this.scene.cameras.main.flash(160, 120, 20, 20);
+      }
+      this._enrageDmgAcc = 0;
+      this._enrageWindowStart = now; // 重启窗口（可重复触发）
+    }
+
+    // 狂暴专属弹幕：3 组轮换，组间歇 ≥ fireGapMs
+    if (now >= this._enrageFireUntil) {
+      this._patternEnrageStorm();
+      this._enrageFireUntil = now + R.fireGapMs;
+    }
   }
 
   /** 发射单发子弹并染上 Boss 配色，便于视觉区分 */
@@ -257,6 +382,8 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
   spawnBulletAt(x, y, angle, speed) {
     const scene = this.scene;
     if (!scene.enemyBullets) return;
+    // A8 弹速风暴变异：Boss 弹速同样 ×1.2^N（非塔模式恒 1，零回归）
+    if (scene._mutationMul) speed *= scene._mutationMul().bulletSpeed;
     const b = scene.enemyBullets.get(x, y, 'bullet_enemy');
     if (!b) return;
     b.setActive(true).setVisible(true);
@@ -498,7 +625,10 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
 
   hit(dmg, element) {
     if (this._entering) return false;
+    // A7 破绽期间受击 ×2（纯增益玩家输出，不叠加元素/盾破倍率）
+    if (this._isStaggered()) dmg *= RAGE.dmgMulOnStagger;
     this.hp = Math.max(0, this.hp - dmg);
+    if (this._enraging) this._enrageDmgAcc += dmg; // A7 DPS 窗口累计（含破绽 ×2 伤害）
     if (element) this.applyElement(element);
     EventBus.emit(EVENTS.BOSS_HP_CHANGED, this.hp, this.maxHp);
     this.setTintFill(0xffffff);
@@ -532,6 +662,10 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
     if (this.hp <= 0) {
       this.die();
       return true;
+    }
+    // A7 狂暴触发：非致死命中且 hp < maxHp×15%（叠加在 phase 3 之上；不双触发）
+    if (!this._enrageTriggered && this.hp < this.maxHp * RAGE.hpThreshold) {
+      this._triggerEnrage();
     }
     // P0-3 非致死命中：Boss 专属双音层命中音（致死走 die() 的 explosionBoss，避免双重音）
     audio.sfx('bossHit');

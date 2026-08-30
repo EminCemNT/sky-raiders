@@ -199,6 +199,9 @@ export const SaveManager = {
           ? { grantedAt: String(parsed.returnGift.grantedAt) } : null,
         // P1 留存·社交排行（本地）：数组兜底，最多保留 10 条
         topScores: Array.isArray(parsed.topScores) ? parsed.topScores.slice(0, 10) : [],
+        // OPT-13 批A A9 救济局：深拷贝防 DEFAULT_SAVE 被写脏；老存档缺失兜底默认（append-only）
+        failStreak: { ...((parsed.failStreak) || {}) },
+        reliefRuns: Math.max(0, Math.floor(Number(parsed.reliefRuns) || 0)),
       };
       // 勋章计数是派生字段：每次 load 从 levelMedals 重算，老存档/脏数据自动自愈
       cache.medalCount = Object.values(cache.levelMedals || {})
@@ -953,5 +956,45 @@ export const SaveManager = {
     this.save();
     const rank = s.topScores.indexOf(rec) + 1;
     return { entered: rank > 0, rank: rank > 0 ? rank : -1, list: this.getTopScores() };
+  },
+
+  // ---- OPT-13 批A A9 连续失败救济局（append-only：字段已在 DEFAULT_SAVE/load 中兜底，此处仅计数辅助）----
+  /** 某关连续失败计数（normal 专用；无记录返回 0） */
+  getFailStreak(levelId) {
+    const s = this.load();
+    return Math.max(0, Math.floor(Number((s.failStreak || {})[levelId]) || 0));
+  },
+
+  /** 该关失败 +1（normal 专用；endGame 失败分支调用） */
+  incFailStreak(levelId) {
+    const s = this.load();
+    if (!s.failStreak) s.failStreak = {};
+    s.failStreak[levelId] = (s.failStreak[levelId] || 0) + 1;
+    this.save();
+    return s.failStreak[levelId];
+  },
+
+  /** 该关胜利 → 连续失败归 0（normal 专用；endGame 胜利分支调用） */
+  resetFailStreak(levelId) {
+    const s = this.load();
+    if (!s.failStreak) s.failStreak = {};
+    if (s.failStreak[levelId]) {
+      s.failStreak[levelId] = 0;
+      this.save();
+    }
+    return 0;
+  },
+
+  /** 救济局累计次数（统计用） */
+  getReliefRuns() {
+    return Math.max(0, Math.floor(Number(this.load().reliefRuns) || 0));
+  },
+
+  /** 救济局 +1（endGame 救济局分支调用，仅统计） */
+  incReliefRuns() {
+    const s = this.load();
+    s.reliefRuns = Math.max(0, Math.floor(Number(s.reliefRuns) || 0)) + 1;
+    this.save();
+    return s.reliefRuns;
   },
 };

@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { BULLET, GAME_HEIGHT, GAME_WIDTH, EVENTS, ELEMENTS } from '../config/GameConfig.js';
+import { BULLET, GAME_HEIGHT, GAME_WIDTH, EVENTS, ELEMENTS, ELITE } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { audio } from '../systems/AudioSystem.js';
 import * as VFX from '../systems/VFX.js';
@@ -60,19 +60,23 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     return this.def.color;
   }
 
-  /** 从池中激活一个敌人。difficulty 为关卡难度系数；hpMul/speedMul 为难度档系数（P0 四档，默认 1） */
-  spawn(x, y, typeKey = 'small', moveMode = 'straight', difficulty = 1, firePattern = 'straight', hpMul = 1, speedMul = 1) {
+  /** 从池中激活一个敌人。difficulty 为关卡难度系数；hpMul/speedMul 为难度档系数（P0 四档，默认 1）；
+   *  elite（A6/B10）：精英 mini-boss 标记——血量 ×ELITE.hpMul、射速 ×1.5、发光描边 + 放大约 1.2 倍 */
+  spawn(x, y, typeKey = 'small', moveMode = 'straight', difficulty = 1, firePattern = 'straight', hpMul = 1, speedMul = 1, elite = false) {
     const t = TYPES[typeKey] || TYPES.small;
     this.typeKey = typeKey;
     this.def = t;
     this.difficulty = difficulty;
+    this.isElite = !!elite;
     this.setTexture(t.tex);
     this.setPosition(x, y);
     this.setActive(true).setVisible(true);
     this.body.enable = true;
-    // 难度：关卡系数（HP 线性、速度略增）再乘难度档系数（标准档全 1.0 = 现状）
-    this.hp = Math.round(t.hp * difficulty * hpMul);
+    // 难度：关卡系数（HP 线性、速度略增）再乘难度档系数（标准档全 1.0 = 现状）；精英再 ×ELITE.hpMul
+    this.hp = Math.round(t.hp * difficulty * hpMul * (this.isElite ? ELITE.hpMul : 1));
     this.maxHp = this.hp;
+    // A6 精英射速：沿用既有 firePattern，射速 ×1.5（间隔 ×0.67）；非精英走 def.fireRate（零回归）
+    this._fireRateEff = this.isElite && t.fireRate > 0 ? Math.max(280, Math.round(t.fireRate * 0.67)) : null;
     // P1 新敌型默认移动模式：显式传 'straight'/缺省时回退到型号默认（仅限新类型，diver 等旧行为零改动）
     if (t.defaultMode && (typeKey === 'turret' || typeKey === 'kamikaze' || typeKey === 'summoner' || typeKey === 'shield')
       && (!moveMode || moveMode === 'straight')) {
@@ -101,6 +105,15 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     this._sweeping = false;  // A5 激光扫射递归标志复位（防对象池复用残留）
     this._sweepWarn = null; this._sweepBeam = null; this._sweepGlow = null;
     this.clearTint();
+    // A6 精英外观：发光描边（复用 VFX.glowTarget，质量档自动降级）+ 放大约 1.2 倍
+    if (this.isElite) {
+      this.setScale(1.2, 1.2);
+      if (!this._eliteGlow || !this._eliteGlow.active) {
+        this._eliteGlow = VFX.glowTarget(this, ELITE.tint, { radius: 1.4, alpha: 0.4, depth: 1 });
+      }
+    } else {
+      this.setScale(1, 1);
+    }
 
     // P1 地面炮台无尾焰（固定底座，不喷气）
     if (this.typeKey === 'turret') {
@@ -168,8 +181,9 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     // P1 召唤机：定期召唤 small（数据驱动，复用 scene.spawnEnemy）
     if (this.typeKey === 'summoner') this._updateSummoner(time);
 
-    // 敌人开火（仅 fireRate>0 型号：mid / turret / shield）
-    if (this.def.fireRate > 0 && time - this._lastFire > this.def.fireRate) {
+    // 敌人开火（仅 fireRate>0 型号：mid / turret / shield；A6 精英用 _fireRateEff 提速 ×1.5）
+    const fireRate = this._fireRateEff != null ? this._fireRateEff : this.def.fireRate;
+    if (fireRate > 0 && time - this._lastFire > fireRate) {
       this.fireAtPlayer();
       this._lastFire = time;
     }
@@ -222,7 +236,9 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     const player = scene.player;
     if (!player || !player.active || !scene.enemyBullets) return;
     const aim = Phaser.Math.Angle.Between(this.x, this.y, player.x, player.y);
-    const spd = BULLET.ENEMY_SPEED * (this.difficulty || 1);
+    // A8 弹速风暴变异：敌弹速度 ×1.2^N（非塔模式恒 1，零回归）
+    const spd = BULLET.ENEMY_SPEED * (this.difficulty || 1)
+      * (scene._mutationMul ? scene._mutationMul().bulletSpeed : 1);
 
     const spawnBullet = (ang, homing = false) => {
       const b = scene.enemyBullets.get(this.x, this.y + 16, 'bullet_enemy');
@@ -294,7 +310,9 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     if (!scene.enemyBullets) return;
     const n = 7;
     const gap = GAME_WIDTH / (n + 1);
-    const spd = BULLET.ENEMY_SPEED * (this.difficulty || 1) * 0.85;
+    // A8 弹速风暴变异：墙弹速度同样 ×1.2^N（非塔模式恒 1）
+    const spd = BULLET.ENEMY_SPEED * (this.difficulty || 1) * 0.85
+      * (scene._mutationMul ? scene._mutationMul().bulletSpeed : 1);
     for (let i = 1; i <= n; i++) {
       const b = scene.enemyBullets.get(gap * i, this.y + 16, 'bullet_enemy');
       if (!b) continue;
@@ -481,7 +499,11 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     this._cancelSweep();  // A5：死亡即取消激光扫射递归链，避免死亡演出期间幽灵扫射
     // P0-2 爆炸三阶段分级：mid 用中档、small/diver 用小型（Boss 用 explosionBoss 在 Boss.die）
     audio.sfx(this.typeKey === 'mid' ? 'explosionMid' : 'explosionSmall');
-    EventBus.emit(EVENTS.SCORE_CHANGED, this.def.score);
+    // A6 精英：得分 ×ELITE.scoreMul（走正常 registerKill 击杀语义，不是 Boss）；必掉 BOSS_DROP_TABLE
+    EventBus.emit(EVENTS.SCORE_CHANGED, Math.round(this.def.score * (this.isElite ? ELITE.scoreMul : 1)));
+    if (this.isElite && this.scene.spawnEliteDrops) {
+      this.scene.spawnEliteDrops(this.x, this.y, this.typeKey);
+    }
     // 掉金币
     if (Math.random() < this.def.coin && this.scene.spawnCoin) {
       this.scene.spawnCoin(this.x, this.y);
@@ -516,6 +538,16 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     if (this.body) { this.body.enable = false; this.setVelocity(0, 0); }
     this._dying = false; this.setScale(1, 1); this.angle = 0;  // P1-7 复位死亡演出状态，保障对象池复用
     this.hasFrontShield = false;  // P1 护盾机复位，防对象池复用残留
+    // A4 池复用复位契约：回收即清元素染色/状态残留（spawn() 仍会重写，这里双重保险防复用污染）
+    this._elem = null;
+    this.clearTint();
+    // A6 精英复位契约：isElite / _fireRateEff / _eliteGlow 全部清理，防对象池复用污染
+    this.isElite = false;
+    this._fireRateEff = null;
+    if (this._eliteGlow) {
+      if (this._eliteGlow.active) this._eliteGlow.destroy();
+      this._eliteGlow = null;
+    }
   }
 
   destroy(fromScene) {

@@ -493,6 +493,19 @@ export default class UIScene extends Phaser.Scene {
     };
     EventBus.on(EVENTS.BOSS_PHASE, this._onBossPhase);
 
+    // A8 无尽变异：横幅（负面先警示）+ 顶部状态徽章（纯视觉，无业务逻辑）
+    this._onMutation = (payload) => {
+      if (!payload) return;
+      if (payload.type === 'warning') {
+        this.flashCenter(payload.label || t('mutWarning'), THEME.textRed);
+      } else if (payload.type === 'applied') {
+        const label = t(`mut_${payload.id}`) !== `mut_${payload.id}` ? t(`mut_${payload.id}`) : (payload.name || '');
+        this.flashCenter(label, payload.polarity === 'negative' ? THEME.textRed : THEME.textGold);
+        this._addMutationBadge(label, payload.polarity === 'negative');
+      }
+    };
+    EventBus.on(EVENTS.MUTATION_CHANGED, this._onMutation);
+
     this._onEnergy = (val, max) => this.updateEnergy(val, max);
     EventBus.on(EVENTS.ENERGY_CHANGED, this._onEnergy);
 
@@ -811,6 +824,19 @@ export default class UIScene extends Phaser.Scene {
     });
   }
 
+  /** A8 无尽变异：顶部状态徽章（右上角堆叠，纯视觉；负面红 / 正面金） */
+  _addMutationBadge(label, negative) {
+    if (!label) return;
+    if (!this._mutBadges) this._mutBadges = [];
+    const idx = this._mutBadges.length;
+    const y = 150 + idx * 22;
+    const txt = this.add.text(GAME_WIDTH - 10, y, `◆ ${label}`, {
+      fontFamily: THEME.fontFamily, fontSize: '13px', fontStyle: '800',
+      color: negative ? THEME.textRed : THEME.textGold,
+    }).setOrigin(1, 0.5).setDepth(130).setShadow(0, 0, '#000000', 6, true, true);
+    this._mutBadges.push(txt);
+  }
+
   /** P1-6 判定点按钮文案：随存档开关显示 开/关 */
   _hitboxLabel() {
     return t('uiHitbox', { state: SaveManager.load().showHitbox ? t('on') : t('off') });
@@ -865,6 +891,7 @@ export default class UIScene extends Phaser.Scene {
     EventBus.off(EVENTS.BOSS_HP_CHANGED, this._onBossHp);
     EventBus.off(EVENTS.BOSS_DEFEATED, this._onBossDead);
     EventBus.off(EVENTS.BOSS_PHASE, this._onBossPhase);
+    EventBus.off(EVENTS.MUTATION_CHANGED, this._onMutation);
     EventBus.off(EVENTS.ENERGY_CHANGED, this._onEnergy);
     EventBus.off(EVENTS.SHIELD_CHANGED, this._onShield);
     EventBus.off(EVENTS.MAGNET_CHANGED, this._onMagnet);
