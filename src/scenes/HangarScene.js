@@ -6,6 +6,7 @@ import {
 import { SaveManager } from '../utils/SaveManager.js';
 import { t } from '../config/Locale.js';
 import { createStarfield, HANGAR_BG_THEME } from '../systems/Starfield.js';
+import { transition } from '../systems/TransitionManager.js';
 import { NeonButton, THEME, drawGlassPanel } from '../utils/UIWidgets.js';
 
 /**
@@ -83,7 +84,7 @@ export default class HangarScene extends Phaser.Scene {
 
     // 返回菜单按钮
     this.makeButton(cx, GAME_HEIGHT - 70, t('backMenu'), () => {
-      this.scene.start(SCENES.MENU);
+      transition.goto(this, SCENES.MENU);
     });
 
     // P0 机库模块养成：模块面板入口（右下角，与返回菜单同行不重叠）
@@ -106,6 +107,9 @@ export default class HangarScene extends Phaser.Scene {
         this.tweens.add({ targets: [row.cardGlow, row.nameText, row.levelText].filter(Boolean), alpha: 1, duration: 340, delay: i * 70, ease: 'Back.easeOut' });
       });
     }
+
+    // P2 视觉四件套⑦：作为转场目标时淡入揭示（无过渡时为 no-op，零影响）
+    transition.fadeIn(this);
   }
 
   /** 构建单个部件卡片 + 升级按钮，返回可刷新引用 */

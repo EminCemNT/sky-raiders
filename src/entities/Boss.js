@@ -68,6 +68,9 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
     // P2 体验细节·慢放子弹时间：血线首次降至 50% / 25% 触发（每血线只触发一次）
     this._slowAt50 = false;
     this._slowAt25 = false;
+    // A5 激光扫射递归取消：标志 + 残留视觉引用（防 Boss 死亡后幽灵扫射链）
+    this._sweeping = false;
+    this._sweepWarn = null; this._sweepBeam = null; this._sweepGlow = null;
 
     // 画质精修三件·C：Boss 入场仪式（纯演出，血量/阶段/掉落/成就链路零改动）。
     // 初始 y 已在屏外上方（super y=-120），冲入目标位 y=150（400-600ms + Back 轻微回弹）；
@@ -391,18 +394,30 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
     }
   }
 
+  // A5 取消/清理激光扫射链：复位递归标志并销毁残留视觉（die 时调用）
+  _cancelSweep() {
+    this._sweeping = false;
+    [this._sweepWarn, this._sweepBeam, this._sweepGlow].forEach((o) => {
+      if (o && o.active) o.destroy();
+    });
+    this._sweepWarn = null; this._sweepBeam = null; this._sweepGlow = null;
+  }
+
   // P1 激光扫射（Boss 版）：短暂蓄力警示 → 扫射 beam（复用视觉 beam_glow/矩形光柱）
   _patternLaserSweep() {
     const scene = this.scene;
+    if (!this.active || this._sweeping) return;   // A5：Boss 已死亡/扫射进行中则中止
+    this._sweeping = true;
     const sx = this.x, sy = this.y + 40;
     // 蓄力警示（reduced-motion 静态圆）
     const warn = scene.add.circle(sx, sy, 22, 0xff4455, 0.22)
       .setStrokeStyle(2, 0xff4455, 0.8).setDepth(this.depth + 2);
+    this._sweepWarn = warn;
     if (PREFERS_REDUCED) {
       warn.setAlpha(0.5);
     } else {
       const spin = () => {
-        if (!warn.active) return;
+        if (!warn.active || !this.active || !this._sweeping) return;
         warn.setScale(1 + 0.3 * Math.sin(scene.time.now * 0.02));
         scene.time.delayedCall(40, spin);
       };
@@ -410,23 +425,42 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
     }
     scene.time.delayedCall(420, () => {
       if (warn.active) warn.destroy();
-      if (!this.active) return;
+      this._sweepWarn = null;
+      if (!this.active || !this._sweeping) return;   // A5：蓄力期间被回收/死亡则不再出 beam
       const beam = scene.add.rectangle(sx, sy, 12, 420, 0xff5a3c, 0.5)
         .setOrigin(0.5, 0).setDepth(this.depth + 1);
       const glow = scene.add.rectangle(sx, sy, 20, 420, 0xffa07a, 0.22)
         .setOrigin(0.5, 0).setDepth(this.depth).setBlendMode(Phaser.BlendModes.ADD);
       beam._isSweep = true;
+      this._sweepBeam = beam; this._sweepGlow = glow;
       if (PREFERS_REDUCED) {
         beam.setRotation(-0.4);
-        scene.time.delayedCall(160, () => { if (beam.active) { beam.destroy(); glow.destroy(); } });
+        scene.time.delayedCall(160, () => {
+          if (beam.active) beam.destroy();
+          if (glow.active) glow.destroy();
+          this._sweepBeam = this._sweepGlow = null;
+          this._sweeping = false;
+        });
         return;
       }
       const dur = 720;
       const t0 = scene.time.now;
       const tick = () => {
         if (!beam.active) return;
+        if (!this.active || !this._sweeping) {   // A5：递归取消——Boss 死亡立即停链
+          if (beam.active) beam.destroy();
+          if (glow.active) glow.destroy();
+          this._sweepBeam = this._sweepGlow = null;
+          return;
+        }
         const p = (scene.time.now - t0) / dur;
-        if (p >= 1) { if (beam.active) { beam.destroy(); glow.destroy(); } return; }
+        if (p >= 1) {
+          if (beam.active) beam.destroy();
+          if (glow.active) glow.destroy();
+          this._sweepBeam = this._sweepGlow = null;
+          this._sweeping = false;   // 扫射自然结束，允许下一次
+          return;
+        }
         const ang = Phaser.Math.DegToRad(-60 + 120 * p);
         beam.setRotation(ang);
         glow.setRotation(ang);
@@ -515,6 +549,7 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
   }
 
   die() {
+    this._cancelSweep();  // A5：Boss 死亡即取消激光扫射递归链，杜绝死亡演出期间幽灵扫射
     EventBus.emit(EVENTS.BOSS_DEFEATED);
     // P0-2 爆炸三阶段分级：Boss 用最高档，与 BOSS_DEFEATED 同帧（定格同步由 GameScene 现有逻辑天然成立）
     audio.sfx('explosionBoss');

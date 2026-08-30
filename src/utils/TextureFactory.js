@@ -105,6 +105,10 @@ export function generateAll(scene) {
   drawBgGlowband(g); g.generateTexture('bg_glowband', 512, 96); // P3 背景底部地平线光带
   // 画质精修三件·B：胶片颗粒噪点（128×128 随机灰点，UIScene 全屏 Image 叠加；纯视觉零业务）
   makeGrainTexture(scene);
+  // P2 视觉四件套·⑥：爆炸焦痕（48×48 不规则烧灼斑，深色基底可 tint 复用）
+  drawFxScorch(g); g.generateTexture('fx_scorch', 48, 48);
+  // P2 视觉四件套·⑦：转场扫描光带（64×256 竖向柔光条，白色基底便于 tint，TransitionScene wipe 用）
+  drawFxTransitionScan(g); g.generateTexture('fx_transition_scan', 64, 256);
 
   g.destroy();
 }
@@ -1126,6 +1130,58 @@ function drawBgGlowband(g) {
     const t = 1 - r / 48; // 中心亮、边缘透明
     g.fillStyle(0xffffff, 0.02 + t * 0.07);
     g.fillEllipse(cx, cy, 512 * (0.92 + t * 0.08), r * 2);
+  }
+}
+
+// ─── 爆炸焦痕（48×48 不规则烧灼斑：深灰基底 + 内部更深斑块）────
+// 由 VFX spawnResidue 以 setTint 染色复用（默认 0x1a1412 焦褐），
+// 不规则边缘用伪随机圆簇拼出，避免规则圆点穿帮。
+function drawFxScorch(g) {
+  g.clear();
+  const cx = 24, cy = 24;
+  // 底座暗斑（近黑，alpha 略低，作为烧灼外围）
+  g.fillStyle(0x202020, 0.9);
+  g.fillCircle(cx, cy, 20);
+  g.fillCircle(cx - 12, cy + 2, 10);
+  g.fillCircle(cx + 11, cy - 6, 9);
+  g.fillCircle(cx + 2, cy - 14, 8);
+  g.fillCircle(cx - 4, cy + 13, 8);
+  g.fillCircle(cx + 13, cy + 9, 7);
+  // 内部更深焦核（tint 后呈深浅层次）
+  g.fillStyle(0x0c0c0c, 1);
+  g.fillCircle(cx - 3, cy + 2, 12);
+  g.fillCircle(cx + 7, cy - 5, 7);
+  g.fillCircle(cx - 9, cy - 6, 5);
+  g.fillCircle(cx + 3, cy + 9, 4);
+  // 边缘碎点（烧灼飞溅）
+  g.fillStyle(0x181818, 0.7);
+  g.fillCircle(cx - 17, cy - 8, 3);
+  g.fillCircle(cx + 17, cy + 4, 2.6);
+  g.fillCircle(cx + 6, cy + 17, 2.4);
+  g.fillCircle(cx - 10, cy - 16, 2.2);
+}
+
+// ─── 转场扫描光带（64×256 竖向柔光条：中心亮、两侧淡 + 横向扫描线）────
+// 白色基底，TransitionScene 用 setTint(TRANSITION.wipe.tint) 染色；
+// 横置（scaleX 拉伸）即成为自上而下的光幕 wipe。
+function drawFxTransitionScan(g) {
+  g.clear();
+  const cx = 32, cy = 128;
+  // 主柔光带（横向渐变：中心亮、边缘透）
+  for (let w = 30; w > 0; w -= 2) {
+    const t = 1 - w / 30; // 中心亮、边缘透明
+    g.fillStyle(0xffffff, 0.03 + t * 0.16);
+    g.fillRoundedRect(cx - w, 0, w * 2, 256, w);
+  }
+  // 亮芯（窄条高亮）
+  g.fillStyle(0xffffff, 0.9);
+  g.fillRoundedRect(cx - 4, 0, 8, 256, 4);
+  // 横向扫描线（明暗条纹，强化"扫描"质感）
+  for (let y = 12; y < 256; y += 16) {
+    g.fillStyle(0xffffff, 0.12);
+    g.fillRect(0, y, 64, 2);
+    g.fillStyle(0xffffff, 0.05);
+    g.fillRect(0, y + 6, 64, 1);
   }
 }
 

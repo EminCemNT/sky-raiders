@@ -98,6 +98,8 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     this._slowMul = 1;
     this._reactUntil = 0;   // 元素连锁反应冷却复位
     this._summonAt = 0;     // P1 召唤机定时复位
+    this._sweeping = false;  // A5 激光扫射递归标志复位（防对象池复用残留）
+    this._sweepWarn = null; this._sweepBeam = null; this._sweepGlow = null;
     this.clearTint();
 
     // P1 地面炮台无尾焰（固定底座，不喷气）
@@ -305,17 +307,29 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     }
   }
 
+  /** A5 取消/清理激光扫射链：复位递归标志并销毁残留视觉（recycle/die/spawn 时调用） */
+  _cancelSweep() {
+    this._sweeping = false;
+    [this._sweepWarn, this._sweepBeam, this._sweepGlow].forEach((o) => {
+      if (o && o.active) o.destroy();
+    });
+    this._sweepWarn = null; this._sweepBeam = null; this._sweepGlow = null;
+  }
+
   /** P1 激光扫射：短暂蓄力警示 → 扫射 beam（视觉复用矩形光柱，命中判定点相交单次受击） */
   _laserSweep() {
     const scene = this.scene;
+    if (!this.active || this._sweeping) return;   // A5：敌人已回收/死亡或扫射进行中则中止
+    this._sweeping = true;
     const sx = this.x, sy = this.y + 16;
     const warn = scene.add.circle(sx, sy, 18, 0xff4455, 0.22)
       .setStrokeStyle(2, 0xff4455, 0.8).setDepth(16);
+    this._sweepWarn = warn;
     if (PREFERS_REDUCED) {
       warn.setAlpha(0.5);
     } else {
       const spin = () => {
-        if (!warn.active) return;
+        if (!warn.active || !this.active || !this._sweeping) return;
         warn.setScale(1 + 0.3 * Math.sin(scene.time.now * 0.02));
         scene.time.delayedCall(40, spin);
       };
@@ -323,23 +337,42 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     }
     scene.time.delayedCall(420, () => {
       if (warn.active) warn.destroy();
-      if (!this.active) return;
+      this._sweepWarn = null;
+      if (!this.active || !this._sweeping) return;   // A5：蓄力期间被回收/死亡则不再出 beam
       const beam = scene.add.rectangle(sx, sy, 10, 260, 0xff5a3c, 0.5)
         .setOrigin(0.5, 0).setDepth(16);
       const glow = scene.add.rectangle(sx, sy, 18, 260, 0xffa07a, 0.22)
         .setOrigin(0.5, 0).setDepth(15).setBlendMode(Phaser.BlendModes.ADD);
       beam._isSweep = true;
+      this._sweepBeam = beam; this._sweepGlow = glow;
       if (PREFERS_REDUCED) {
         beam.setRotation(-0.4);
-        scene.time.delayedCall(160, () => { if (beam.active) { beam.destroy(); glow.destroy(); } });
+        scene.time.delayedCall(160, () => {
+          if (beam.active) beam.destroy();
+          if (glow.active) glow.destroy();
+          this._sweepBeam = this._sweepGlow = null;
+          this._sweeping = false;
+        });
         return;
       }
       const dur = 720;
       const t0 = scene.time.now;
       const tick = () => {
         if (!beam.active) return;
+        if (!this.active || !this._sweeping) {   // A5：递归取消——敌人回收/死亡立即停链
+          if (beam.active) beam.destroy();
+          if (glow.active) glow.destroy();
+          this._sweepBeam = this._sweepGlow = null;
+          return;
+        }
         const p = (scene.time.now - t0) / dur;
-        if (p >= 1) { if (beam.active) { beam.destroy(); glow.destroy(); } return; }
+        if (p >= 1) {
+          if (beam.active) beam.destroy();
+          if (glow.active) glow.destroy();
+          this._sweepBeam = this._sweepGlow = null;
+          this._sweeping = false;   // 扫射自然结束，允许下一次
+          return;
+        }
         const ang = Phaser.Math.DegToRad(-60 + 120 * p);
         beam.setRotation(ang);
         glow.setRotation(ang);
@@ -445,6 +478,7 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
   die() {
     if (this._dying) return;
     this._dying = true;
+    this._cancelSweep();  // A5：死亡即取消激光扫射递归链，避免死亡演出期间幽灵扫射
     // P0-2 爆炸三阶段分级：mid 用中档、small/diver 用小型（Boss 用 explosionBoss 在 Boss.die）
     audio.sfx(this.typeKey === 'mid' ? 'explosionMid' : 'explosionSmall');
     EventBus.emit(EVENTS.SCORE_CHANGED, this.def.score);
@@ -476,6 +510,7 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
   }
 
   recycle() {
+    this._cancelSweep();  // A5：先取消激光扫射递归链再回收，杜绝幽灵 tick 污染下一个复用实例
     VFX.setEmitterActive(this.thruster, false);
     this.setActive(false).setVisible(false);
     if (this.body) { this.body.enable = false; this.setVelocity(0, 0); }

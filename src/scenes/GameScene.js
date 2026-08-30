@@ -2,13 +2,14 @@ import Phaser from 'phaser';
 import {
   SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, COLORS, PLAYER, BULLET, LEVELS, BOSS_RUSH, SHIPS, ELEMENTS, WINGMAN,
   DIFFICULTIES, getDifficulty, POWERUP, GRAZE, OVERDRIVE, OVERCHARGE, FOCUS, bossRushScale, PERFORMANCE,
-  EVENT_MODES, getCurrentEvent, MODULE_DROP_CHANCE, getShipSkins, TOWER, TOWER_BUFFS,
+  EVENT_MODES, getCurrentEvent, MODULE_DROP_CHANCE, getShipSkins, TOWER, TOWER_BUFFS, LIGHTS, TRANSITION,
 } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
 import { t } from '../config/Locale.js';
 import { Ads } from '../systems/Ads.js';
 import { createStarfield } from '../systems/Starfield.js';
+import { transition } from '../systems/TransitionManager.js';
 import Player from '../entities/Player.js';
 import Enemy from '../entities/Enemy.js';
 import Boss from '../entities/Boss.js';
@@ -195,8 +196,16 @@ export default class GameScene extends Phaser.Scene {
     // 激光束注入（B4）
     this.player.beamGroup = this.playerBeams;
 
+    // 画质档（P0 性能三件套）：读存档 quality → 粒子/弹幕密度缩放系数。
+    // P2-5：必须在 playerLight 创建前就绪 —— playerLight 依赖 qualityScale 判断 low 档短路不创建
+    //（此前 qualityScale 在 260 行才赋值，playerLight 于 202 行先建 → low 档误按 high 建灯，QA ⑤-4 FAIL）
+    const quality = (SaveManager.load().quality) || PERFORMANCE.defaultTier;
+    this.qualityScale = (PERFORMANCE.scale && PERFORMANCE.scale[quality]) || 1;
+
     // 玩家机柔光（P3 光效纪律白名单：机/弹/爆/拾取；随 player 移动/显隐）
     VFX.glowTarget(this.player, this.player.shipTint || COLORS.player, { radius: 0.55, alpha: 0.20, depth: -2 });
+    // ⑤ 动态光影-玩家引擎辉光（P2 视觉四件套；随 player 呼吸，reduced/low 降级为静态/无）
+    this.playerLight = VFX.playerLight(this, this.player, LIGHTS.player);
 
     // 道具/技能系统状态（#151）— 必须在首个 ENERGY_CHANGED 事件前初始化
     this.energy = 0;
@@ -252,14 +261,15 @@ export default class GameScene extends Phaser.Scene {
     this.enemyGlow = VFX.enemyBulletGlow(this);
     this.enemyTrail = VFX.enemyBulletTrail(this);
 
-    // 画质档（P0 性能三件套）：读存档 quality → 粒子/弹幕密度缩放系数。
-    // reduced-motion 优先于 quality（VFX.createVfxPool 内部返回 null，爆炸/火花调用点判空降级为无粒子）。
-    const quality = (SaveManager.load().quality) || PERFORMANCE.defaultTier;
-    this.qualityScale = (PERFORMANCE.scale && PERFORMANCE.scale[quality]) || 1;
-    // P1 表现工程·PostFX 辉光：按性能档开启（high/mid 开，low 关；WebGL 才生效，Canvas 自动降级）
+    // 画质档（P0 性能三件套）已在 create 顶部赋值（playerLight 创建前就绪，见上）；
+    // 此处复用顶部 quality 变量开启 PostFX 辉光（high/mid 开，low 关；WebGL 才生效，Canvas 自动降级）
     this.bloomFX = enableSceneBloom(this, quality);
     // 爆炸/命中火花对象池：预建 2 个 offscreen emitter 复用（消除 GC 抖动）
     this.vfxPool = VFX.createVfxPool(this);
+    // ⑥ 爆炸环境残留池（P2 视觉四件套：焦痕/余烬/烟尘；reduced 下返回 null 自动降级）
+    this.residuePool = VFX.createResiduePool(this);
+    // P2-7：挂接 __SKY._dynLight 动态光影探针（QA/PM 验收只读接口，不影响玩法）
+    VFX.installLightProbes(this);
 
     // 拾取柔光（P3 光效纪律白名单：机/弹/爆/拾取；对象池每实例挂一层，随 active 显隐）
     this.items.children.each((it) => VFX.glowTarget(it, 0x9ff0ff, { radius: 0.38, alpha: 0.22, depth: -1 }));
@@ -451,7 +461,7 @@ export default class GameScene extends Phaser.Scene {
         this._ocBonus += Math.round(v * ((OVERCHARGE.SCORE_MUL || 1) - 1));
       }
       this.score += v;
-      EventBus.emit('__hud_score', this.score);
+      EventBus.emit(EVENTS.HUD_SCORE, this.score);
     };
     EventBus.on(EVENTS.SCORE_CHANGED, this._onScore);
 
@@ -547,6 +557,9 @@ export default class GameScene extends Phaser.Scene {
       }
     };
     EventBus.on(EVENTS.WAVE_CLEARED, this._onWaveCleared);
+
+    // P2 视觉四件套⑦：作为转场目标时淡入揭示（无过渡时为 no-op，零影响）
+    transition.fadeIn(this);
   }
 
   update(time, dt) {
@@ -573,6 +586,8 @@ export default class GameScene extends Phaser.Scene {
       }
     }
     if (this.starfield) this.starfield.update(dt);
+    // P1-2/⑥-1：残留池真实时间清理由池内看门狗（performance.now 墙钟 + 链式 setTimeout）驱动，
+    // 硬性保证「击杀后 4.2s 内 active 回落 0」。
 
     // 玩家
     const pointer = this.input.activePointer;
@@ -834,6 +849,8 @@ export default class GameScene extends Phaser.Scene {
     });
     // Boss 柔光（P3 光效纪律白名单：机/弹/爆/拾取；随 Boss 销毁自动清理）
     if (this.boss) VFX.glowTarget(this.boss, cfg.color || COLORS.enemy, { radius: 0.75, alpha: 0.25, depth: -1 });
+    // ⑤ 动态光影-Boss 环境光（P2 视觉四件套；随 BOSS_PHASE 事件相位脉冲，low 下返回 null）
+    this.bossAmbient = VFX.bossAmbient(this, this.boss, cfg.color || COLORS.enemy, LIGHTS.boss);
     // P1-9 Boss 动态音乐 + UIScene 血条：boss 生成唯一入口统一 emit（原仅 rush 发，普通关 Boss 缺此事件）
     EventBus.emit(EVENTS.BOSS_SPAWNED, {
       key: bossKey,
@@ -1063,7 +1080,7 @@ export default class GameScene extends Phaser.Scene {
 
   addBomb() {
     this.bombs++;
-    EventBus.emit('__hud_bombs', this.bombs);
+    EventBus.emit(EVENTS.HUD_BOMBS, this.bombs);
   }
 
   addEnergy(amount) {
@@ -1312,7 +1329,7 @@ export default class GameScene extends Phaser.Scene {
     if (this._ocBonus) {
       this.score += this._ocBonus;
       this._ocBonus = 0;
-      EventBus.emit('__hud_score', this.score);
+      EventBus.emit(EVENTS.HUD_SCORE, this.score);
     }
   }
 
@@ -1638,7 +1655,7 @@ export default class GameScene extends Phaser.Scene {
     if (this.bombs <= 0 || this.gameEnded) return;
     this.bombs--;
     SaveManager.addDailyProgress('bombs', 1); // #每日任务：清屏炸弹进度
-    EventBus.emit('__hud_bombs', this.bombs);
+    EventBus.emit(EVENTS.HUD_BOMBS, this.bombs);
 
     // 清屏冲击波
     this.cameras.main.flash(300, 120, 200, 255);
@@ -1915,7 +1932,7 @@ export default class GameScene extends Phaser.Scene {
       SaveManager.addDailyProgress('endlessWaves', w);  // P1 留存-每日任务：无尽累计波数
     }
 
-    SaveManager.save(); // flush 每日任务/新手计划进度（不立即存盘类进度统一落盘）
+    SaveManager.flushNow(); // A1 结算关键路径立即同步落盘（flush 每日任务/新手计划进度，不丢结算数据）
 
     // P0 留存-关卡勋章：普通关胜利后按关卡 challenges 判定达成（killRate 用 stats.kills/spawned；
     // timeLimit 用耗时；singleWeapon 用局内武器切换次数===0）
@@ -1968,8 +1985,10 @@ export default class GameScene extends Phaser.Scene {
     });
 
     this.time.delayedCall(600, () => {
-      this.scene.stop(SCENES.UI);
-      this.scene.start(SCENES.RESULT, result);
+      // P2 视觉四件套⑦：带过渡切结算；淡出完成后先停并行 HUD（与旧行为一致），再切 Result
+      transition.goto(this, SCENES.RESULT, result, {
+        beforeStart: () => this.scene.stop(SCENES.UI),
+      });
     });
   }
 
@@ -2049,5 +2068,10 @@ export default class GameScene extends Phaser.Scene {
     if (this.physics && this.physics.world && this.physics.world.isPaused) this.physics.world.resume();
     if (this.wingmanSystem) { this.wingmanSystem.destroy(); this.wingmanSystem = null; }
     if (this.starfield) this.starfield.destroy();
+    // P1-1：切场景残留归零——销毁残留池（焦痕/粒子清空，game._vfxResidue.active 归零）
+    if (this.residuePool && typeof this.residuePool.destroy === 'function') {
+      this.residuePool.destroy();
+      this.residuePool = null;
+    }
   }
 }

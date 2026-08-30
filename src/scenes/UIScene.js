@@ -4,6 +4,7 @@ import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
 import { t } from '../config/Locale.js';
 import { audio } from '../systems/AudioSystem.js';
+import { transition } from '../systems/TransitionManager.js';
 import { NeonBar, NeonButton, makeIconButton, THEME } from '../utils/UIWidgets.js';
 import { SKILLS, DEFAULT_SKILL } from '../config/Skills.js';
 
@@ -415,10 +416,17 @@ export default class UIScene extends Phaser.Scene {
   }
 
   quitToMenu() {
+    // P3-13：过渡 busy 时先不 resume(GAME)——若 goto 返回 busy，resume 已执行而游戏未切走会造成竞态。
+    // 先判定可用性，busy 时直接丢弃本次操作（UI 仍处于暂停态，不会恢复战斗）。
+    if (transition.ready && transition._busy) return;
     this.scene.resume(SCENES.GAME);
-    this.scene.stop(SCENES.GAME);
-    this.scene.stop(SCENES.UI);
-    this.scene.start(SCENES.MENU);
+    // P2 视觉四件套⑦：带过渡回菜单；淡出完成后先停并行战斗场景（与旧行为一致），再切 Menu
+    transition.goto(this, SCENES.MENU, undefined, {
+      beforeStart: () => {
+        this.scene.stop(SCENES.GAME);
+        this.scene.stop(SCENES.UI);
+      },
+    });
   }
 
   bindEvents() {
@@ -427,7 +435,7 @@ export default class UIScene extends Phaser.Scene {
     this._achQueue = [];
 
     this._onScore = (s) => { if (this.scoreText) this.scoreText.setText(String(s).padStart(6, '0')); };
-    EventBus.on('__hud_score', this._onScore);
+    EventBus.on(EVENTS.HUD_SCORE, this._onScore);
 
     this._onHp = (hp, max) => this.updateHp(hp, max);
     EventBus.on(EVENTS.HP_CHANGED, this._onHp);
@@ -436,7 +444,7 @@ export default class UIScene extends Phaser.Scene {
       this.bombs = n;
       if (this.bombIcon && this.bombIcon.count) this.bombIcon.count.setText(`x${n}`);
     };
-    EventBus.on('__hud_bombs', this._onBombs);
+    EventBus.on(EVENTS.HUD_BOMBS, this._onBombs);
 
     this._onLives = (n) => {
       if (this.livesText) this.livesText.setText(`命 ×${n}`);
@@ -846,9 +854,9 @@ export default class UIScene extends Phaser.Scene {
   }
 
   unbind() {
-    EventBus.off('__hud_score', this._onScore);
+    EventBus.off(EVENTS.HUD_SCORE, this._onScore);
     EventBus.off(EVENTS.HP_CHANGED, this._onHp);
-    EventBus.off('__hud_bombs', this._onBombs);
+    EventBus.off(EVENTS.HUD_BOMBS, this._onBombs);
     EventBus.off(EVENTS.LIVES_CHANGED, this._onLives);
     EventBus.off(EVENTS.POWER_CHANGED, this._onPower);
     EventBus.off(EVENTS.WAVE_STARTED, this._onWave);

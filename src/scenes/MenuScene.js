@@ -5,6 +5,7 @@ import { t, setLocale } from '../config/Locale.js';
 import { Ads } from '../systems/Ads.js';
 import { AchievementManager } from '../systems/AchievementManager.js';
 import { createStarfield, MENU_BG_THEME } from '../systems/Starfield.js';
+import { transition } from '../systems/TransitionManager.js';
 import { audio } from '../systems/AudioSystem.js';
 import { NeonButton, THEME, drawGlassPanel } from '../utils/UIWidgets.js';
 import { enableSceneBloom } from '../utils/BloomFX.js';
@@ -68,7 +69,7 @@ export default class MenuScene extends Phaser.Scene {
       stroke: COLORS.accent, fontSize: 22, glow: true, onDown: () => {
         if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen || this.returnGiftOpen) return;
         audio.resume(); audio.startBgm(); audio.sfx('ui');
-        this.scene.start(SCENES.GAME, { levelId: 1, mode: 'normal', forceTutorial: true });
+        transition.goto(this, SCENES.GAME, { levelId: 1, mode: 'normal', forceTutorial: true });
       },
     });
 
@@ -105,7 +106,7 @@ export default class MenuScene extends Phaser.Scene {
       glow: true,
       onDown: () => {
         if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen || this.returnGiftOpen) return;
-        this.scene.start('HangarScene');
+        transition.goto(this, 'HangarScene');
       },
     });
 
@@ -124,7 +125,7 @@ export default class MenuScene extends Phaser.Scene {
     // Boss Rush 按钮
     new NeonButton(this, cx - 116, 736, 'BOSS RUSH', { stroke: 0xff5566, glow: true, onDown: () => {
       if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen || this.returnGiftOpen) return;
-      audio.sfx('ui'); this.scene.start(SCENES.GAME, { mode: 'bossrush' });
+      audio.sfx('ui'); transition.goto(this, SCENES.GAME, { mode: 'bossrush' });
     } });
 
     // P0 留存-活动轮换：本周活动入口（显示当前活动名 + 剩余天数，点开进入对应模式）
@@ -191,6 +192,9 @@ export default class MenuScene extends Phaser.Scene {
 
     // P1 留存·回归激励：断签 ≥3 天自动弹「回归礼包」（稍延迟，等菜单渲染完成）
     this.time.delayedCall(450, () => this.maybeShowReturnGift());
+
+    // P2 视觉四件套⑦：作为转场目标时淡入揭示（无过渡时为 no-op，零影响）
+    transition.fadeIn(this);
   }
 
   update(_, dt) {
@@ -201,12 +205,12 @@ export default class MenuScene extends Phaser.Scene {
     // 「开始游戏」= 进入已解锁的最高关（继续进度）
     const unlocked = SaveManager.load().unlockedLevel || 1;
     const lvl = Math.min(unlocked, LEVELS.length);
-    this.scene.start(SCENES.GAME, { levelId: lvl });
+    transition.goto(this, SCENES.GAME, { levelId: lvl });
   }
 
   /** 无尽模式（Score Attack）：无限波次 + 难度递增，直到命尽 */
   startEndless() {
-    this.scene.start(SCENES.GAME, { mode: 'endless', levelId: 1 });
+    transition.goto(this, SCENES.GAME, { mode: 'endless', levelId: 1 });
   }
 
   /** 底部存档信息文案（金币 / 最高分 / 勋章 / 已解锁关卡），多处共用保持一致 */
@@ -464,7 +468,7 @@ export default class MenuScene extends Phaser.Scene {
         c.on('pointerdown', () => {
           audio.sfx('ui');
           this.closeLevelSelect();
-          this.scene.start(SCENES.GAME, { levelId: lvl.id });
+          transition.goto(this, SCENES.GAME, { levelId: lvl.id });
         });
       } else {
         // 锁定图标：矢量锁纹理（取代 emoji 🔒，跨端字形一致）
@@ -979,7 +983,7 @@ export default class MenuScene extends Phaser.Scene {
 
     ov.add(this.makeMenuBtn(cx, 590, t('eventEnter', { short: t(`eventName_${ev.id || 'coin_rush'}`) }), () => {
       audio.sfx('ui');
-      this.scene.start(SCENES.GAME, { mode: ev.id });
+      transition.goto(this, SCENES.GAME, { mode: ev.id });
     }));
     ov.add(this.makeMenuBtn(cx, 670, t('close'), () => this.closeEvent()));
     this.fadeInPanel(ov);

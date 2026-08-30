@@ -17,6 +17,8 @@ export const SCENES = {
   GAME: 'GameScene',
   UI: 'UIScene',
   RESULT: 'ResultScene',
+  // P2 视觉四件套⑦：转场遮罩场景（追加在 scene 数组末尾，渲染层级最高）
+  TRANSITION: 'TransitionScene',
 };
 
 // EventBus 事件名 —— 跨场景/系统通信的契约。新增事件先在这里登记。
@@ -73,6 +75,13 @@ export const EVENTS = {
   // P1 战斗扩展·超载状态 / 聚焦模式（append-only）
   OVERCHARGE_STATE: 'overcharge-state',     // 超载状态/蓄力进度，payload = { active, until, duration, p, graze }
   FOCUS_TOGGLE: 'focus-toggle',             // 移动端聚焦按钮切换（无 payload）
+  // OPT-13 批A 事件契约补登记（append-only，值保持原字符串防回归）
+  HUD_SCORE: '__hud_score',        // HUD 得分刷新（原裸字符串 '__hud_score' 登记，payload = 总分）
+  HUD_BOMBS: '__hud_bombs',        // HUD 炸弹数刷新（原裸字符串 '__hud_bombs' 登记，payload = 炸弹数）
+  SAVE_FAILED: '__save_failed',    // A1：本地存档写入失败（仅首次提示，避免刷屏）
+  BURST_CHANGED: '__burst_changed',// B11：连击蓄力值变化（预留登记）
+  BURST_ACTIVATED: '__burst_activated', // B11：连击蓄力激活（预留登记）
+  MUTATION_CHANGED: '__mutation_changed', // A8：无尽变异变更，payload = { id, name, type, mul, label }
 };
 
 // 玩家基础属性
@@ -840,6 +849,49 @@ export const FILM = {
   grainAlpha: 0.04,
   grainSpeed: true,
   grainLowAlpha: 0.02,
+};
+
+// ───────────────────────────────────────────────────────────────
+// P2 视觉四件套⑤：动态光影（轻量假光源，glow_soft + ADD 叠加）
+// 不引入 Phaser Light2D（WebGL only，不满足双模式 + 换管线风险高）。
+// 三组动态光：
+//   player 玩家位置光源跟随（随玩家移动 + radius 呼吸脉动）
+//   boss   Boss 战环境光变色（监听 EVENTS.BOSS_PHASE 做 tint/alpha 脉冲）
+//   illum  爆炸瞬间局部照亮（一次性短时大半径柔光脉冲，按爆炸分级 tier）
+// 开关纪律：enabled 总开关；qualityGate='mid'（high/mid 开，low 关）；
+// reduced-motion 降级（playerLight 静态 alpha×0.5 / bossAmbient 静态 / localIllum 不新增）。
+// ───────────────────────────────────────────────────────────────
+export const LIGHTS = {
+  enabled: true,
+  qualityGate: 'mid',
+  player:  { radius: 1.5, alpha: 0.10, tint: 0x9fd8ff, breathMs: 1800, breathAmp: 0.04 },
+  boss:    { radius: 2.2, alpha: 0.12, phaseBoost: 0.06, phaseMs: 600 },
+  illum: {
+    small: { radius: 110, alpha: 0.20, ms: 220 },
+    mid:   { radius: 160, alpha: 0.26, ms: 260 },
+    boss:  { radius: 260, alpha: 0.32, ms: 340 },
+  },
+  reducedAlphaMul: 0.5,
+};
+
+// ───────────────────────────────────────────────────────────────
+// P2 视觉四件套⑦：场景转场过渡（模块单例 transition + 常驻 TransitionScene）
+// TransitionScene 追加在 scene 数组末尾 → 渲染在所有场景之上（含各场景 Bloom RT 4990）。
+//   fade  黑罩淡入淡出（默认导航过渡）
+//   wipe  带扫描线/光带的冲刷过渡（可选 style）
+// 开关纪律：enabled 总开关；qualityGate='mid'（扫描线/光带仅 high/mid，low 仅黑罩）；
+// reduced-motion 直切（连黑幕都不放，无障碍底线）。
+// ───────────────────────────────────────────────────────────────
+export const TRANSITION = {
+  enabled: true,
+  // P2-4：out/in 从 260/320 → 160/200 → 120/160 —— QA 无头环境 rAF 节流 ~135-160ms/帧、
+  // setTimeout 节流 ~2.3x，常态 fade 在节流下淡出+淡入各 1-2 帧即 ~300-500ms；
+  // 真机 60fps 下总过渡 ~480-580ms（fade 120/160 + 首次 create），节奏依旧清晰。
+  // 配合 TransitionManager 的 rAF 墙钟兜底（≥600ms 强制收尾），"过渡 ≤800ms"硬验收双保险。
+  fade: { outMs: 120, inMs: 160, color: 0x02040a },
+  wipe: { duration: 420, bandAlpha: 0.14, scanAlpha: 0.05, tint: 0x66ccff },
+  scanSpeed: 1400,
+  qualityGate: 'mid',
 };
 
 // P1 表现工程·触控手感（append-only）：

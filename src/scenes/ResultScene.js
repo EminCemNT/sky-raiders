@@ -3,6 +3,7 @@ import { SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, LEVELS, SHIPS, getShipSkins, P
 import { SaveManager } from '../utils/SaveManager.js';
 import { t } from '../config/Locale.js';
 import { createStarfield } from '../systems/Starfield.js';
+import { transition } from '../systems/TransitionManager.js';
 import { NeonButton, NeonBar, THEME } from '../utils/UIWidgets.js';
 import { enableSceneBloom } from '../utils/BloomFX.js';
 
@@ -189,36 +190,39 @@ export default class ResultScene extends Phaser.Scene {
     // 胜利且可解锁 -> 下一关；其余 -> 重来/菜单
     if (r.mode === 'endless') {
       this.makeButton(cx, btnY, t('resAgainEndless'), () => {
-        this.scene.start(SCENES.GAME, { mode: 'endless', levelId: 1 });
+        transition.goto(this, SCENES.GAME, { mode: 'endless', levelId: 1 });
       });
       this.makeButton(cx, btnY + 80, t('backMenu'), () => {
-        this.scene.start(SCENES.MENU);
+        transition.goto(this, SCENES.MENU);
       });
     } else if (r.mode === 'coin_rush' || r.mode === 'survival') {
       this.makeButton(cx, btnY, t('resAgainEvent'), () => {
-        this.scene.start(SCENES.GAME, { mode: r.mode });
+        transition.goto(this, SCENES.GAME, { mode: r.mode });
       });
       this.makeButton(cx, btnY + 80, t('backMenu'), () => {
-        this.scene.start(SCENES.MENU);
+        transition.goto(this, SCENES.MENU);
       });
     } else if (r.victory && (r.levelId || 1) < LEVELS.length) {
       this.makeButton(cx, btnY, t('resNextLevel'), () => {
-        this.scene.start(SCENES.GAME, { levelId: (r.levelId || 1) + 1 });
+        transition.goto(this, SCENES.GAME, { levelId: (r.levelId || 1) + 1 });
       });
       this.makeButton(cx, btnY + 80, t('resReplay'), () => {
-        this.scene.start(SCENES.GAME, { levelId: r.levelId || 1 });
+        transition.goto(this, SCENES.GAME, { levelId: r.levelId || 1 });
       });
       this.makeButton(cx, btnY + 160, t('backMenu'), () => {
-        this.scene.start(SCENES.MENU);
+        transition.goto(this, SCENES.MENU);
       });
     } else {
       this.makeButton(cx, btnY, r.victory ? t('resReplay') : t('resRetry'), () => {
-        this.scene.start(SCENES.GAME, { levelId: r.levelId || 1 });
+        transition.goto(this, SCENES.GAME, { levelId: r.levelId || 1 });
       });
       this.makeButton(cx, btnY + 80, t('backMenu'), () => {
-        this.scene.start(SCENES.MENU);
+        transition.goto(this, SCENES.MENU);
       });
     }
+
+    // P2 视觉四件套⑦：作为转场目标时淡入揭示（无过渡时为 no-op，零影响）
+    transition.fadeIn(this);
   }
 
   drawStars(cx, y, count) {

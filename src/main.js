@@ -6,6 +6,7 @@ import MenuScene from './scenes/MenuScene.js';
 import GameScene from './scenes/GameScene.js';
 import UIScene from './scenes/UIScene.js';
 import ResultScene from './scenes/ResultScene.js';
+import { TransitionScene } from './systems/TransitionManager.js';
 import { SaveManager } from './utils/SaveManager.js';
 import { initLocale } from './config/Locale.js';
 
@@ -41,7 +42,8 @@ const config = {
     },
   },
   // 场景注册顺序即启动顺序，第一个 (Boot) 会自动 start
-  scene: [BootScene, PreloadScene, MenuScene, GameScene, UIScene, ResultScene],
+  // TransitionScene 追加在末尾：常驻转场覆盖层，渲染层级最高（含各场景 Bloom RT 4990）
+  scene: [BootScene, PreloadScene, MenuScene, GameScene, UIScene, ResultScene, TransitionScene],
 };
 
 const game = new Phaser.Game(config);

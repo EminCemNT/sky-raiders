@@ -1,4 +1,5 @@
-import { SAVE_KEY, DAILY_QUEST_POOL, DAILY_QUEST_PICK, DAILY_QUEST_ALL_CLEAR_BONUS, DIFFICULTIES, PERFORMANCE, NEWBIE_PLAN, UPGRADE_TREE, MODULES, MODULE_SLOTS, MODULE_SHOP, SKIN_PRICE, WEEKLY_LEAGUE, getIsoWeekKey, CHECKIN_REWARDS, CHECKIN_MAKEUP_COST, RETURN_GIFT, ACTIVE_CHEST } from '../config/GameConfig.js';
+import { SAVE_KEY, DAILY_QUEST_POOL, DAILY_QUEST_PICK, DAILY_QUEST_ALL_CLEAR_BONUS, DIFFICULTIES, PERFORMANCE, NEWBIE_PLAN, UPGRADE_TREE, MODULES, MODULE_SLOTS, MODULE_SHOP, SKIN_PRICE, WEEKLY_LEAGUE, getIsoWeekKey, CHECKIN_REWARDS, CHECKIN_MAKEUP_COST, RETURN_GIFT, ACTIVE_CHEST, EVENTS } from '../config/GameConfig.js';
+import { EventBus } from './EventBus.js';
 
 /**
  * 存档管理（localStorage）
@@ -70,9 +71,20 @@ const DEFAULT_SAVE = {
   returnGift: null,
   // P1 留存·社交排行（本地）：topScores=[{score, levelId, mode, date}] 最多 10 条，按 score 降序
   topScores: [],
+  // OPT-13 批A A9 连续失败救济局（append-only，只新增字段不改旧字段）：
+  //   failStreak={ [levelId]: n } 各关连续失败计数；reliefRuns=救济局累计次数（统计用）
+  failStreak: {},
+  reliefRuns: 0,
 };
 
 let cache = null;
+
+// A1 存档降频：脏标记 + rAF/微任务合并写（同帧多次 save() 合并为一次落盘）；
+// 无 requestAnimationFrame 环境（Node qa_probes）退化为同步写。_broken=持久化降级态。
+let _dirty = false;
+let _flushScheduled = false;
+let _broken = false;
+let _saveFailedNotified = false;
 
 /**
  * 生成一份全新的默认存档。
@@ -107,6 +119,8 @@ function freshSave() {
     dailyActs: { date: '', count: 0, chests: { 3: false, 5: false } },
     returnGift: null,
     topScores: [],
+    failStreak: {},
+    reliefRuns: 0,
   };
 }
 
@@ -205,11 +219,40 @@ export const SaveManager = {
 
   save() {
     if (!cache) return;
+    // A1 存档降频：脏标记 + rAF 合并写；同帧多次 save() 只写一次盘（每金币 addCoins 不再触发写盘风暴）。
+    // 无 requestAnimationFrame 环境（Node 头测 qa_probes）退化为同步写，保证既有探针不破。
+    _dirty = true;
+    if (typeof requestAnimationFrame === 'function') {
+      if (!_flushScheduled) {
+        _flushScheduled = true;
+        requestAnimationFrame(() => { _flushScheduled = false; this.flushNow(); });
+      }
+    } else {
+      this.flushNow();
+    }
+  },
+
+  /** A1 立即同步写盘并清脏（endGame 结算等关键路径调用，保证结算数据不丢） */
+  flushNow() {
+    if (!cache) return;
+    _dirty = false;
+    _flushScheduled = false;
     try {
       localStorage.setItem(SAVE_KEY, JSON.stringify(cache));
+      _broken = false; // 写成功恢复持久化态
     } catch (e) {
-      /* 隐私模式/超配额，静默失败 */
+      // 隐私模式/超配额：进入降级态，仅首次经 EVENTS.SAVE_FAILED 一次性提示（避免刷屏）
+      _broken = true;
+      if (!_saveFailedNotified) {
+        _saveFailedNotified = true;
+        try { EventBus.emit(EVENTS.SAVE_FAILED); } catch (err) { /* EventBus 不可用时忽略 */ }
+      }
     }
+  },
+
+  /** A1 是否处于持久化降级态（localStorage 写入失败后为 true） */
+  isPersistBroken() {
+    return _broken === true;
   },
 
   get(key) {
