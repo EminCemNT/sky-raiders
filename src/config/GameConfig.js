@@ -1171,3 +1171,23 @@ export const TITLES = [
   { id: 'skyOverlord', name: '苍穹霸主', nameEn: 'Sky Overlord', rarity: 'legendary',
     cond: { and: [{ type: 'achievement', id: 'all_clear' }, { type: 'medalCount', n: 6 }, { type: 'towerTop', n: 10 }] } },
 ];
+
+// ───────────────────────────────────────────────────────────────
+// OPT-13 批B B14 元素免疫 + 全屏元素风暴（append-only，纯数据配置）：
+//   cdMs           STORM_CD 风暴冷却（防连环触发，单位 ms）
+//   dmg            风暴对敌机/Boss 的非元素伤害（穿透免疫）
+//   score          风暴触发奖励得分
+//   clearBullets   是否清全场敌弹
+//   bypassCooldown 已拍板 false：风暴伤害走 ElementReaction.onHit 尊重 REACT_CD=1200ms，
+//                  不做 bypass；风暴频率由独立 cdMs 控制
+//   elementalChance hard/hell 每波追加免疫敌人的概率（休闲/标准绝不出现，新手保护）
+// 消费方：GameScene.elementStorm / _checkStormTrigger / WaveSystem（免疫敌人兜底追加）。
+// ───────────────────────────────────────────────────────────────
+export const ELEMENT_STORM = {
+  cdMs: 15000,
+  dmg: 50,
+  score: 500,
+  clearBullets: true,
+  bypassCooldown: false,
+  elementalChance: 0.25,
+};

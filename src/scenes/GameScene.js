@@ -3,7 +3,7 @@ import {
   SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, COLORS, PLAYER, BULLET, LEVELS, BOSS_RUSH, SHIPS, ELEMENTS, WINGMAN,
   DIFFICULTIES, getDifficulty, POWERUP, GRAZE, OVERDRIVE, OVERCHARGE, FOCUS, bossRushScale, PERFORMANCE, POOL, COMBAT_PERF,
   EVENT_MODES, getCurrentEvent, MODULE_DROP_CHANCE, getShipSkins, TOWER, TOWER_BUFFS, LIGHTS, TRANSITION,
-  RELIEF, COMBO_BURST,
+  RELIEF, COMBO_BURST, ELEMENT_STORM,
 } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
@@ -642,6 +642,10 @@ export default class GameScene extends Phaser.Scene {
       if (e.active) e.update(time, dt);
     });
 
+    // OPT-13 B14 元素风暴：三元素同挂检测（节流每 30 帧 ≈ 500ms；活性守卫防死敌/过期误触发）
+    this._stormTick = (this._stormTick || 0) + 1;
+    if (this._stormTick % 30 === 0 && this._checkStormTrigger(time)) this.elementStorm();
+
     // Boss
     if (this.boss && this.boss.active) {
       this.boss.update(time, dt);
@@ -891,7 +895,7 @@ export default class GameScene extends Phaser.Scene {
   }
 
   // ---- 供其他模块回调的工厂方法（WaveSystem/Enemy 依赖）----
-  spawnEnemy(x, y, typeKey, moveMode, difficulty = 1, firePattern = 'straight', elite = false, hpMul, speedMul) {
+  spawnEnemy(x, y, typeKey, moveMode, difficulty = 1, firePattern = 'straight', elite = false, hpMul, speedMul, immune = null) {
     const e = this.enemies.get();
     if (!e) return null;
     // A9 救济局选项 A：敌人 HP/速度按休闲档（session 覆盖，不写 selectedDifficulty；得分/金币仍按所选难度）
@@ -900,7 +904,7 @@ export default class GameScene extends Phaser.Scene {
     e.spawn(x, y, typeKey, moveMode, difficulty, firePattern,
       hpMul != null ? hpMul : cfg.hpMul,
       speedMul != null ? speedMul : cfg.speedMul,
-      elite);
+      elite, immune);
     this.stats.spawned++;
     return e;
   }
@@ -1253,6 +1257,75 @@ export default class GameScene extends Phaser.Scene {
     const idx = ORDER.indexOf(cur);
     const next = (idx < 0) ? ORDER[0] : ORDER[(idx + 1) % ORDER.length];
     return this.setPlayerElement(next);
+  }
+
+  // ---- OPT-13 B14 全屏元素风暴 ----
+  /**
+   * 三元素同挂检测：场上 active 敌机同时存在 fire / ice / thunder 元素状态（读 Enemy._elem）。
+   * 活性守卫：
+   *   - 排除死亡演出中的敌机（e._dying，死敌残留 _elem 不参与判定，防误触发）
+   *   - 元素状态已全部过期（dot/slow/stun 截止均过）视为无元素（防过期残留误触发）
+   */
+  _checkStormTrigger(now) {
+    const seen = { fire: false, ice: false, thunder: false };
+    this.enemies.children.each((e) => {
+      if (!e.active || e._dying || !e._elem) return;
+      if (now >= (e._dotUntil || 0) && now >= (e._slowUntil || 0) && now >= (e._stunUntil || 0)) return;
+      if (e._elem === 'fire') seen.fire = true;
+      else if (e._elem === 'ice') seen.ice = true;
+      else if (e._elem === 'thunder') seen.thunder = true;
+    });
+    return seen.fire && seen.ice && seen.thunder;
+  }
+
+  /**
+   * 全屏元素风暴：三元素同挂触发。
+   * 效果：对所有敌机大额非元素伤害（穿透免疫，走 applyReaction 直接结算）+ 清全场敌弹 +
+   *       大额得分 + 全屏演出；Boss 固定伤害（Boss 无免疫标记）；Boss 战也可触发。
+   * 冷却：STORM_CD（ELEMENT_STORM.cdMs）防连环触发；触发后清除敌机元素状态避免同帧再触发。
+   * 已拍板：bypassCooldown=false —— 三元素反应链走 ElementReaction.onHit 尊重 REACT_CD=1200ms，
+   *         不 bypass；风暴频率由独立 STORM_CD 控制。
+   */
+  elementStorm() {
+    if (this.gameEnded) return false;
+    const cfg = ELEMENT_STORM || {};
+    const now = this.time.now;
+    if (now < (this._stormUntil || 0)) return false;   // STORM_CD 防连环触发
+    this._stormUntil = now + (cfg.cdMs || 15000);
+    // 全屏演出（reduced-motion 由 VFX/shake/tween 内部降级）
+    this.cameras.main.flash(420, 150, 220, 255);
+    VFX.shake(this, 'heavy');
+    EventBus.emit(EVENTS.FLOAT_SCORE, {
+      x: this.player ? this.player.x : GAME_WIDTH / 2,
+      y: (this.player ? this.player.y : 400) - 60,
+      amount: cfg.score || 500, special: true, label: t('stormTitle'),
+    });
+    // 清全场敌弹
+    if (cfg.clearBullets !== false) {
+      this.enemyBullets.children.each((b) => { if (b.active) this.killBullet(b); });
+    }
+    // 非元素穿透伤害（穿透免疫）：applyReaction 直接结算（无受击音/飘字刷屏）
+    this.enemies.children.each((e) => {
+      if (!e.active || e._dying) return;
+      if (e.applyReaction(cfg.dmg || 50, null)) this.registerKill(e.x, e.y);
+    });
+    // Boss 固定伤害（Boss 不加免疫标记，避免地狱 Boss 无解）
+    if (this.boss && this.boss.active) this.boss.hit(cfg.dmg || 50);
+    // 三元素反应链：对当前带元素的敌机触发二段反应（尊重 REACT_CD；bypassCooldown=false）
+    if (this.elementReaction) {
+      this.enemies.children.each((e) => {
+        if (!e.active || e._dying || !e._elem) return;
+        this.elementReaction.onHit(e, e._elem, now);
+      });
+    }
+    // 清除敌机元素状态（避免同帧再触发）
+    this.enemies.children.each((e) => {
+      if (!e.active || e._dying || !e._elem) return;
+      e._elem = null; e._dotUntil = 0; e._slowUntil = 0; e._stunUntil = 0;
+      if (e.clearTint) e.clearTint();
+    });
+    EventBus.emit(EVENTS.SCORE_CHANGED, cfg.score || 500);
+    return true;
   }
 
   /** 命中定格（hitStop）：冻结物理世界（子弹/敌机/敌弹）强化打击感；指针拖动玩家不受影响。

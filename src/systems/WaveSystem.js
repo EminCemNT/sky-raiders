@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GAME_WIDTH, EVENTS, LEVELS, ELITE } from '../config/GameConfig.js';
+import { GAME_WIDTH, EVENTS, LEVELS, ELITE, ELEMENT_STORM } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 
 /**
@@ -104,6 +104,17 @@ export default class WaveSystem {
         this._elitePending = true;
       }
     }
+    // B14 元素免疫敌人兜底追加：hard/hell 每波低概率追加 1 只免疫敌人（休闲/标准绝不出现，新手保护）。
+    // 免疫元素按波次轮换 fire→ice→thunder，保证三元素同屏触发风暴的可观测性。
+    this._elementalPending = false;
+    this._elementalImmune = null;
+    if (!this.endless && this.currentWave >= 2 && this._isHardOrHell()) {
+      if (Math.random() < (ELEMENT_STORM.elementalChance || 0.25)) {
+        this._toSpawn++;
+        this._elementalPending = true;
+        this._elementalImmune = ['fire', 'ice', 'thunder'][(this.currentWave - 2) % 3];
+      }
+    }
     EventBus.emit(EVENTS.WAVE_STARTED, {
       wave: this.currentWave,
       total: this.endless ? null : this.totalWaves,
@@ -116,6 +127,14 @@ export default class WaveSystem {
     const c = this.scene && this.scene.difficultyCfg;
     const r = this.scene && this.scene._reliefCombatMul;
     return !!((c && c.id === 'casual') || (r && r.id === 'casual'));
+  }
+
+  /** B14 困难/地狱档判断：仅 hard/hell 才刷免疫敌人；救济局降难度（casual）同口径不刷 */
+  _isHardOrHell() {
+    const r = this.scene && this.scene._reliefCombatMul;
+    if (r && r.id === 'casual') return false;
+    const c = this.scene && this.scene.difficultyCfg;
+    return !!(c && (c.id === 'hard' || c.id === 'hell'));
   }
 
   /** 当前波次难度系数：无尽模式每 5 波 +10%（相对关卡基础难度递增） */
@@ -180,6 +199,15 @@ export default class WaveSystem {
     this.scene.spawnEnemy(Phaser.Math.Between(40, GAME_WIDTH - 40), -40, typeKey, moveMode, this.getDifficulty(), null, true);
   }
 
+  /** B14 免疫敌人兜底追加：hard/hell 刷 1 只 elemental（免疫元素按波次轮换；Boss 战不触发） */
+  _spawnOneElemental(immune) {
+    if (!this.scene.spawnEnemy) return;
+    this.scene.spawnEnemy(
+      Phaser.Math.Between(40, GAME_WIDTH - 40), -40, 'elemental', 'straight',
+      this.getDifficulty(), 'spread', false, undefined, undefined, immune || 'fire',
+    );
+  }
+
   spawnOne() {
     if (!this.scene.spawnEnemy) return;
     // A6：本波追加的精英先刷出（不占 comp 名额）
@@ -188,14 +216,21 @@ export default class WaveSystem {
       this._spawnOneElite();
       return;
     }
+    // B14：本波追加的免疫敌人先刷出（不占 comp 名额）
+    if (this._elementalPending) {
+      this._elementalPending = false;
+      this._spawnOneElemental(this._elementalImmune);
+      return;
+    }
     let x = Phaser.Math.Between(40, GAME_WIDTH - 40);
     let typeKey = 'small';
     let moveMode = 'straight';
     let firePattern = null;
     let elite = false;
+    let immune = null;
     if (this._comp && this._comp.length) {
-      // 归一化 comp 条目：支持 [type, mode, weight, pattern, elite?] 元组 或
-      // { typeKey, mode, pattern, weight, elite? } 对象（A6 精英标记透传）
+      // 归一化 comp 条目：支持 [type, mode, weight, pattern, elite?, immune?] 元组 或
+      // { typeKey, mode, pattern, weight, elite?, immune? } 对象（A6 精英标记 / B14 免疫标记透传）
       const norm = (entry) => {
         if (Array.isArray(entry)) {
           return {
@@ -204,6 +239,7 @@ export default class WaveSystem {
             weight: entry[2] != null ? entry[2] : 1,
             pattern: entry[3] || null,
             elite: !!entry[4],
+            immune: entry[5] || null,
           };
         }
         return {
@@ -212,6 +248,7 @@ export default class WaveSystem {
           weight: entry.weight != null ? entry.weight : 1,
           pattern: entry.pattern || null,
           elite: !!entry.elite,
+          immune: entry.immune || null,
         };
       };
       const entries = this._comp.map(norm);
@@ -226,6 +263,12 @@ export default class WaveSystem {
       moveMode = picked.mode;
       firePattern = picked.pattern;
       elite = picked.elite;
+      // B14 免疫门控：仅 hard/hell 才保留免疫标记；休闲/标准下元素型降级为普通 mid（零免疫，新手保护）
+      immune = picked.immune || null;
+      if (immune && !this._isHardOrHell()) {
+        if (typeKey === 'elemental') typeKey = 'mid';
+        immune = null;
+      }
     } else {
       // 兜底：程序化随机（波次越高越难）；无尽模式 mid 占比上限略高
       const cap = this.endless ? 0.6 : 0.5;
@@ -262,6 +305,6 @@ export default class WaveSystem {
         : Phaser.Math.Between(Math.ceil(GAME_WIDTH * 0.62), GAME_WIDTH - 44);
       y = GAME_HEIGHT - Phaser.Math.Between(110, 170);
     }
-    this.scene.spawnEnemy(x, y, typeKey, moveMode, this.getDifficulty(), firePattern, elite);
+    this.scene.spawnEnemy(x, y, typeKey, moveMode, this.getDifficulty(), firePattern, elite, undefined, undefined, immune);
   }
 }

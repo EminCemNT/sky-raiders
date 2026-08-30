@@ -480,6 +480,12 @@ const zh = {
   rarity_rare: '稀有',
   rarity_epic: '史诗',
   rarity_legendary: '传说',
+  // ── OPT-13 B14 元素免疫 + 全屏风暴 ──
+  immuneFire: '免疫火',
+  immuneIce: '免疫冰',
+  immuneThunder: '免疫雷',
+  stormTitle: '元素风暴！',
+  stormDesc: '三元素共鸣，清屏重创！',
 
   // ── ui scene（暂停 / Boss 警告 / 技能 / 徽标）──
   uiPaused: '已暂停',
@@ -968,6 +974,12 @@ const en = {
   rarity_rare: 'Rare',
   rarity_epic: 'Epic',
   rarity_legendary: 'Legendary',
+  // ── OPT-13 B14 elemental immunity + fullscreen storm ──
+  immuneFire: 'Immune: Fire',
+  immuneIce: 'Immune: Ice',
+  immuneThunder: 'Immune: Thunder',
+  stormTitle: 'ELEMENT STORM!',
+  stormDesc: 'Tri-element resonance clears the screen!',
 
   // ── ui scene ──
   uiPaused: 'PAUSED',

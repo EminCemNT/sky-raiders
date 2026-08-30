@@ -4,6 +4,7 @@ import { EventBus } from '../utils/EventBus.js';
 import { audio } from '../systems/AudioSystem.js';
 import * as VFX from '../systems/VFX.js';
 import { damageNumber } from '../systems/FloatingText.js';
+import { t as localeT } from '../config/Locale.js';
 
 /**
  * 敌机（从对象池取用）。
@@ -29,6 +30,9 @@ const TYPES = {
   kamikaze: { tex: 'enemy_kamikaze', hp: 30, score: 250, coin: 0.3, speed: 270, fireRate: 0,    color: 0xff5a3c, defaultMode: 'kamikaze' },
   summoner: { tex: 'enemy_summoner', hp: 90, score: 450, coin: 0.6, speed: 70,  fireRate: 0,    color: 0x9a6fd6, defaultMode: 'straight' },
   shield:   { tex: 'enemy_shield',   hp: 55, score: 300, coin: 0.5, speed: 85,  fireRate: 1800, color: 0x4ad1ff, defaultMode: 'straight' },
+  // OPT-13 B14 元素免疫敌人（困难/地狱档）：immune 默认免疫元素数组；
+  // 实例可用 spawn 第 10 参 immune 覆盖（WaveSystem comp 透传）。纹理复用 enemy_mid，免疫标记用金色字。
+  elemental: { tex: 'enemy_mid', hp: 90, score: 120, coin: 0.4, speed: 90, fireRate: 1500, color: 0xffd24a, immune: ['fire'] },
 };
 
 export default class Enemy extends Phaser.Physics.Arcade.Sprite {
@@ -54,6 +58,9 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     this._slowMul = 1;
     // 元素连锁反应（二段反应）冷却截止时刻
     this._reactUntil = 0;
+    // B14 元素免疫：免疫元素数组（null=普通敌人）+ 免疫标记文字
+    this._immune = null;
+    this._immuneLabel = null;
   }
 
   getColor() {
@@ -61,13 +68,20 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
   }
 
   /** 从池中激活一个敌人。difficulty 为关卡难度系数；hpMul/speedMul 为难度档系数（P0 四档，默认 1）；
-   *  elite（A6/B10）：精英 mini-boss 标记——血量 ×ELITE.hpMul、射速 ×1.5、发光描边 + 放大约 1.2 倍 */
-  spawn(x, y, typeKey = 'small', moveMode = 'straight', difficulty = 1, firePattern = 'straight', hpMul = 1, speedMul = 1, elite = false) {
+   *  elite（A6/B10）：精英 mini-boss 标记——血量 ×ELITE.hpMul、射速 ×1.5、发光描边 + 放大约 1.2 倍；
+   *  immune（B14）：元素免疫标记（'fire'|'ice'|'thunder'，缺省取型号默认 immune 数组） */
+  spawn(x, y, typeKey = 'small', moveMode = 'straight', difficulty = 1, firePattern = 'straight', hpMul = 1, speedMul = 1, elite = false, immune = null) {
     const t = TYPES[typeKey] || TYPES.small;
     this.typeKey = typeKey;
     this.def = t;
     this.difficulty = difficulty;
     this.isElite = !!elite;
+    // B14 元素免疫：实例免疫（wavePlan comp 透传）缺省取型号默认；普通敌人 null。
+    // 兼容字符串（'fire'）与数组（['fire']）两种入参，统一归一化为数组（免疫标签 .map 依赖数组形态）
+    let instImmune = immune;
+    if (typeof instImmune === 'string') instImmune = [instImmune];
+    this._immune = (instImmune && instImmune.length ? instImmune : null)
+      || (t.immune && t.immune.length ? t.immune : null) || null;
     this.setTexture(t.tex);
     this.setPosition(x, y);
     this.setActive(true).setVisible(true);
@@ -115,6 +129,23 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
       this.setScale(1, 1);
     }
 
+    // B14 免疫标记展示（纯视觉静态文字，reduced-motion 无动画）：如「免疫火 / Immune: Fire」
+    if (this._immune && this._immune.length) {
+      const label = this._immune
+        .map((k) => localeT('immune' + k.charAt(0).toUpperCase() + k.slice(1)))
+        .join('/');
+      if (!this._immuneLabel || !this._immuneLabel.active) {
+        this._immuneLabel = this.scene.add.text(this.x, this.y - 28, label, {
+          fontFamily: 'sans-serif', fontSize: '10px', fontStyle: '800', color: '#ffd24a',
+        }).setOrigin(0.5).setDepth(16);
+      } else {
+        this._immuneLabel.setText(label).setPosition(this.x, this.y - 28);
+      }
+    } else if (this._immuneLabel) {
+      if (this._immuneLabel.active) this._immuneLabel.destroy();
+      this._immuneLabel = null;
+    }
+
     // P1 地面炮台无尾焰（固定底座，不喷气）
     if (this.typeKey === 'turret') {
       if (this.thruster) VFX.setEmitterActive(this.thruster, false);
@@ -130,6 +161,11 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
 
   update(time, dt) {
     if (!this.active || this._dying) return;
+
+    // B14 免疫标记跟随（纯视觉；无标记零开销）
+    if (this._immuneLabel && this._immuneLabel.active) {
+      this._immuneLabel.setPosition(this.x, this.y - 28);
+    }
 
     // B6 火元素 DoT（灼烧）
     if (time < this._dotUntil) {
@@ -410,9 +446,20 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     });
   }
 
+  /** B14 元素免疫判定：免疫敌人对该元素伤害免疫（0 伤害）；普通敌人恒 false */
+  isImmuneTo(el) {
+    return !!(el && this._immune && this._immune.indexOf(el) >= 0);
+  }
+
   /** 受伤，返回是否死亡 */
   hit(dmg, element) {
     if (this._dying) return false;            // 死亡演出进行中，忽略后续命中（防对象池复用前的重复结算）
+    // B14 元素免疫：免疫元素命中 → 伤害归 0、不附加该元素状态（反应链也不触发，
+    // 因为免疫元素状态从未挂上，_elem !== element，onHit 天然 return false）。
+    if (element && this.isImmuneTo(element)) {
+      this._flinch();
+      return false;
+    }
     // 元素连锁反应（二段反应）：在 applyElement 之前触发（此时 _elem 仍是上次命中残留的元素）。
     // 不读写 combo、不进 overlap 回调，由 ElementReaction 纯逻辑判同元素 + 冷却后派发。
     if (element && this.scene.elementReaction) this.scene.elementReaction.onHit(this, element, this.scene.time.now);
@@ -451,6 +498,8 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
   /** 附加元素状态（B6）：火=灼烧 / 冰=减速 / 雷=麻痹。P0 战机被动在系数处乘 selectedShip.passive */
   applyElement(key) {
     if (!key || !ELEMENTS[key]) return;
+    // B14 元素免疫：免疫元素状态不附加（0 DoT / 0 状态 / 无染色）——非免疫元素照常生效
+    if (this.isImmuneTo(key)) return;
     const now = this.scene.time.now;
     const cfg = ELEMENTS[key];
     // P0 战机专属被动：由 GameScene.create 从 selectedShip 写入 scene.shipPassive（无则空对象 = 零加成）
@@ -487,6 +536,8 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
    */
   applyReaction(dmg, element) {
     if (this._dying) return false;
+    // B14 元素免疫：免疫元素反应伤害归 0（且不附加免疫元素状态）——非元素伤害（如风暴）穿透免疫
+    if (element && this.isImmuneTo(element)) return false;
     if (element) this.applyElement(element);
     this.hp -= dmg;
     if (this.hp <= 0) { this.die(); return true; }
@@ -541,6 +592,12 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     // A4 池复用复位契约：回收即清元素染色/状态残留（spawn() 仍会重写，这里双重保险防复用污染）
     this._elem = null;
     this.clearTint();
+    // B14 免疫复位契约：免疫标记与标签清理，防对象池复用污染
+    this._immune = null;
+    if (this._immuneLabel) {
+      if (this._immuneLabel.active) this._immuneLabel.destroy();
+      this._immuneLabel = null;
+    }
     // A6 精英复位契约：isElite / _fireRateEff / _eliteGlow 全部清理，防对象池复用污染
     this.isElite = false;
     this._fireRateEff = null;
