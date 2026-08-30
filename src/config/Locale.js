@@ -464,6 +464,13 @@ const zh = {
   reliefFireBonus: '复活火力 +1',
   // D3 P3 修复：存档降级一次性提示（SaveManager 首次写失败 emit SAVE_FAILED）
   saveFailed: '存档失败，本次进度可能无法保存',
+  // ── OPT-13 B11 连击蓄力爆发（HUD 按钮/飘字/还需提示）──
+  chargeBurst: '连击爆发',
+  chargeBtn: '蓄力',
+  chargePower: '强化射击',
+  chargeClear: '清屏',
+  chargeEnergy: '回能',
+  chargeNeed: '还需 {n} 连击',
   // ── OPT-13 B12 称号系统（8 组中英文案，含 desc）──
   titleNone: '暂无称号',
   title_rookie: '苍穹新兵',
@@ -1017,6 +1024,13 @@ const en = {
   reliefFireBonus: 'Revive Fire +1',
   // D3 P3 fix: one-time save-degradation notice (SaveManager emits SAVE_FAILED on first write failure)
   saveFailed: 'Save failed — progress may not be kept',
+  // ── OPT-13 B11 combo burst (HUD button / float text / need hint) ──
+  chargeBurst: 'Combo Burst',
+  chargeBtn: 'Burst',
+  chargePower: 'Power Shot',
+  chargeClear: 'Clear',
+  chargeEnergy: 'Energy',
+  chargeNeed: 'Need {n} Combo',
   // ── OPT-13 B12 title system (8 entries + desc) ──
   titleNone: 'No Title',
   title_rookie: 'Sky Rookie',

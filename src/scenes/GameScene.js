@@ -570,6 +570,9 @@ export default class GameScene extends Phaser.Scene {
     // P2 第二主动技能：统一派发（USE_SKILL 按 activeSkill 分发）+ 切换
     this._onUseSkill = () => this.useSkill();
     EventBus.on(EVENTS.USE_SKILL, this._onUseSkill);
+    // B11 连击蓄力爆发：HUD 蓄力按钮发 USE_BURST → useBurst（键盘 C 已在 update 直接调 useBurst）
+    this._onUseBurst = () => this.useBurst();
+    EventBus.on(EVENTS.USE_BURST, this._onUseBurst);
     this._onSkillSwitched = (id) => {
       // 带 payload = 状态广播（幂等设置，来自 _switchSkill 自身发射，防循环）；
       // 无 payload = 用户切换指令（Q / 切换箭头），执行轮换。
@@ -2597,6 +2600,7 @@ export default class GameScene extends Phaser.Scene {
     EventBus.off(EVENTS.USE_BOMB, this._onUseBomb);
     EventBus.off(EVENTS.USE_SUPER, this._onUseSuper);
     EventBus.off(EVENTS.USE_SKILL, this._onUseSkill);
+    EventBus.off(EVENTS.USE_BURST, this._onUseBurst);
     EventBus.off(EVENTS.SKILL_SWITCHED, this._onSkillSwitched);
     EventBus.off(EVENTS.WINGMAN_COMBO, this._onWingmanCombo);
     EventBus.off(EVENTS.FOCUS_TOGGLE, this._onFocusToggle);

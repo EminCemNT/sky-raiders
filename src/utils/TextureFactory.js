@@ -75,6 +75,8 @@ export function generateAll(scene) {
   drawItemElement(g); g.generateTexture('item_element', 26, 26);
   // P0 机库模块养成：模块箱（青蓝科技方盒 + 三槽位点，白色基底便于品质染色复用）
   drawItemModule(g); g.generateTexture('item_module', 26, 26);
+  // B11 连击蓄力爆发：闪电爆发图标（紫盘 + 白色闪电折线 + 火花点，append-only 新 key）
+  drawItemBurst(g); g.generateTexture('item_burst', 26, 26);
   // UI 矢量图标（取代跨端字形不一致的 emoji：🏅/🔒，append-only 新增 key）
   drawIconMedal(g); g.generateTexture('icon_medal', 26, 26);
   drawIconLock(g); g.generateTexture('icon_lock', 26, 26);
@@ -634,6 +636,34 @@ function drawItemModule(g) {
   g.fillCircle(19, 6, 1.3);
   g.fillStyle(0xff8aa0, 1);
   g.fillCircle(13, 21, 1.3);
+}
+
+// ─── 道具：连击蓄力爆发（紫盘底 + 白色闪电折线 + 火花点，B11）────────
+function drawItemBurst(g) {
+  g.clear();
+  // 外发光（紫）
+  g.fillStyle(0xb98bff, 0.3);
+  g.fillCircle(13, 13, 13);
+  // 紫盘底（渐变）
+  g.fillGradientStyle(0x6a3ab0, 0x9a6fd6, 0x9a6fd6, 0x3a1a6a, 1);
+  g.fillCircle(13, 13, 11);
+  g.lineStyle(1.5, 0xc9bfff, 0.95);
+  g.strokeCircle(13, 13, 11);
+  // 白色闪电（爆发折线）
+  g.lineStyle(2.6, 0xffffff, 1);
+  g.beginPath();
+  g.moveTo(15, 2);
+  g.lineTo(8, 13);
+  g.lineTo(12, 13);
+  g.lineTo(10, 24);
+  g.lineTo(19, 10);
+  g.lineTo(14, 10);
+  g.strokePath();
+  // 外圈火花点（紫色小爆发）
+  g.fillStyle(0xc9bfff, 1);
+  g.fillCircle(20, 5, 1.4);
+  g.fillCircle(22, 14, 1.1);
+  g.fillCircle(5, 19, 1.3);
 }
 
 // ─── UI 图标：成就勋章（金牌 + 五角星，霓虹描边） ─────────────

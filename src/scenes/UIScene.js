@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, LEVELS, WEAPONS, SHIPS, WINGMAN, PLAYER, EVENT_MODES, OVERCHARGE, PERFORMANCE, FILM } from '../config/GameConfig.js';
+import { SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, LEVELS, WEAPONS, SHIPS, WINGMAN, PLAYER, EVENT_MODES, OVERCHARGE, PERFORMANCE, FILM, COMBO_BURST } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
 import { t } from '../config/Locale.js';
@@ -136,6 +136,16 @@ export default class UIScene extends Phaser.Scene {
       useHandCursor: true,
     });
     this.skillSwitch.on('pointerdown', () => { audio.sfx('ui'); EventBus.emit(EVENTS.SKILL_SWITCHED); });
+
+    // B11 连击蓄力爆发 HUD：右下角「蓄力」按钮（技能切换钮左侧，避开炸弹/技能/切换钮）。
+    // 规格：三档 combo≥10/15/20 → gauge 1/2/3；未达标置灰；按钮按下发 USE_BURST（键盘 C 在 GameScene 已绑）。
+    this.burstBtn = makeIconButton(this, GAME_WIDTH - 292, GAME_HEIGHT - 72, 'item_burst', {
+      radius: 34, label: t('chargeBtn'), count: 'x0', ringAlpha: 0,
+      onDown: () => { audio.sfx('ui'); EventBus.emit(EVENTS.USE_BURST); },
+    });
+    this.burstBtn.container.setAlpha(0.45);   // 初始无连击 → 置灰
+    this._burstGauge = 0;                      // 当前可触发档位（0/1/2/3，GameScene.getBurstGauge 语义）
+    this._burstCombo = 0;                      // 当前连击（只读展示，不直接操作 GameScene）
 
     // 增益徽标（护盾/磁力）：矢量纹理图标 + 文本，取代 emoji 🛡/🧲（跨端字形一致）
     this.shieldIcon = this.add.image(16, 104, 'item_shield').setScale(0.5).setDepth(101).setVisible(false);
@@ -652,6 +662,60 @@ export default class UIScene extends Phaser.Scene {
     };
     EventBus.on(EVENTS.OVERCHARGE_STATE, this._onOverchargeState);
 
+    // B11 连击蓄力爆发：HUD 蓄力按钮状态（gauge=0 置灰 / ≥1 高亮 + 档位计数；reduced-motion 静态高亮）
+    this._onBurstChanged = (combo, gauge) => {
+      if (!this.burstBtn) return;
+      this._burstCombo = combo || 0;
+      this._burstGauge = gauge || 0;
+      const c = this._burstCombo, g = this._burstGauge;
+      if (this.burstBtn.count) this.burstBtn.count.setText(`x${c}`);
+      const tiers = (COMBO_BURST && COMBO_BURST.tiers) || [];
+      if (g >= 1) {
+        this.burstBtn.container.setAlpha(1);
+        this.burstBtn.icon.setTint(0x7cf3ff);
+        const names = tiers.filter((tt) => c >= (tt.needCombo || 999)).map((tt) => tt.desc).join('+');
+        this.burstBtn.label.setText(names ? `${t('chargeBtn')} · ${names}` : t('chargeBtn')).setColor(THEME.textGold);
+        if (PREFERS_REDUCED) {
+          this.burstBtn.ring.setAlpha(0.5).setScale(1);
+        } else {
+          this.tweens.killTweensOf(this.burstBtn.ring);
+          this.burstBtn.ring.setAlpha(0.35).setScale(1);
+          this.tweens.add({
+            targets: this.burstBtn.ring, alpha: { from: 0.35, to: 0.9 }, scale: { from: 0.94, to: 1.1 },
+            duration: 640, yoyo: true, repeat: -1,
+          });
+        }
+      } else {
+        this.burstBtn.container.setAlpha(0.45);
+        this.burstBtn.icon.clearTint();
+        this.tweens.killTweensOf(this.burstBtn.ring);
+        this.burstBtn.ring.setAlpha(0).setScale(1);
+        if (c > 0 && tiers.length) {
+          const nextT = tiers.find((tt) => c < (tt.needCombo || 999)) || tiers[0];
+          this.burstBtn.label.setText(t('chargeNeed', { n: Math.max(0, (nextT.needCombo || 0) - c) })).setColor(THEME.textMuted);
+        } else {
+          this.burstBtn.label.setText(t('chargeBtn')).setColor(THEME.white);
+        }
+      }
+    };
+    EventBus.on(EVENTS.BURST_CHANGED, this._onBurstChanged);
+
+    // B11 连击蓄力激活：中央飘字 + 按钮闪光（reduced-motion 静态提示）
+    this._onBurstActivated = (p) => {
+      if (!p || !this.burstBtn) return;
+      const c = p.combo || 0;
+      const names = ((COMBO_BURST && COMBO_BURST.tiers) || [])
+        .filter((tt) => c >= (tt.needCombo || 999))
+        .map((tt) => tt.desc).join('+');
+      this.flashCenter(names ? `${t('chargeBurst')} · ${names}` : t('chargeBurst'), THEME.textGold);
+      if (!PREFERS_REDUCED) {
+        this.tweens.killTweensOf(this.burstBtn.ring);
+        this.burstBtn.ring.setAlpha(1);
+        this.tweens.add({ targets: this.burstBtn.ring, alpha: 0, scale: 1.4, duration: 340, ease: 'Cubic.out' });
+      }
+    };
+    EventBus.on(EVENTS.BURST_ACTIVATED, this._onBurstActivated);
+
     // D3 P3 修复：存档降级（隐私模式/超配额）一次性提示——SaveManager 已保证 SAVE_FAILED 仅首败 emit
     this._onSaveFailed = () => { this.flashCenter(t('saveFailed'), THEME.textRed); };
     EventBus.on(EVENTS.SAVE_FAILED, this._onSaveFailed);
@@ -908,5 +972,7 @@ export default class UIScene extends Phaser.Scene {
     EventBus.off(EVENTS.ACHIEVEMENT_UNLOCKED, this._onAchUnlock);
     EventBus.off(EVENTS.WINGMAN_STATUS, this._onWmStatus);
     EventBus.off(EVENTS.OVERCHARGE_STATE, this._onOverchargeState);
+    EventBus.off(EVENTS.BURST_CHANGED, this._onBurstChanged);
+    EventBus.off(EVENTS.BURST_ACTIVATED, this._onBurstActivated);
   }
 }
