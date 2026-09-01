@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { BULLET, GAME_HEIGHT, GAME_WIDTH, EVENTS, ELEMENTS, ELITE, EASE } from '../config/GameConfig.js';
+import { BULLET, GAME_HEIGHT, GAME_WIDTH, EVENTS, ELEMENTS, ELITE, EASE, IDLE_AURA } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { audio } from '../systems/AudioSystem.js';
 import * as VFX from '../systems/VFX.js';
@@ -61,6 +61,8 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     // B14 元素免疫：免疫元素数组（null=普通敌人）+ 免疫标记文字
     this._immune = null;
     this._immuneLabel = null;
+    // OPT-15 V4：待机能量环呼吸句柄（对象池复用须 recycle 清理，防监听泄漏）
+    this._idleAura = null;
   }
 
   getColor() {
@@ -127,6 +129,14 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
       }
     } else {
       this.setScale(1, 1);
+    }
+
+    // OPT-15 V4：普通敌机待机能量环呼吸（精英已有 _eliteGlow 不再叠；kamikaze 高速冲脸无待机态不加；
+    // reduced/low 由 VFX.idleAura 内部短路 / qualityScale 门槛短路）。防御性清理防对象池复用残留。
+    if (this._idleAura) { this._idleAura.stop(); this._idleAura = null; }
+    if (!this.isElite && !PREFERS_REDUCED && (this.scene.qualityScale || 1) >= IDLE_AURA.minQuality
+        && this.typeKey !== 'kamikaze') {
+      this._idleAura = VFX.idleAura(this, this.getColor(), IDLE_AURA.enemy);
     }
 
     // B14 免疫标记展示（纯视觉静态文字，reduced-motion 无动画）：如「免疫火 / Immune: Fire」
@@ -604,6 +614,11 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     if (this._eliteGlow) {
       if (this._eliteGlow.active) this._eliteGlow.destroy();
       this._eliteGlow = null;
+    }
+    // OPT-15 V4：待机光环回收清理（stop 解绑 update 监听 + kill tween + destroy glow），防监听泄漏
+    if (this._idleAura) {
+      this._idleAura.stop();
+      this._idleAura = null;
     }
   }
 

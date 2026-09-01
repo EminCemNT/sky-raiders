@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { COLORS, ELEMENTS, GAME_WIDTH, LIGHTS, VFX_COLORS, EVENTS, EASE, AFTERGLOW } from '../config/GameConfig.js';
+import { COLORS, ELEMENTS, GAME_WIDTH, LIGHTS, VFX_COLORS, EVENTS, EASE, AFTERGLOW, GRAZE_SPARK, IDLE_AURA, WAVE_CLEAR } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 
 /**
@@ -39,6 +39,11 @@ const LOCAL_ILLUM_MAX = 3;   // 并发上限（验收 peak≤3）
 
 // OPT-14 B2：爆炸残像拖尾并发计数（QA 探针 _dynLight.afterglowActive 观测；reduced/low 不生成）
 let _afterglowActive = 0;    // 当前活跃残影 Image 数（每张 +1，onComplete/shutdown 各 -1）
+
+// OPT-15 V2/V3/V4：纯视觉计数（QA 探针 _dynLight 只读观测；append-only，不破坏既有探针断言）
+let _grazeSparkCount = 0;    // V2 累计擦弹火花发射次数（reduced 下恒 0）
+let _waveClearCount = 0;     // V3 累计波次清空庆祝次数（Boss 波不 +1）
+let _idleAuraActive = 0;     // V4 当前活跃待机光环数（回收/die 须归零，防对象池监听泄漏）
 
 /**
  * 通用爆炸：击杀敌机、道具引爆等。
@@ -326,10 +331,25 @@ export function createVfxPool(scene) {
     emitting: false,
   });
   hitSpark.setDepth(55);
+  // OPT-15 V2：擦弹火花 emitter（青白，offscreen 复用；emitting:false）
+  const grazeSpark = scene.add.particles(0, 0, 'particle_spark', {
+    speed: { min: GRAZE_SPARK.speedMin, max: GRAZE_SPARK.speedMax },
+    lifespan: GRAZE_SPARK.lifespan,
+    scale: { start: GRAZE_SPARK.scale, end: 0 },
+    alpha: { start: GRAZE_SPARK.alpha, end: 0 },
+    quantity: GRAZE_SPARK.quantity,
+    blendMode: 'ADD',
+    tint: GRAZE_SPARK.tint,
+    emitting: false,
+  });
+  grazeSpark.setDepth(GRAZE_SPARK.depth);
+  // 复用计数 / 最近单次粒子量 / 每帧并发 cap（QA 探针验证池化生效与画质档缩放）
+  grazeSpark.poolUseCount = 0; grazeSpark.lastQuantity = 0;
+  grazeSpark._burstFrame = -1; grazeSpark._burstCount = 0;
   // 复用计数 / 最近单次粒子量（QA 探针验证池化生效与画质档缩放）
   explosion.poolUseCount = 0; explosion.lastQuantity = 0;
   hitSpark.poolUseCount = 0; hitSpark.lastQuantity = 0;
-  return { explosion, hitSpark };
+  return { explosion, hitSpark, grazeSpark };
 }
 
 /**
@@ -376,6 +396,54 @@ export function poolSpark(scene, pool, x, y) {
   hs.poolUseCount = (hs.poolUseCount || 0) + 1;
   hs.lastQuantity = qty;
   hs.emitParticleAt(x, y, qty);
+}
+
+/**
+ * 池化擦弹火花（OPT-15 V2）：复用 createVfxPool 建的 grazeSpark emitter（emitParticleAt）。
+ * quantity 按画质档缩放；同帧并发 cap（maxPerFrame）防密集弹幕同帧多次擦弹迸发过量粒子。
+ * reduced-motion 下 createVfxPool 返回 null → 池内无 grazeSpark，此处直接 return。
+ */
+export function poolGrazeSpark(scene, pool, x, y) {
+  if (prefersReduced || !pool || !pool.grazeSpark) return;
+  const gs = pool.grazeSpark;
+  // 每帧并发 cap：密集弹幕同帧多次擦弹不迸发过量火花（如超载 5 连擦）
+  const frame = (scene.game && scene.game.loop) ? scene.game.loop.frame : -1;
+  if (frame === gs._burstFrame) {
+    gs._burstCount = (gs._burstCount || 0) + 1;
+    if (gs._burstCount > GRAZE_SPARK.maxPerFrame) return;
+  } else {
+    gs._burstFrame = frame; gs._burstCount = 1;
+  }
+  const qs = _qualityScale(scene);
+  const qty = Math.max(1, Math.floor(GRAZE_SPARK.quantity * qs));
+  gs.poolUseCount = (gs.poolUseCount || 0) + 1;
+  gs.lastQuantity = qty;
+  _grazeSparkCount++;
+  gs.emitParticleAt(x, y, qty);
+}
+
+/** 擦弹火花（V2）wrapper：池化优先；无池时静默 return（火花是增益不是必需，不降级 new emitter） */
+export function grazeSpark(scene, x, y) {
+  if (prefersReduced) return;
+  if (scene && scene.vfxPool) { poolGrazeSpark(scene, scene.vfxPool, x, y); return; }
+}
+
+/**
+ * 波次清空庆祝（OPT-15 V3）：一波全清时克制演出——1 圈主题色环 + 小型粒子爆点。
+ * 无横幅/无屏震/无定格/无 camera.flash；Boss 波不走 waiting 判定天然不触发。
+ * reduced-motion：仅静态环（shockwaveRing 内部已处理 reduced）；HUD 脉冲由 UIScene 处理。
+ */
+export function waveClearCelebrate(scene, x, y, accent) {
+  if (!scene) return;
+  _waveClearCount++;
+  const color = accent || 0x66ccff;
+  // 克制：1 圈主题色环（shockwaveRing 内部已处理 reduced → 静态）
+  shockwaveRing(scene, x, y, color, { radius: WAVE_CLEAR.ringRadius, duration: WAVE_CLEAR.ringMs, depth: 54 });
+  if (prefersReduced) return;
+  // 小型粒子爆点：复用 vfxPool.explosion emitter（poolExplode 已按画质档缩放 quantity、可换色）
+  if (scene.vfxPool) {
+    poolExplode(scene, scene.vfxPool, x, y, color, { scale: WAVE_CLEAR.burstScale });
+  }
 }
 
 /** 炸弹/星风暴：五层爆炸（全层）+ 屏震 + 闪光（reduced-motion 仅静态白闪） */
@@ -706,6 +774,55 @@ export function glowTarget(sprite, color, opts = {}) {
   return glow;
 }
 
+/**
+ * 待机能量环呼吸（OPT-15 V4）：glow_soft 贴目标下方一层，随目标移动/显隐，alpha+scale 缓慢呼吸。
+ * 每单位一条持久 tween（yoyo repeat -1）；返回可控句柄，stop() 用于对象池回收清理，杜绝监听泄漏。
+ * 只作用于独立 glow 子对象 → 与 _flinch/死亡演出/精英 _eliteGlow/Boss fxG 零冲突。
+ * @param {Phaser.GameObjects.Sprite} sprite
+ * @param {number} color
+ * @param {{radius?:number, alpha?:number, depthOff?:number, ms?:number, scalePulse?:number}} opts
+ * @returns {{glow: Phaser.GameObjects.Image, stop():void}|null} reduced/非法输入返回 null
+ */
+export function idleAura(sprite, color, opts = {}) {
+  if (!sprite || !sprite.scene || prefersReduced) return null;
+  const scene = sprite.scene;
+  const radius = opts.radius ?? 1.0;
+  const alpha = opts.alpha ?? 0.10;
+  const depthOff = opts.depthOff ?? -1;
+  const ms = opts.ms ?? 1500;
+  const scalePulse = opts.scalePulse ?? 0.12;
+  const glow = scene.add.image(sprite.x, sprite.y, 'glow_soft')
+    .setDepth(sprite.depth + depthOff)
+    .setAlpha(alpha)
+    .setTint(color)
+    .setBlendMode(Phaser.BlendModes.ADD)
+    .setScale(radius, radius);
+  _idleAuraActive++;
+  const sync = () => {
+    if (!glow.active) return;
+    glow.setPosition(sprite.x, sprite.y);
+    glow.setVisible(!!(sprite.active && sprite.visible));
+  };
+  scene.events.on('update', sync);
+  scene.tweens.add({
+    targets: glow,
+    alpha: { from: alpha, to: alpha + scalePulse * 0.5 },
+    scaleX: { from: radius, to: radius * (1 + scalePulse) },
+    scaleY: { from: radius, to: radius * (1 + scalePulse) },
+    duration: ms, yoyo: true, repeat: -1, ease: EASE.breathe,
+  });
+  let stopped = false;
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    scene.events.off('update', sync);
+    scene.tweens.killTweensOf(glow);
+    if (glow.active) glow.destroy();
+    _idleAuraActive = Math.max(0, _idleAuraActive - 1);
+  };
+  return { glow, stop };
+}
+
 // ─── P2⑤ 动态光影（轻量假光源：glow_soft + ADD，纯视觉零业务）──────────
 // 三组动态光：playerLight（玩家位置光源跟随）/ bossAmbient（Boss 战环境光变色）/
 //            localIllum（爆炸瞬间局部照亮）。全部走 LIGHTS 配置。
@@ -920,6 +1037,10 @@ export function installLightProbes(scene) {
         localPulseCap: LOCAL_ILLUM_MAX,
         // OPT-14 B2：爆炸残像拖尾当前活跃数（只读；QA 探针观测残影出现/衰减/销毁）
         afterglowActive: _afterglowActive,
+        // OPT-15 V2/V3/V4：纯视觉只读计数（append-only，不破坏既有探针断言）
+        grazeSparkCount: _grazeSparkCount,   // V2 累计擦弹火花发射次数（reduced 下恒 0）
+        waveClearCount: _waveClearCount,     // V3 累计波次清空庆祝次数（Boss 波不 +1）
+        idleAuraActive: _idleAuraActive,     // V4 当前活跃待机光环数（回收后应回落/归零）
       };
     },
   });

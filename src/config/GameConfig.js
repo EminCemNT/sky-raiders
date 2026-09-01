@@ -1249,3 +1249,76 @@ export const CODEX_DECOR = {
   frame_1: { price: 300 },
   frame_2: { price: 600 },
 };
+
+// ───────────────────────────────────────────────────────────────
+// OPT-15 V2：擦弹火花（graze 反馈 · 弹幕手感强化）
+//   擦弹成功时在擦弹点迸发一小簇青白火花（tint 0x66ffff 呼应擦弹环 0x33ffff）。
+//   纯视觉：只复用 vfxPool emitter（emitParticleAt），不碰 _grantGraze 数值结算。
+//   quantity 单次粒子量（high 档；×qualityScale 缩放）；maxPerFrame 同帧并发 cap（防连擦过量）；
+//   depth 55 与 hitSpark 同层，被 gameplay 层 60 覆盖其上的判定无冲突。
+// ───────────────────────────────────────────────────────────────
+export const GRAZE_SPARK = {
+  enabled: true,
+  quantity: 6,
+  maxPerFrame: 3,
+  tint: 0x66ffff,     // 青白（呼应擦弹环）
+  speedMin: 20, speedMax: 70,
+  lifespan: 160,
+  scale: 0.5,
+  alpha: 0.9,
+  depth: 55,
+};
+
+// ───────────────────────────────────────────────────────────────
+// OPT-15 V4：单位待机动效（敌机/Boss/僚机 · 能量环呼吸）
+//   每单位一条持久 tween（yoyo repeat -1），glow_soft + ADD 贴本体下方一层。
+//   minQuality 品质门槛：qualityScale < 0.6（low 档）不创建 aura；
+//   enemy/boss/wingman 各档参数（radius 半径 / alpha 起始透明度 / depthOff 相对本体深度偏移 /
+//   ms 呼吸周期 / scalePulse 缩放脉动幅度）。
+//   纯视觉：只作用于独立 glow 子对象，不碰本体 scale/alpha/rotation，与受击/死亡/精英 glow 零冲突。
+// ───────────────────────────────────────────────────────────────
+export const IDLE_AURA = {
+  minQuality: 0.6,      // qualityScale < 0.6（low 档）不创建
+  enemy:   { radius: 1.0, alpha: 0.10, depthOff: -1, ms: 1500, scalePulse: 0.12 },
+  boss:    { radius: 1.9, alpha: 0.10, depthOff: -2, ms: 2000, scalePulse: 0.08 },
+  wingman: { radius: 0.8, alpha: 0.14, depthOff: -1, ms: 1400, scalePulse: 0.15 },
+};
+
+// ───────────────────────────────────────────────────────────────
+// OPT-15 V3：波次清空庆祝（克制演出 · 区别于 Boss 战）
+//   一波全清时：玩家位置 1 圈主题色环 + 小型粒子爆点 + HUD 波次文字脉冲。
+//   ringRadius/ringMs 主题环尺寸时长；burstScale poolExplode 缩放（high≈11/mid≈8/low≈5 粒）；
+//   uiPulse HUD 波次文字脉冲开关。无横幅/无屏震/无定格/无 camera.flash。
+// ───────────────────────────────────────────────────────────────
+export const WAVE_CLEAR = {
+  ringRadius: 46,
+  ringMs: 340,
+  burstScale: 0.5,   // poolExplode scale：high≈11 粒 / mid≈8 / low≈5
+  uiPulse: true,     // HUD 波次文字脉冲开关
+};
+
+// ───────────────────────────────────────────────────────────────
+// OPT-15 V5：关卡环境叙事层（主题文字/环境徽记/进度叙事）
+//   左下角关卡主题文字 + 矢量盾徽 + 底部随波次推进的细进度线。全静态/事件驱动，零每帧成本。
+//   watermark 主题文字（alpha/size/depth）；emblem 盾徽（alpha/depth/size）；
+//   progress 进度线（y 屏底 / h 高 / bgAlpha 底色 / fillAlpha 主题色填充 / depth）。
+// ───────────────────────────────────────────────────────────────
+export const ENV_NARRATIVE = {
+  watermark: { alpha: 0.18, size: 12, depth: 4 },
+  emblem:    { alpha: 0.22, depth: 4, size: 12 },
+  progress:  { y: GAME_HEIGHT - 10, h: 2, bgAlpha: 0.06, fillAlpha: 0.35, depth: 4 },
+};
+
+// ───────────────────────────────────────────────────────────────
+// OPT-15 V7：暂停氛围（遮罩雾化/暗角加深/标题辉光）
+//   暂停时叠加暗角（vignette-perm 0.22↔0.30）+ 标题辉光（glow_soft 0.16↔0.26，ADD，scale 0.6）。
+//   fogAlpha/fogPulse/fogMs 暗角基础透明度/脉动幅度/周期；
+//   glowAlpha/glowPulse/glowMs 标题辉光基础透明度/脉动幅度/周期；glowScale 辉光缩放（512×0.6≈307px 覆盖标题区）。
+//   low/reduced 静态（不呼吸，仍叠加氛围）。
+// ───────────────────────────────────────────────────────────────
+export const PAUSE_ATMO = {
+  minQuality: 0.6,  // qualityScale < 0.6（low 档）静态不呼吸，省 tween 开销
+  fogAlpha: 0.22, fogPulse: 0.08, fogMs: 2000,
+  glowAlpha: 0.16, glowPulse: 0.10, glowMs: 2200,
+  glowScale: 0.6,   // glow_soft 512px × 0.6 ≈ 307px，覆盖标题区
+};

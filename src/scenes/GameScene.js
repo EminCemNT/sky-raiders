@@ -3,7 +3,7 @@ import {
   SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, COLORS, PLAYER, BULLET, LEVELS, BOSS_RUSH, SHIPS, ELEMENTS, WINGMAN,
   DIFFICULTIES, getDifficulty, POWERUP, GRAZE, OVERDRIVE, OVERCHARGE, FOCUS, bossRushScale, PERFORMANCE, POOL, COMBAT_PERF,
   EVENT_MODES, getCurrentEvent, MODULE_DROP_CHANCE, getShipSkins, TOWER, TOWER_BUFFS, LIGHTS, TRANSITION,
-  RELIEF, COMBO_BURST, ELEMENT_STORM, EASE,
+  RELIEF, COMBO_BURST, ELEMENT_STORM, EASE, ENV_NARRATIVE,
 } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
@@ -271,6 +271,9 @@ export default class GameScene extends Phaser.Scene {
       });
     }
     this.boss = null;
+    // OPT-15 V5：关卡环境叙事层（主题文字/环境徽记/进度线，全静态 + 事件驱动，零每帧成本）。
+    // 放在 waves 创建之后：初始进度 setRatio(wave1/total) 依赖 waves.currentWave（WaveSystem 构造即 startNextWave）。
+    this._buildEnvNarrative(theme);
 
     // 命中定格（hitStop）：大事件短暂冻结物理强化打击感（指针拖动玩家不受影响）
     this._hitStopMs = 0;
@@ -489,6 +492,53 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * OPT-15 V5：关卡环境叙事层（主题文字/环境徽记/进度线）。
+   * 全静态 / 事件驱动，零每帧成本：主题文字左下角低 alpha、矢量盾徽一次绘制、
+   * 底部细进度线由 WAVE_STARTED 事件驱动 setRatio(wave/total)。
+   * 无尽/活动（eventCfg）/BossRush 不显示进度线（无 total 语义）。
+   */
+  _buildEnvNarrative(theme) {
+    const acc = (theme && theme.accent) || 0x66ccff;
+    const lvl = this.level || {};
+    const isBossRush = this.mode === 'bossrush';
+    // 1) 主题文字（左下角，低 alpha；静态零成本）
+    const hex = `#${(acc & 0xffffff).toString(16).padStart(6, '0')}`;
+    const key = `levelName_${lvl.id}`;
+    const name = t(key) !== key ? t(key) : (lvl.name || '');
+    const watermark = this.add.text(14, GAME_HEIGHT - 26, name, {
+      fontFamily: 'sans-serif', fontSize: `${ENV_NARRATIVE.watermark.size}px`, fontStyle: '700', color: hex,
+    }).setOrigin(0, 1).setAlpha(ENV_NARRATIVE.watermark.alpha).setDepth(ENV_NARRATIVE.watermark.depth);
+    // 2) 环境徽记：矢量盾徽（Graphics 一次绘制，零每帧成本）
+    const emblem = this.add.graphics().setDepth(ENV_NARRATIVE.emblem.depth).setAlpha(ENV_NARRATIVE.emblem.alpha);
+    const ex = 30, ey = GAME_HEIGHT - 52, es = ENV_NARRATIVE.emblem.size;
+    emblem.lineStyle(1.5, acc, 1);
+    emblem.strokePoints([
+      { x: ex, y: ey - es }, { x: ex + es * 0.8, y: ey - es * 0.55 },
+      { x: ex + es * 0.8, y: ey + es * 0.35 }, { x: ex, y: ey + es },
+      { x: ex - es * 0.8, y: ey + es * 0.35 }, { x: ex - es * 0.8, y: ey - es * 0.55 },
+    ], true);
+    emblem.lineBetween(ex - es * 0.35, ey, ex + es * 0.35, ey);
+    // 3) 进度叙事：底部细进度线（事件驱动，非无尽/非活动/非 BossRush 显示——无 total 语义）
+    let progress = null;
+    if (!this.eventCfg && !isBossRush && !this.isTower) {
+      const y = ENV_NARRATIVE.progress.y;
+      const bar = this.add.graphics().setDepth(ENV_NARRATIVE.progress.depth);
+      const w = GAME_WIDTH - 32;
+      bar.fillStyle(0xffffff, ENV_NARRATIVE.progress.bgAlpha).fillRect(16, y, w, ENV_NARRATIVE.progress.h);
+      let _last = 0; // 最近一次 setRatio 值（QA 探针只读观测 fill 宽度/增长）
+      const setRatio = (r) => {
+        const rr = Phaser.Math.Clamp(r || 0, 0, 1);
+        _last = rr;
+        bar.fillStyle(acc, ENV_NARRATIVE.progress.fillAlpha).fillRect(16, y, Math.max(1, w * rr), ENV_NARRATIVE.progress.h);
+      };
+      progress = { setRatio, bar };
+      Object.defineProperty(progress, 'ratio', { configurable: true, get: () => _last });
+      if (this.waves) setRatio((this.waves.currentWave || 1) / (this.level.waves || 1));
+    }
+    this._envNarrative = { watermark, emblem, progress, accent: acc };
+  }
+
   bindEvents() {
     // P1 超载状态：得分 ×1.2 —— 采用"延迟结算"（主分照常累计 + 超载期间另计 bonus，由
     // _flushOverchargeBonus 在每帧/结算时并入）。避免即时乘分污染同帧连续擦弹的链式增量断言
@@ -594,6 +644,11 @@ export default class GameScene extends Phaser.Scene {
 
     // P1 留存·深空爬塔：普通波清空 → 弹 3 选 1 增益（Boss 波在 _onBossDefeated 分支处理）
     this._onWaveCleared = () => {
+      // OPT-15 V3：波次清空庆祝（克制演出：主题色环 + 小爆点，围绕玩家；Boss 波不走 waiting 判定天然不触发）
+      VFX.waveClearCelebrate(this,
+        this.player && this.player.active ? this.player.x : GAME_WIDTH / 2,
+        this.player && this.player.active ? this.player.y : GAME_HEIGHT / 2,
+        (this.level && this.level.theme && this.level.theme.accent) || 0x66ccff);
       if (this.isTower && !this.gameEnded) {
         const shown = this.showTowerBuffPanel();
         // 玩家已死等场景未弹面板：直接推进下一波，避免波次死锁
@@ -603,6 +658,14 @@ export default class GameScene extends Phaser.Scene {
       }
     };
     EventBus.on(EVENTS.WAVE_CLEARED, this._onWaveCleared);
+
+    // OPT-15 V5：波次开始 → 环境进度线 setRatio(wave/total)（事件驱动，零每帧扫描）
+    this._onWaveStartedEnv = (p) => {
+      if (this._envNarrative && this._envNarrative.progress && p && p.total) {
+        this._envNarrative.progress.setRatio(p.wave / p.total);
+      }
+    };
+    EventBus.on(EVENTS.WAVE_STARTED, this._onWaveStartedEnv);
 
     // P2 视觉四件套⑦：作为转场目标时淡入揭示（无过渡时为 no-op，零影响）
     transition.fadeIn(this);
@@ -1508,6 +1571,8 @@ export default class GameScene extends Phaser.Scene {
       if (spd < GRAZE.MIN_SPEED) return;                          // 静止/极慢弹不计
       if (b._grazedAt != null && (time - b._grazedAt) < GRAZE.RE_GRAZE_MS) return; // 同弹冷却
       b._grazedAt = time;
+      // OPT-15 V2：擦弹点火花（纯视觉，零数值；复用 vfxPool grazeSpark emitter）
+      VFX.grazeSpark(this, b.x, b.y);
       this._grantGraze(b.x, b.y);
     });
   }
@@ -2605,6 +2670,7 @@ export default class GameScene extends Phaser.Scene {
     EventBus.off(EVENTS.WINGMAN_COMBO, this._onWingmanCombo);
     EventBus.off(EVENTS.FOCUS_TOGGLE, this._onFocusToggle);
     EventBus.off(EVENTS.WAVE_CLEARED, this._onWaveCleared);
+    EventBus.off(EVENTS.WAVE_STARTED, this._onWaveStartedEnv);
     audio.unbindGameEvents();
     // 无尽看广告复活：清理面板并恢复物理（避免切场景残留冻结）
     if (this._adReviveOverlay) { this._adReviveOverlay.destroy(); this._adReviveOverlay = null; }

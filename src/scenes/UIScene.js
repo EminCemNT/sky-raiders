@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, LEVELS, WEAPONS, SHIPS, WINGMAN, PLAYER, EVENT_MODES, OVERCHARGE, PERFORMANCE, EASE, COMBO_BURST } from '../config/GameConfig.js';
+import { SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, LEVELS, WEAPONS, SHIPS, WINGMAN, PLAYER, EVENT_MODES, OVERCHARGE, PERFORMANCE, EASE, COMBO_BURST, PAUSE_ATMO } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
 import { t } from '../config/Locale.js';
@@ -258,6 +258,15 @@ export default class UIScene extends Phaser.Scene {
     const stageSub = this.mode === 'bossrush' ? t('stageSubRush')
       : (this._eventCfg ? t('stageSubEvent', { duration: this._eventCfg.duration }) : t('stageSubLevel', { level: lvl.id }));
     this.showStageBanner(stageName, stageSub);
+
+    // OPT-15 V7：暂停氛围只读测试钩子（QA 探针：暂停/恢复的 alpha 与呼吸状态；不影响玩法）
+    if (typeof window !== 'undefined') Object.defineProperty(window, '__PAUSE', {
+      configurable: true,
+      get: () => this._pauseAtmo ? {
+        paused: this._paused, fogAlpha: this._pauseAtmo.fog.alpha,
+        glowAlpha: this._pauseAtmo.glow.alpha, pulsing: !!this._pauseTweens,
+      } : { paused: this._paused, fogAlpha: 0, glowAlpha: 0, pulsing: false },
+    });
   }
 
   /** Phase C：关卡开场大字横幅（弹入 + 停留 + 淡出；reduced-motion 静态） */
@@ -423,15 +432,72 @@ export default class UIScene extends Phaser.Scene {
 
   togglePause() {
     if (this._paused) {
+      // OPT-15 V7：恢复即清（kill 两条呼吸 tween + 复位 alpha）
+      this._stopPausePulse();
       this.scene.resume(SCENES.GAME);
       audio.resumeBgm();
       this._paused = false;
       this.pauseOverlay.setVisible(false);
     } else {
+      // OPT-15 V7：暂停叠加氛围层（暗角加深 + 标题辉光；reduced/low 静态不呼吸）
+      this._ensurePauseAtmosphere();
+      this._startPausePulse();
       this.scene.pause(SCENES.GAME);
       audio.pauseBgm();
       this._paused = true;
       this.pauseOverlay.setVisible(true);
+    }
+  }
+
+  /**
+   * OPT-15 V7：懒创建暂停氛围层（fog 暗角 + glow 标题辉光）。
+   * vignette-perm 由 _buildFilmLayers → FilmFX.ensureVignetteTexture 首次生成；
+   * 暂停面板创建早于 film 层 → 首次暂停必然晚于 create，纹理必已存在；仍兜底生成防极端时序。
+   * fog/glow 插在 pauseOverlay 内：dim(0) 之上、标题之下（fog=1 / glow=2）。
+   */
+  _ensurePauseAtmosphere() {
+    if (this._pauseAtmo) return;
+    if (!this.textures.exists('vignette-perm')) {
+      const W = GAME_WIDTH, H = GAME_HEIGHT;
+      const ct = this.textures.createCanvas('vignette-perm', W, H);
+      const ctx = ct.getContext();
+      const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.34, W / 2, H / 2, Math.max(W, H) * 0.72);
+      g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.62, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.95)');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); ct.refresh();
+    }
+    const fog = this.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, 'vignette-perm')
+      .setAlpha(PAUSE_ATMO.fogAlpha);
+    const glow = this.add.image(GAME_WIDTH / 2, 300, 'glow_soft')
+      .setAlpha(PAUSE_ATMO.glowAlpha).setTint(THEME.titleColor)
+      .setBlendMode(Phaser.BlendModes.ADD).setScale(PAUSE_ATMO.glowScale);
+    this.pauseOverlay.add([fog, glow]);
+    // 顺序：index 0=dim 平遮罩，1=fog 暗角（叠在 dim 之上加深边缘），2=glow（在标题 pTitle 之前=其下）
+    this.pauseOverlay.moveTo(fog, 1);
+    this.pauseOverlay.moveTo(glow, 2);
+    this._pauseAtmo = { fog, glow, baseFog: PAUSE_ATMO.fogAlpha, baseGlow: PAUSE_ATMO.glowAlpha };
+  }
+
+  /** OPT-15 V7：暂停氛围呼吸（两条 tween；reduced-motion 或 low 档静态不呼吸，仍叠加氛围） */
+  _startPausePulse() {
+    if (!this._pauseAtmo) return;
+    if (PREFERS_REDUCED) return;
+    // low 档（qualityScale < 0.6）静态不呼吸（规格降级矩阵：high/mid 呼吸，low/reduced 静态）
+    if ((this.qualityScale ?? 1) < PAUSE_ATMO.minQuality) return;
+    const { fog, glow } = this._pauseAtmo;
+    this._pauseTweens = [
+      this.tweens.add({ targets: fog, alpha: this._pauseAtmo.baseFog + PAUSE_ATMO.fogPulse,
+        duration: PAUSE_ATMO.fogMs, yoyo: true, repeat: -1, ease: EASE.breathe }),
+      this.tweens.add({ targets: glow, alpha: this._pauseAtmo.baseGlow + PAUSE_ATMO.glowPulse,
+        duration: PAUSE_ATMO.glowMs, yoyo: true, repeat: -1, ease: EASE.breathe }),
+    ];
+  }
+
+  /** OPT-15 V7：恢复即清——kill 两条呼吸 tween + alpha 复位回 base */
+  _stopPausePulse() {
+    if (this._pauseTweens) { this._pauseTweens.forEach((tw) => tw && tw.stop()); this._pauseTweens = null; }
+    if (this._pauseAtmo) {
+      this._pauseAtmo.fog.setAlpha(this._pauseAtmo.baseFog);
+      this._pauseAtmo.glow.setAlpha(this._pauseAtmo.baseGlow);
     }
   }
 
@@ -482,6 +548,15 @@ export default class UIScene extends Phaser.Scene {
       this.flashCenter(`第 ${wave} 波`);
     };
     EventBus.on(EVENTS.WAVE_STARTED, this._onWave);
+
+    // OPT-15 V3：波次清空 HUD 微反馈（波次文字脉冲；reduced-motion 不脉冲，纯静态）
+    this._onWaveClearUi = () => {
+      if (PREFERS_REDUCED || !this.waveText || !this.waveText.active) return;
+      this.tweens.killTweensOf(this.waveText);
+      this.waveText.setScale(1);
+      this.tweens.add({ targets: this.waveText, scale: 1.12, duration: 140, yoyo: true, ease: EASE.feedback });
+    };
+    EventBus.on(EVENTS.WAVE_CLEARED, this._onWaveClearUi);
 
     // P0 留存-活动轮换：倒计时显示（金币冲刺/限时生存），接管 waveText
     this._onEventTimer = (e) => {
@@ -847,6 +922,8 @@ export default class UIScene extends Phaser.Scene {
   _buildFilmLayers() {
     const quality = (SaveManager.load().quality) || PERFORMANCE.defaultTier;
     this._filmGrainQuality = quality;
+    // OPT-15 V7：缓存画质档系数（high 1.0 / mid 0.7 / low 0.45），供暂停氛围 low 档静态判定
+    this.qualityScale = (PERFORMANCE.scale && PERFORMANCE.scale[quality]) || 1;
     this._filmCtl = applyFilmLayer(this, { key: 'combat', grainSpeed: true });
     if (this._filmCtl) {
       this._permVignette = this._filmCtl.vignette;
@@ -926,6 +1003,7 @@ export default class UIScene extends Phaser.Scene {
     EventBus.off(EVENTS.LIVES_CHANGED, this._onLives);
     EventBus.off(EVENTS.POWER_CHANGED, this._onPower);
     EventBus.off(EVENTS.WAVE_STARTED, this._onWave);
+    EventBus.off(EVENTS.WAVE_CLEARED, this._onWaveClearUi);
     EventBus.off(EVENTS.EVENT_TIMER, this._onEventTimer);
     EventBus.off(EVENTS.BOSS_SPAWNED, this._onBossSpawn);
     EventBus.off(EVENTS.BOSS_HP_CHANGED, this._onBossHp);

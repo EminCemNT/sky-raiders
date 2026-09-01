@@ -1,7 +1,12 @@
 import Phaser from 'phaser';
-import { GAME_WIDTH, GAME_HEIGHT, WINGMAN, EVENTS } from '../config/GameConfig.js';
+import { GAME_WIDTH, GAME_HEIGHT, WINGMAN, EVENTS, ELEMENTS, IDLE_AURA } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { audio } from '../systems/AudioSystem.js';
+import * as VFX from '../systems/VFX.js';
+
+// reduced-motion 偏好：僚机待机光环完全关闭（VFX.idleAura 首行也会 return null，双保险）
+const PREFERS_REDUCED = (typeof window !== 'undefined' && window.matchMedia
+  && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
 /**
  * 僚机实体（僚机 AI 进阶 第一/二版）
@@ -49,6 +54,9 @@ export default class Wingman extends Phaser.Physics.Arcade.Sprite {
     this.respawnAt = 0;
     this.fireCd = 0;                  // dt 累加（ms）
     this.dodgeVec = { x: 0, y: 0 };
+    // OPT-15 V4：待机能量环呼吸句柄 + 初始化（元素未定先用默认青白色；setElement 换色）
+    this._idleAura = null;
+    this._syncIdleAura();
   }
 
   /** 由 WingmanSystem 分配编队槽位 */
@@ -80,7 +88,24 @@ export default class Wingman extends Phaser.Physics.Arcade.Sprite {
   /** 由 WingmanSystem 注入玩家元素（成就 element_* 统计依赖它写进子弹） */
   setElement(el) {
     this.element = el || null;
+    // OPT-15 V4：换元素即换光环色（火橙/冰青/雷金；已创建只换 tint，未创建则按门槛创建）
+    this._syncIdleAura();
     return this;
+  }
+
+  /**
+   * OPT-15 V4：待机能量环呼吸同步（颜色随元素 / 缺失创建）。
+   * 击落/重生由 idleAura 内部 sync 自动显隐（die 置 active/visible=false、respawn 置回），无需改 die/respawn。
+   * reduced/low 不创建（PREFERS_REDUCED 短路 / qualityScale 门槛）。
+   */
+  _syncIdleAura() {
+    if (!this.scene || PREFERS_REDUCED) return;
+    const c = (ELEMENTS[this.element] && ELEMENTS[this.element].color) || 0x9ff0ff;
+    if (this._idleAura && this._idleAura.glow && this._idleAura.glow.active) {
+      this._idleAura.glow.setTint(c);          // 换元素即换光环色
+    } else if ((this.scene.qualityScale || 1) >= IDLE_AURA.minQuality) {
+      this._idleAura = VFX.idleAura(this, c, IDLE_AURA.wingman);
+    }
   }
 
   /** 每帧：编队跟随（含躲避偏移） + 开火节奏 */

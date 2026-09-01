@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GAME_WIDTH, GAME_HEIGHT, BULLET, EVENTS, COLORS, RAGE, EASE } from '../config/GameConfig.js';
+import { GAME_WIDTH, GAME_HEIGHT, BULLET, EVENTS, COLORS, RAGE, EASE, IDLE_AURA } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { audio } from '../systems/AudioSystem.js';
 import * as VFX from '../systems/VFX.js';
@@ -41,6 +41,13 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
     this.fxG = scene.add.graphics().setDepth(this.depth + 1);
     this._crackPaths = [];
     this._syncPhaseVisuals();
+
+    // OPT-15 V4：Boss 待机能量环呼吸（每关唯一，成本可忽略；low 档 qualityScale 门槛短路，
+    // reduced 由 VFX.idleAura 内部 return null）。_idleAura 在 die() 中 stop 清理。
+    this._idleAura = null;
+    if ((this.scene.qualityScale || 1) >= IDLE_AURA.minQuality) {
+      this._idleAura = VFX.idleAura(this, this.color, IDLE_AURA.boss);
+    }
 
     // P1 战斗扩展·可破坏护盾部位：独立小对象（跟随 Boss 移动，受弹 hit 判定独立，
     // 不触发 Boss 阶段）。config.shieldHp 0 = 无盾（如 sentinel）；盾破后 3s 无盾 +
@@ -686,6 +693,8 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
 
   die() {
     this._cancelSweep();  // A5：Boss 死亡即取消激光扫射递归链，杜绝死亡演出期间幽灵扫射
+    // OPT-15 V4：死亡演出前停止待机光环（解绑监听 + kill tween + destroy glow）
+    if (this._idleAura) { this._idleAura.stop(); this._idleAura = null; }
     EventBus.emit(EVENTS.BOSS_DEFEATED);
     // P0-2 爆炸三阶段分级：Boss 用最高档，与 BOSS_DEFEATED 同帧（定格同步由 GameScene 现有逻辑天然成立）
     audio.sfx('explosionBoss');
