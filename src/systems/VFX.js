@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { COLORS, ELEMENTS, GAME_WIDTH, LIGHTS, VFX_COLORS, EVENTS, EASE, AFTERGLOW, GRAZE_SPARK, IDLE_AURA, WAVE_CLEAR } from '../config/GameConfig.js';
+import { COLORS, ELEMENTS, GAME_WIDTH, LIGHTS, VFX_COLORS, EVENTS, EASE, AFTERGLOW, GRAZE_SPARK, IDLE_AURA, WAVE_CLEAR, TEXTURE_KEYS } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 
 /**
@@ -58,7 +58,7 @@ export function explosion(scene, x, y, color, scale = 1) {
   // 池化优先：GameScene 已建 vfxPool 时复用 offscreen emitter，避免每次 new emitter + delayedCall destroy（GC 抖动）
   if (scene && scene.vfxPool) { poolExplode(scene, scene.vfxPool, x, y, color, { scale }); return; }
   const qs = _qualityScale(scene);
-  const p = scene.add.particles(x, y, 'particle_dot', {
+  const p = scene.add.particles(x, y, TEXTURE_KEYS.particleDot, {
     speed: { min: 70 * scale, max: 280 * scale },
     lifespan: 550,
     scale: { start: 1.7 * scale, end: 0 },
@@ -124,7 +124,7 @@ export function debrisBurst(scene, x, y, color = VFX_COLORS.debris, count = 5, s
   if (prefersReduced) return null;
   const qs = _qualityScale(scene);
   const n = Math.max(1, Math.round(Phaser.Math.Between(4, 6) * (count / 5) * scale * qs));
-  const p = scene.add.particles(x, y, 'particle_dot', {
+  const p = scene.add.particles(x, y, TEXTURE_KEYS.particleDot, {
     speed: { min: 60 * scale, max: 180 * scale },
     lifespan: 650,
     scale: { start: 0.8 * scale, end: 0 },
@@ -144,7 +144,7 @@ export function debrisBurst(scene, x, y, color = VFX_COLORS.debris, count = 5, s
 export function smokePuff(scene, x, y, scale = 1) {
   if (prefersReduced) return null;
   const qs = _qualityScale(scene);
-  const p = scene.add.particles(x, y, 'particle_dot', {
+  const p = scene.add.particles(x, y, TEXTURE_KEYS.particleDot, {
     speed: { min: 20, max: 60 },
     lifespan: 900,
     scale: { start: 1.3 * scale, end: 0 },
@@ -246,7 +246,7 @@ function _spawnExplosionAfterglow(scene, x, y, color, tier) {
     const img = scene.add.image(
       x + Phaser.Math.Between(-8, 8),
       y + Phaser.Math.Between(-4, 6),
-      'glow_soft')
+      TEXTURE_KEYS.glowSoft)
       .setDepth(depth)                     // 在 explosion(50) 之下，作底光
       .setBlendMode(Phaser.BlendModes.ADD)
       .setTint(color)
@@ -279,7 +279,7 @@ export function hitSpark(scene, x, y) {
   // 池化优先：命中火花复用 offscreen emitter（消除高频命中下的 GC 抖动）
   if (scene && scene.vfxPool) { poolSpark(scene, scene.vfxPool, x, y); return; }
   const qs = _qualityScale(scene);
-  const p = scene.add.particles(x, y, 'particle_spark', {
+  const p = scene.add.particles(x, y, TEXTURE_KEYS.particleSpark, {
     speed: { min: 25, max: 100 },
     lifespan: 150,
     scale: { start: 0.7, end: 0 },
@@ -308,7 +308,7 @@ export function hitSpark(scene, x, y) {
  */
 export function createVfxPool(scene) {
   if (prefersReduced || !scene) return null;
-  const explosion = scene.add.particles(0, 0, 'particle_dot', {
+  const explosion = scene.add.particles(0, 0, TEXTURE_KEYS.particleDot, {
     speed: { min: 70, max: 280 },
     lifespan: 550,
     scale: { start: 1.7, end: 0 },
@@ -320,7 +320,7 @@ export function createVfxPool(scene) {
     emitting: false,
   });
   explosion.setDepth(50);
-  const hitSpark = scene.add.particles(0, 0, 'particle_spark', {
+  const hitSpark = scene.add.particles(0, 0, TEXTURE_KEYS.particleSpark, {
     speed: { min: 25, max: 100 },
     lifespan: 150,
     scale: { start: 0.7, end: 0 },
@@ -332,7 +332,7 @@ export function createVfxPool(scene) {
   });
   hitSpark.setDepth(55);
   // OPT-15 V2：擦弹火花 emitter（青白，offscreen 复用；emitting:false）
-  const grazeSpark = scene.add.particles(0, 0, 'particle_spark', {
+  const grazeSpark = scene.add.particles(0, 0, TEXTURE_KEYS.particleSpark, {
     speed: { min: GRAZE_SPARK.speedMin, max: GRAZE_SPARK.speedMax },
     lifespan: GRAZE_SPARK.lifespan,
     scale: { start: GRAZE_SPARK.scale, end: 0 },
@@ -545,7 +545,7 @@ export function bulletTrail(scene) {
 /** 敌弹光晕（红橙脉冲圆点，ADD 混合）。reduced-motion 下返回 null */
 export function enemyBulletGlow(scene) {
   if (prefersReduced) return null;
-  const e = scene.add.particles(0, 0, 'particle_dot', {
+  const e = scene.add.particles(0, 0, TEXTURE_KEYS.particleDot, {
     lifespan: 200,
     scale: { start: { min: 0.6, max: 1.1 }, end: 0 },
     alpha: { start: 0.7, end: 0 },
@@ -563,7 +563,7 @@ export function enemyBulletGlow(scene) {
  */
 export function enemyBulletTrail(scene) {
   if (prefersReduced) return null;
-  return scene.add.particles(0, 0, 'particle_dot', {
+  return scene.add.particles(0, 0, TEXTURE_KEYS.particleDot, {
     lifespan: 180,
     scale: { start: 0.7, end: 0 },
     alpha: { start: 0.55, end: 0 },
@@ -577,7 +577,7 @@ export function enemyBulletTrail(scene) {
 /** 机首瞬时发射闪光（星形火花粒子一次），激光束创建时调用 */
 export function laserMuzzleFlash(scene, x, y) {
   if (prefersReduced) return;
-  const p = scene.add.particles(x, y, 'particle_spark', {
+  const p = scene.add.particles(x, y, TEXTURE_KEYS.particleSpark, {
     speed: { min: 40, max: 120 },
     lifespan: 180,
     scale: { start: 1.2, end: 0 },
@@ -626,14 +626,14 @@ export function createBulletTrails(scene) {
  */
 export function warmup(scene) {
   if (prefersReduced) return;
-  const hs = scene.add.particles(-300, -300, 'particle_spark', {
+  const hs = scene.add.particles(-300, -300, TEXTURE_KEYS.particleSpark, {
     speed: { min: 25, max: 100 }, lifespan: 150, scale: { start: 0.7, end: 0 },
     alpha: { start: 0.9, end: 0 }, quantity: 6, blendMode: 'ADD',
     tint: VFX_COLORS.hit, emitting: false,
   });
   hs.setDepth(55);
   hs.explode(1);
-  const ex = scene.add.particles(-300, -300, 'particle_dot', {
+  const ex = scene.add.particles(-300, -300, TEXTURE_KEYS.particleDot, {
     speed: { min: 70, max: 280 }, lifespan: 550, scale: { start: 1.7, end: 0 },
     alpha: { start: 0.9, end: 0 }, quantity: 22, blendMode: 'ADD',
     tint: [COLORS.enemy, VFX_COLORS.hit[3], VFX_COLORS.flash, LOCAL_COLORS.emberOrange], gravityY: 18, emitting: false,
@@ -734,7 +734,7 @@ export function addKeyLight(scene, opts = {}) {
   const tint = opts.tint ?? VFX_COLORS.flash;
   // reduced-motion：alpha 减半，静态保留（无动效，仍是一层柔和顶光）
   const finalAlpha = prefersReduced ? alpha * 0.5 : alpha;
-  return scene.add.image(GAME_WIDTH / 2, 0, 'glow_soft')
+  return scene.add.image(GAME_WIDTH / 2, 0, TEXTURE_KEYS.glowSoft)
     .setOrigin(0.5, 0.5)                       // 中心贴顶：亮心在 y=0（屏顶），下半柔和外缘向下淡出
     .setDepth(depth)
     .setAlpha(finalAlpha)
@@ -756,7 +756,7 @@ export function glowTarget(sprite, color, opts = {}) {
   const alpha = opts.alpha ?? 0.35;
   const depthOff = opts.depth ?? -1;
   const scene = sprite.scene;
-  const glow = scene.add.image(sprite.x, sprite.y, 'glow_soft')
+  const glow = scene.add.image(sprite.x, sprite.y, TEXTURE_KEYS.glowSoft)
     .setDepth(sprite.depth + depthOff)
     .setAlpha(alpha)
     .setTint(color)
@@ -791,7 +791,7 @@ export function idleAura(sprite, color, opts = {}) {
   const depthOff = opts.depthOff ?? -1;
   const ms = opts.ms ?? 1500;
   const scalePulse = opts.scalePulse ?? 0.12;
-  const glow = scene.add.image(sprite.x, sprite.y, 'glow_soft')
+  const glow = scene.add.image(sprite.x, sprite.y, TEXTURE_KEYS.glowSoft)
     .setDepth(sprite.depth + depthOff)
     .setAlpha(alpha)
     .setTint(color)
@@ -845,7 +845,7 @@ function _lightTier(scene) {
 
 /** 生成柔光 Image（glow_soft + ADD），返回 image */
 function _softGlow(scene, x, y, radius, alpha, tint, depth) {
-  return scene.add.image(x, y, 'glow_soft')
+  return scene.add.image(x, y, TEXTURE_KEYS.glowSoft)
     .setDepth(depth)
     .setAlpha(alpha)
     .setTint(tint)
@@ -1091,7 +1091,7 @@ export function createResiduePool(scene) {
   //  原 900-1400ms 在低帧率/慢放环境余量不足（20 连杀末杀残留 >4.2s 仍存活 → final≠0）。
   let ember = null;
   if (caps.ember > 0) {
-    ember = scene.add.particles(0, 0, 'particle_dot', {
+    ember = scene.add.particles(0, 0, TEXTURE_KEYS.particleDot, {
       maxParticles: caps.ember,
       lifespan: { min: 600, max: 1000 },
       speedY: { min: -42, max: -12 },
@@ -1107,7 +1107,7 @@ export function createResiduePool(scene) {
   // ⑥-1：lifespan 缩短（1500-2200ms）同上（原 2200-3200ms 慢放时 >4.2s 验收）
   let smoke = null;
   if (caps.smoke > 0) {
-    smoke = scene.add.particles(0, 0, 'particle_dot', {
+    smoke = scene.add.particles(0, 0, TEXTURE_KEYS.particleDot, {
       maxParticles: caps.smoke,
       lifespan: { min: 1500, max: 2200 },
       speedY: { min: -26, max: -8 },

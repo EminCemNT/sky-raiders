@@ -29,3 +29,8 @@ qa_probes/_final.txt
 
 # 发布包（构建产物，按 DISTRIBUTION.md 约定不进 git；d89b7fc 恢复对象库时误 add，8529f28 之后移除）
 sky-raiders-web.zip
+
+# OPT-16 T8 仓库卫生（append-only）：临时文档/差异报告/临时文件统一忽略
+docs/_*.md
+qa_probes/*_diff_*.txt
+*.tmp

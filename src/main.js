@@ -8,6 +8,7 @@ import UIScene from './scenes/UIScene.js';
 import ResultScene from './scenes/ResultScene.js';
 import { TransitionScene } from './systems/TransitionManager.js';
 import { SaveManager } from './utils/SaveManager.js';
+import { EventBus } from './utils/EventBus.js';
 import { initLocale } from './config/Locale.js';
 
 // P1 表现工程·i18n：启动时按存档语言初始化（默认 zh 保持既有中文零回归）
@@ -51,6 +52,42 @@ const game = new Phaser.Game(config);
 // 暴露给控制台方便调试（生产可移除）
 window.__SKY__ = game;
 window.__SAVE = SaveManager;
+
+// OPT-16 T9 测试钩子规范化：window.__PROBE 只读契约（append-only，只读观测监听计数）。
+// 探针读监听数不增长用：eventBus = EventBus 全量监听数；sceneUpdate = GameScene 'update' 监听数。
+Object.defineProperty(window, '__PROBE', {
+  configurable: true,
+  get() {
+    // eventemitter3 内部：this._events = { [eventName]: fn | fn[] }；遍历求和得到全量监听数
+    let eb = null;
+    if (typeof EventBus.listenerCount === 'function') {
+      const ev = EventBus._events;
+      if (ev && typeof ev === 'object') {
+        let total = 0;
+        for (const k in ev) {
+          if (Object.prototype.hasOwnProperty.call(ev, k)) {
+            const v = ev[k];
+            total += Array.isArray(v) ? v.length : 1;
+          }
+        }
+        eb = total;
+      } else {
+        eb = EventBus.listenerCount();
+      }
+    }
+    const g = window.__SKY__;
+    let sceneUpdate = null;
+    let sceneListeners = null;
+    if (g && g.scene) {
+      const sc = g.scene.getScene('GameScene');
+      if (sc && sc.events) {
+        sceneUpdate = (typeof sc.events.listenerCount === 'function') ? sc.events.listenerCount('update') : null;
+        sceneListeners = (typeof sc.events.listenerCount === 'function') ? sc.events.listenerCount() : null;
+      }
+    }
+    return { eventBus: eb, sceneUpdate, sceneListeners };
+  },
+});
 
 // P0 技术品质：生产环境注册 Service Worker（离线缓存，缓存优先）。
 // 仅 production 注册 —— dev 不注册，避免 SW 缓存干扰开发调试（改代码不生效）。

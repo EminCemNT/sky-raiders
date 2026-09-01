@@ -3,7 +3,7 @@ import {
   SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, COLORS, PLAYER, BULLET, LEVELS, BOSS_RUSH, SHIPS, ELEMENTS, WINGMAN,
   DIFFICULTIES, getDifficulty, POWERUP, GRAZE, OVERDRIVE, OVERCHARGE, FOCUS, bossRushScale, PERFORMANCE, POOL, COMBAT_PERF,
   EVENT_MODES, getCurrentEvent, MODULE_DROP_CHANCE, getShipSkins, TOWER, TOWER_BUFFS, LIGHTS, TRANSITION,
-  RELIEF, COMBO_BURST, ELEMENT_STORM, EASE, ENV_NARRATIVE,
+  RELIEF, COMBO_BURST, ELEMENT_STORM, EASE, ENV_NARRATIVE, TEXTURE_KEYS,
 } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
@@ -309,7 +309,7 @@ export default class GameScene extends Phaser.Scene {
     // 玩家弹柔光：capped 池复用（别滥用），由 update 每帧映射到活跃弹；克制到"几乎不可见的辉光"
     this._bulletGlowPool = [];
     for (let i = 0; i < 10; i++) {
-      this._bulletGlowPool.push(this.add.image(0, 0, 'glow_soft')
+      this._bulletGlowPool.push(this.add.image(0, 0, TEXTURE_KEYS.glowSoft)
         .setDepth(17).setAlpha(0.10).setTint(0x8fdcff)
         .setBlendMode(Phaser.BlendModes.ADD).setScale(0.07).setVisible(false));
     }
@@ -372,6 +372,13 @@ export default class GameScene extends Phaser.Scene {
 
     // 调试钩子（供自动化真测驱动场景状态；不影响玩法）
     if (typeof window !== 'undefined') { window.__SKY = this; window.__GAME = this.game; window.__ELEMENT_REACTION = this.elementReaction; }
+
+    // OPT-16 T9 测试钩子规范化：game._probe 只读契约（T3 遍历计数 / T10 预填耗时，append-only）。
+    this._bulletLoopCount = 0;
+    Object.defineProperty(this.game, '_probe', {
+      configurable: true,
+      get: () => ({ bulletLoopCount: this._bulletLoopCount || 0, prewarmMs: this._prewarmMs || 0 }),
+    });
 
     // 场景关闭时清理事件
     this.events.once('shutdown', () => this.cleanup());
@@ -780,7 +787,7 @@ export default class GameScene extends Phaser.Scene {
         if (this.bulletTrails) {
           this.playerBullets.children.each((b) => {
             if (!b.active || b.isBeam) return;
-            const key = b.texture.key.replace('bullet_', '');
+            const key = b.texture.key.replace(TEXTURE_KEYS.bulletPrefix, '');
             const e = this.bulletTrails[key];
             if (e) e.emitParticleAt(b.x, b.y + b.height * 0.4);
           });
@@ -2329,7 +2336,7 @@ export default class GameScene extends Phaser.Scene {
 
   /** 星风暴视觉：多发星弹横扫 + 粒子爆发 */
   spawnStarstormVisual() {
-    const p = this.add.particles(this.player.x, this.player.y, 'particle_dot', {
+    const p = this.add.particles(this.player.x, this.player.y, TEXTURE_KEYS.particleDot, {
       speed: { min: 200, max: 520 },
       lifespan: 700,
       scale: { start: 2.4, end: 0 },

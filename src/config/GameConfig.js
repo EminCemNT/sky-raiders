@@ -1322,3 +1322,65 @@ export const PAUSE_ATMO = {
   glowAlpha: 0.16, glowPulse: 0.10, glowMs: 2200,
   glowScale: 0.6,   // glow_soft 512px × 0.6 ≈ 307px，覆盖标题区
 };
+
+// ───────────────────────────────────────────────────────────────
+// OPT-16 T6：事件/键名契约审计（append-only，纯引用收口，值=字符串原值）
+//   TEXTURE_KEYS  高复用纹理 key 常量（VFX/GameScene 改引用，值不变）
+//   EVENT_CONTRACT 既有自定义事件名登记表（供审计对照，非运行时必需）
+// ───────────────────────────────────────────────────────────────
+export const TEXTURE_KEYS = {
+  glowSoft: 'glow_soft',
+  particleSpark: 'particle_spark',
+  particleDot: 'particle_dot',
+  vignettePerm: 'vignette-perm',
+  bulletPrefix: 'bullet_',
+};
+
+export const EVENT_CONTRACT = {
+  // 既有自定义事件名登记（值=EVENTS.* 字符串原值；键=EVENTS 常量名，供审计对照）
+  SCORE_CHANGED: 'score-changed',
+  HP_CHANGED: 'hp-changed',
+  ENERGY_CHANGED: 'energy-changed',
+  COMBO_CHANGED: 'combo-changed',
+  WAVE_STARTED: 'wave-started',
+  WAVE_CLEARED: 'wave-cleared',
+  BOSS_SPAWNED: 'boss-spawned',
+  BOSS_HP_CHANGED: 'boss-hp-changed',
+  BOSS_DEFEATED: 'boss-defeated',
+  BOSS_PHASE: 'boss-phase',
+  LEVEL_CLEARED: 'level-cleared',
+  POWERUP_COLLECTED: 'powerup-collected',
+  COIN_COLLECTED: 'coin-collected',
+  PLAYER_HIT: 'player-hit',
+  PLAYER_DIED: 'player-died',
+  LIVES_CHANGED: 'lives-changed',
+  POWER_CHANGED: 'power-changed',
+  GAME_OVER: 'game-over',
+  USE_BOMB: 'use-bomb',
+  USE_SUPER: 'use-super',
+  SHIELD_CHANGED: 'shield-changed',
+  MAGNET_CHANGED: 'magnet-changed',
+  FLOAT_SCORE: 'float-score',
+  ACHIEVEMENT_UNLOCKED: 'achievement-unlocked',
+  WEAPON_CHANGED: 'weapon-changed',
+  WINGMAN_DESTROYED: 'wingman-destroyed',
+  WINGMAN_RESPAWNED: 'wingman-respawned',
+  WINGMAN_COMBO: 'wingman-combo',
+  WINGMAN_STATUS: 'wingman-status',
+  ELEMENT_REACTION: 'element-reaction',
+  ELEMENT_CHANGED: 'element-changed',
+  GRAZE_CHANGED: 'graze-changed',
+  USE_SKILL: 'use-skill',
+  SKILL_SWITCHED: 'skill-switched',
+  OVERDRIVE_STATE: 'overdrive-state',
+  EVENT_TIMER: 'event-timer',
+  OVERCHARGE_STATE: 'overcharge-state',
+  FOCUS_TOGGLE: 'focus-toggle',
+  HUD_SCORE: '__hud_score',
+  HUD_BOMBS: '__hud_bombs',
+  SAVE_FAILED: '__save_failed',
+  BURST_CHANGED: '__burst_changed',
+  BURST_ACTIVATED: '__burst_activated',
+  USE_BURST: 'use-burst',
+  MUTATION_CHANGED: '__mutation_changed',
+};
