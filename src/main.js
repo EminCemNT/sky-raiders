@@ -10,9 +10,14 @@ import { TransitionScene } from './systems/TransitionManager.js';
 import { SaveManager } from './utils/SaveManager.js';
 import { EventBus } from './utils/EventBus.js';
 import { initLocale } from './config/Locale.js';
+import { installSanitizer } from './utils/SaveSanitizer.js';
 
 // P1 表现工程·i18n：启动时按存档语言初始化（默认 zh 保持既有中文零回归）
 initLocale(SaveManager.load().lang || 'zh');
+
+// OPT-16 T1/T2 存档钳位统一 + 损坏分级自愈：启动一次性清洗（SaveManager.js 零改动，
+// 只调 load()/save() 公开 API；有越界/非法值才写盘，正常存档零改动）。
+installSanitizer();
 
 /**
  * 游戏入口：创建 Phaser.Game 实例。

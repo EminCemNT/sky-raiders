@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, LEVELS, WEAPONS, SHIPS, WINGMAN, PLAYER, EVENT_MODES, OVERCHARGE, PERFORMANCE, EASE, COMBO_BURST, PAUSE_ATMO } from '../config/GameConfig.js';
+import { SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, LEVELS, SHIPS, WINGMAN, PLAYER, EVENT_MODES, OVERCHARGE, PERFORMANCE, EASE, COMBO_BURST, PAUSE_ATMO, MAGIC } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
 import { t } from '../config/Locale.js';
@@ -11,6 +11,9 @@ import { applyFilmLayer } from '../utils/FilmFX.js';
 
 const PREFERS_REDUCED = (typeof window !== 'undefined' && window.matchMedia
   && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+// OPT-16 T5：武器 id → Locale 词条 key（zh 值 = WEAPONS[].short，en 由 Locale 提供）
+const WEAPON_NAME_KEY = { pulse: 'weapon_pulse', missile: 'weapon_missile', laser: 'weapon_laser', bomb: 'weapon_bomb' };
 
 /**
  * UIScene：HUD 叠层，与 GameScene 并行运行。
@@ -59,34 +62,34 @@ export default class UIScene extends Phaser.Scene {
     }).setOrigin(1, 0).setDepth(100);
 
     // 剩余命数（P1 命数复活：数字指示，右上角）
-    this.livesText = this.add.text(HUD_RIGHT, 64, `命 ×${d.lives != null ? d.lives : PLAYER.START_LIVES}`, {
+    this.livesText = this.add.text(HUD_RIGHT, MAGIC.hudLivesY, t('hud_lives', { n: d.lives != null ? d.lives : PLAYER.START_LIVES }), {
       fontFamily: THEME.fontFamily, fontSize: '15px', fontStyle: '700', color: THEME.textSuccess,
     }).setOrigin(1, 0).setDepth(100);
 
     // 局内火力(P)等级指示（P1：拾取 P +1 / 受击 -1，右上角，金色）
-    this.powerText = this.add.text(HUD_RIGHT, 84, '火力 Lv0', {
+    this.powerText = this.add.text(HUD_RIGHT, MAGIC.hudPowerY, t('hud_power', { n: 0 }), {
       fontFamily: THEME.fontFamily, fontSize: '15px', fontStyle: '700', color: THEME.textGold,
     }).setOrigin(1, 0).setDepth(100);
 
     // 玩家元素指示（元素核心轮换用，最小指示：右上角一行彩色文字，无元素时隐藏）
-    this.elementText = this.add.text(HUD_RIGHT, 104, '', {
+    this.elementText = this.add.text(HUD_RIGHT, MAGIC.hudElementY, '', {
       fontFamily: THEME.fontFamily, fontSize: '14px', fontStyle: '700', color: THEME.textCyan,
     }).setOrigin(1, 0).setDepth(100).setVisible(false);
 
     // 擦弹计数（P2）：右侧信息列追加一行，监听 GRAZE_CHANGED
-    this.grazeText = this.add.text(HUD_RIGHT, 124, '擦弹 0', {
+    this.grazeText = this.add.text(HUD_RIGHT, MAGIC.hudGrazeY, t('hud_graze', { n: 0 }), {
       fontFamily: THEME.fontFamily, fontSize: '14px', fontStyle: '700', color: THEME.textCyan,
     }).setOrigin(1, 0).setDepth(100);
 
     // HP 条（圆角发光）
     this.hpBar = new NeonBar(this, 16, 64, 180, 14, { color: 0x33dd88 });
-    this.hpText = this.add.text(204, 64, '', {
+    this.hpText = this.add.text(MAGIC.hudEnergyX, 64, '', {
       fontFamily: THEME.fontFamily, fontSize: '13px', color: THEME.textMuted,
     }).setOrigin(0, 0.5).setDepth(101);
 
     // 能量槽（0~100%，充满高亮）
     this.energyBar = new NeonBar(this, 16, 86, 180, 12, { color: 0xb98bff });
-    this.energyText = this.add.text(204, 86, '能量 0%', {
+    this.energyText = this.add.text(MAGIC.hudEnergyX, 86, t('hud_energy', { n: 0 }), {
       fontFamily: THEME.fontFamily, fontSize: '13px', color: THEME.textMint,
     }).setOrigin(0, 0.5).setDepth(101);
 
@@ -161,7 +164,7 @@ export default class UIScene extends Phaser.Scene {
     // 武器指示器（B/C 武器系统）
     this._weaponName = 'pulse';
     this._weaponUntilTime = 0;
-    this.weaponText = this.add.text(16, 124, '主炮 · 脉冲', {
+    this.weaponText = this.add.text(16, 124, t('hud_weaponMain', { w: t('weapon_pulse') }), {
       fontFamily: THEME.fontFamily, fontSize: '12px', color: THEME.textCyan,
     }).setDepth(101);
 
@@ -352,7 +355,7 @@ export default class UIScene extends Phaser.Scene {
       } else {
         this.wmFocus.setVisible(false);
       }
-      let txt = `Lv${s.weaponLv} · ${s.count}架 · 协同×${s.comboMul ? s.comboMul.toFixed(2) : '1.00'}`;
+      let txt = t('wingmanStatus', { l: s.weaponLv, count: s.count, mul: s.comboMul ? s.comboMul.toFixed(2) : '1.00' });
       if (s.focus && s.focus.active) txt += t('uiFocusOn');
       this.wmCountText.setText(txt);
     };
@@ -423,8 +426,8 @@ export default class UIScene extends Phaser.Scene {
   /** 渲染玩家元素指示（元素核心轮换用）：无元素隐藏，有元素显示彩色「元素 · X」 */
   _renderElement(el) {
     if (!this.elementText) return;
-    const INFO = { fire: ['火', '#ff7a3a'], ice: ['冰', '#6fd6ff'], thunder: ['雷', '#ffe14a'] };    if (el && INFO[el]) {
-      this.elementText.setText(`元素 · ${INFO[el][0]}`).setColor(INFO[el][1]).setVisible(true);
+    const INFO = { fire: [t('elemFire'), '#ff7a3a'], ice: [t('elemIce'), '#6fd6ff'], thunder: [t('elemThunder'), '#ffe14a'] };    if (el && INFO[el]) {
+      this.elementText.setText(t('hud_element', { e: INFO[el][0] })).setColor(INFO[el][1]).setVisible(true);
     } else {
       this.elementText.setVisible(false);
     }
@@ -533,19 +536,19 @@ export default class UIScene extends Phaser.Scene {
     EventBus.on(EVENTS.HUD_BOMBS, this._onBombs);
 
     this._onLives = (n) => {
-      if (this.livesText) this.livesText.setText(`命 ×${n}`);
+      if (this.livesText) this.livesText.setText(t('hud_lives', { n }));
     };
     EventBus.on(EVENTS.LIVES_CHANGED, this._onLives);
 
     this._onPower = (n) => {
-      if (this.powerText) this.powerText.setText(`火力 Lv${n}`);
+      if (this.powerText) this.powerText.setText(t('hud_power', { n }));
     };
     EventBus.on(EVENTS.POWER_CHANGED, this._onPower);
 
     this._onWave = ({ wave, total, endless }) => {
       if (this._eventMode) return; // 活动模式：波次文本由 EVENT_TIMER 倒计时接管
-      if (this.waveText) this.waveText.setText(endless ? `第 ${wave} 波 · 无尽` : `第 ${wave}/${total} 波`);
-      this.flashCenter(`第 ${wave} 波`);
+      if (this.waveText) this.waveText.setText(endless ? t('hudWaveEndless', { wave }) : t('hudWaveTotal', { wave, total }));
+      this.flashCenter(t('hudWave', { wave }));
     };
     EventBus.on(EVENTS.WAVE_STARTED, this._onWave);
 
@@ -561,7 +564,8 @@ export default class UIScene extends Phaser.Scene {
     // P0 留存-活动轮换：倒计时显示（金币冲刺/限时生存），接管 waveText
     this._onEventTimer = (e) => {
       if (!e) return;
-      if (this.waveText) this.waveText.setText(`${e.name} ${e.left}s`);
+      const evtName = (t(`eventName_${this.mode}`) !== `eventName_${this.mode}`) ? t(`eventName_${this.mode}`) : (e.name || '');
+      if (this.waveText) this.waveText.setText(`${evtName} ${e.left}s`);
     };
     EventBus.on(EVENTS.EVENT_TIMER, this._onEventTimer);
 
@@ -627,7 +631,7 @@ export default class UIScene extends Phaser.Scene {
         return;
       }
       // 每次连击变化都更新文本 + 档位变色（combo<20 青 / 20~39 金 / ≥40 红）
-      this.comboText.setText(`连击 ×${combo}\n×${(mult || 1).toFixed(1)}`);
+      this.comboText.setText(t('hudCombo', { combo, mult: (mult || 1).toFixed(1) }));
       this.comboText.setColor(combo >= 40 ? THEME.textRed : combo >= 20 ? THEME.textGold : THEME.titleColor);
       // combo>1 即立即显示（优先于频控，保证断连后 120ms 内重新击杀也能立即显示）
       this.comboText.setVisible(true);
@@ -655,17 +659,17 @@ export default class UIScene extends Phaser.Scene {
       const isPerm = !dur || dur <= 0;   // 0 / 缺省 = 常驻（C2 绑定武器）
       this._weaponUntilTime = isPerm ? 0 : this.time.now + dur;
       if (this.weaponText) {
-        const short = (WEAPONS[w] && WEAPONS[w].short) || '武器';
+        const wName = t(WEAPON_NAME_KEY[w] || 'weaponFallback');
         this.weaponText.setText(w === 'pulse'
-          ? '主炮 · 脉冲'
-          : (isPerm ? `武器 · ${short}` : `武器 · ${short} ${Math.ceil(dur / 1000)}s`));
+          ? t('hud_weaponMain', { w: wName })
+          : (isPerm ? t('hud_weapon', { w: wName }) : t('hud_weaponCount', { w: wName, n: Math.ceil(dur / 1000) })));
       }
     };
     EventBus.on(EVENTS.WEAPON_CHANGED, this._onWeapon);
 
     // P2 擦弹计数：右上角「擦弹 N」（payload = { count, chain }）
     this._onGraze = (p) => {
-      if (this.grazeText) this.grazeText.setText(`擦弹 ${(p && p.count) || 0}`);
+      if (this.grazeText) this.grazeText.setText(t('hud_graze', { n: (p && p.count) || 0 }));
     };
     EventBus.on(EVENTS.GRAZE_CHANGED, this._onGraze);
 
@@ -675,8 +679,9 @@ export default class UIScene extends Phaser.Scene {
       if (!id || !SKILLS[id]) return;
       this._skillName = id;
       const def = SKILLS[id];
+      const label = (t(`skill_${id}`) !== `skill_${id}`) ? t(`skill_${id}`) : (def ? def.name : id);
       if (this.skill && this.skill.label) {
-        this.skill.label.setText(def ? def.name : id).setColor(THEME.white).setFontStyle('normal');
+        this.skill.label.setText(label).setColor(THEME.white).setFontStyle('normal');
       }
     };
     EventBus.on(EVENTS.SKILL_SWITCHED, this._onSkillSwitched);
@@ -734,8 +739,8 @@ export default class UIScene extends Phaser.Scene {
         const total = Math.max(p / (cfg.P_STACK || 3), g / (cfg.GRAZE_STACK || 5));
         if (total > 0) {
           this.ocBg.setVisible(true); this.ocFill.setVisible(true);
-          this.ocLabel.setVisible(true).setText(`超载 ${Math.min(100, Math.round(total * 100))}%`).setColor(THEME.textCyan);
-          this.ocText.setVisible(true).setText(`${p}P ${g}擦`);
+          this.ocLabel.setVisible(true).setText(t('overchargePct', { n: Math.min(100, Math.round(total * 100)) })).setColor(THEME.textCyan);
+          this.ocText.setVisible(true).setText(t('hudGrazeUnits', { p, g }));
           this._ocActiveUntil = 0;
         } else {
           this.ocBg.setVisible(false); this.ocFill.setVisible(false);
@@ -819,16 +824,18 @@ export default class UIScene extends Phaser.Scene {
     if (this.skill && this.skill.label) {
       if (this._overdriveUntil && this._overdriveUntil > 0) {
         const left = Math.max(0, Math.ceil((this._overdriveUntil - this.time.now) / 1000));
-        this.skill.label.setText(`过载 ${left}s`).setColor(THEME.textGold).setFontStyle('700');
+        this.skill.label.setText(t('overdriveS', { n: left })).setColor(THEME.textGold).setFontStyle('700');
       } else if (this._skillName) {
         const def = SKILLS[this._skillName] || SKILLS[DEFAULT_SKILL];
-        this.skill.label.setText(def ? def.name : this._skillName).setColor(THEME.white).setFontStyle('normal');
+        const sk = this._skillName;
+        const label = (t(`skill_${sk}`) !== `skill_${sk}`) ? t(`skill_${sk}`) : (def ? def.name : sk);
+        this.skill.label.setText(label).setColor(THEME.white).setFontStyle('normal');
       }
     }
     if (this._weaponName && this._weaponName !== 'pulse' && this.weaponText && this._weaponUntilTime > 0) {
-      const short = (WEAPONS[this._weaponName] && WEAPONS[this._weaponName].short) || '武器';
+      const wName = t(WEAPON_NAME_KEY[this._weaponName] || 'weaponFallback');
       const left = Math.max(0, Math.ceil((this._weaponUntilTime - this.time.now) / 1000));
-      this.weaponText.setText(`武器 · ${short} ${left}s`);
+      this.weaponText.setText(t('hud_weaponCount', { w: wName, n: left }));
     }
     // P1-5 低血量暗角脉动（心跳感）；reduced-motion 用静态基线
     if (this._lowHpVignette) {
@@ -865,7 +872,7 @@ export default class UIScene extends Phaser.Scene {
       100, Math.round(ratio * 100),
     );
     this.energyBar.setRatio(ratio, Phaser.Display.Color.GetColor(c.r, c.g, c.b));
-    if (this.energyText) this.energyText.setText(`能量 ${Math.round(ratio * 100)}%`);
+    if (this.energyText) this.energyText.setText(t('hud_energy', { n: Math.round(ratio * 100) }));
     if (this.skill && this.skillReady !== full) {
       this.skillReady = full;
       if (full) {
@@ -1024,5 +1031,6 @@ export default class UIScene extends Phaser.Scene {
     EventBus.off(EVENTS.OVERCHARGE_STATE, this._onOverchargeState);
     EventBus.off(EVENTS.BURST_CHANGED, this._onBurstChanged);
     EventBus.off(EVENTS.BURST_ACTIVATED, this._onBurstActivated);
+    EventBus.off(EVENTS.SAVE_FAILED, this._onSaveFailed);
   }
 }

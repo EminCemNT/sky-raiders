@@ -348,3 +348,12 @@ export const AchievementManager = {
 
 // 暴露给自动化真测（仅调试用）
 if (typeof window !== 'undefined') window.__ACH__ = AchievementManager;
+
+/**
+ * OPT-16 T1：只读成就 id 白名单（append-only，零写入）。
+ * 供 SaveSanitizer 校验 achievements 键：仅保留合法 id，脏 key 剔除。
+ * 返回只读集合（Set），绝不改动 ACHIEVEMENTS 数据本身。
+ */
+export function getAchievementIds() {
+  return new Set(ACHIEVEMENTS.map((a) => a.id));
+}

@@ -1384,3 +1384,34 @@ export const EVENT_CONTRACT = {
   USE_BURST: 'use-burst',
   MUTATION_CHANGED: '__mutation_changed',
 };
+
+// ───────────────────────────────────────────────────────────────
+// OPT-16 T1/T2：存档钳位/自愈参数（append-only，SaveSanitizer.js 消费）
+//   coinsMax      金币上限（防溢出）
+//   upgradeMax    各升级项上限（UPGRADE_TREE.max 之上限，防脏数据溢出）
+//   levelStarsMax 星级上限（1~3）
+//   topScoresMax  排行榜条数上限
+//   moduleInvMax  模块库存条数上限
+// ───────────────────────────────────────────────────────────────
+export const SANITIZE = {
+  coinsMax: 999999999,
+  upgradeMax: 99,
+  levelStarsMax: 3,
+  topScoresMax: 10,
+  moduleInvMax: 200,
+};
+
+// ───────────────────────────────────────────────────────────────
+// OPT-16 T12 硬编码魔法值收敛（append-only；只收口「高复用/跨文件」魔法值，
+// 函数内单处局部常量不收口）。纯常量替换，值不变 → 逐帧等价。
+// ───────────────────────────────────────────────────────────────
+export const MAGIC = {
+  stormTickEvery: 30,          // GameScene 元素风暴触发节流（_stormTick % 30）
+  trailTickEvery: 2,           // GameScene 子弹尾迹节流（_trailTick % 2）
+  grazeCheckEvery: GRAZE.CHECK_EVERY, // 擦弹检测节流（复用既有常量，避免双源）
+  hudLivesY: 64,               // UIScene 右侧信息列：命数 y
+  hudPowerY: 84,               // UIScene 右侧信息列：火力 y
+  hudElementY: 104,            // UIScene 右侧信息列：元素 y
+  hudGrazeY: 124,              // UIScene 右侧信息列：擦弹 y
+  hudEnergyX: 204,             // UIScene 左侧文本列 x（HP/能量文本）
+};

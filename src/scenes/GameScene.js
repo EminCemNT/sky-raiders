@@ -3,7 +3,7 @@ import {
   SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, COLORS, PLAYER, BULLET, LEVELS, BOSS_RUSH, SHIPS, ELEMENTS, WINGMAN,
   DIFFICULTIES, getDifficulty, POWERUP, GRAZE, OVERDRIVE, OVERCHARGE, FOCUS, bossRushScale, PERFORMANCE, POOL, COMBAT_PERF,
   EVENT_MODES, getCurrentEvent, MODULE_DROP_CHANCE, getShipSkins, TOWER, TOWER_BUFFS, LIGHTS, TRANSITION,
-  RELIEF, COMBO_BURST, ELEMENT_STORM, EASE, ENV_NARRATIVE, TEXTURE_KEYS,
+  RELIEF, COMBO_BURST, ELEMENT_STORM, EASE, ENV_NARRATIVE, TEXTURE_KEYS, MAGIC,
 } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
@@ -721,7 +721,7 @@ export default class GameScene extends Phaser.Scene {
 
     // OPT-13 B14 元素风暴：三元素同挂检测（节流每 30 帧 ≈ 500ms；活性守卫防死敌/过期误触发）
     this._stormTick = (this._stormTick || 0) + 1;
-    if (this._stormTick % 30 === 0 && this._checkStormTrigger(time)) this.elementStorm();
+    if (this._stormTick % MAGIC.stormTickEvery === 0 && this._checkStormTrigger(time)) this.elementStorm();
 
     // Boss
     if (this.boss && this.boss.active) {
@@ -783,7 +783,7 @@ export default class GameScene extends Phaser.Scene {
     // 子弹特效尾迹（节流每 2 帧；emitter 为 null 时降级，零运行时报错）
     if (this.bulletTrails || this.enemyGlow) {
       this._trailTick = (this._trailTick || 0) + 1;
-      if (this._trailTick % 2 === 0) {
+      if (this._trailTick % MAGIC.trailTickEvery === 0) {
         if (this.bulletTrails) {
           this.playerBullets.children.each((b) => {
             if (!b.active || b.isBeam) return;
