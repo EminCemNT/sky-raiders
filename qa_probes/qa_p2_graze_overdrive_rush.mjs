@@ -225,7 +225,7 @@ const skillLabelInit = await page.evaluate(() => {
 });
 push('HUD 技能按钮初始标签「星风暴」', skillLabelInit === '星风暴', JSON.stringify(skillLabelInit));
 
-const od = await page.evaluate(() => {
+const od = await page.evaluate(async () => {
   const gs = window.__SKY__.scene.getScene('GameScene');
   const ui = window.__SKY__.scene.getScene('UIScene');
   const p = gs.player;
@@ -243,8 +243,10 @@ const od = await page.evaluate(() => {
     overdriveUntil: gs._overdriveUntil,
     energy: gs.energy,
   };
-  // 倒计时 HUD：手动跑一帧 update 让标签刷新
-  ui.update();
+  // 倒计时 HUD：等 2 个真实 rAF（保证 ≥1 个完整游戏帧已跑完，两场景时钟对齐）后再采样。
+  // 旧实现同同步块手动 ui.update()，ui.time.now 可能滞后 gs 激活时刻 <1 帧 → ceil 边界
+  // 偶发算出 7s（并发负载改变帧对齐时抖动）；真实玩家帧内两场景共享同一时钟，必为 6s。
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
   after.labelText = ui.skill && ui.skill.label ? ui.skill.label.text : null;
   after.uiOverdriveUntil = ui._overdriveUntil;
   return { baseInterval, after };
