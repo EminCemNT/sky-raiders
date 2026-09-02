@@ -163,13 +163,8 @@ export default class GameScene extends Phaser.Scene {
       this.enemies.add(e);
     }
 
-    // A4 预填敌弹池：避免首帧冷启动 Group.get() 逐发创建的开销（与 enemies/items 预填对齐）
-    for (let i = 0; i < POOL.enemyBullets; i++) {
-      const b = this.physics.add.sprite(0, -200, 'bullet_enemy');
-      b.setActive(false).setVisible(false);
-      b.body.enable = false;
-      this.enemyBullets.add(b);
-    }
+    // A4 敌弹池预填：已收口到 _prewarm()（OPT-16 T10，create 末尾统一执行 + _prewarmMs 计时；
+    // 低性能档按 qualityScale 降低预填量，不改变 maxSize 语义）
 
     // 预填道具池
     for (let i = 0; i < 30; i++) {
@@ -297,27 +292,16 @@ export default class GameScene extends Phaser.Scene {
     // 画质档（P0 性能三件套）已在 create 顶部赋值（playerLight 创建前就绪，见上）；
     // 此处复用顶部 quality 变量开启 PostFX 辉光（high/mid 开，low 关；WebGL 才生效，Canvas 自动降级）
     this.bloomFX = enableSceneBloom(this, quality);
-    // 爆炸/命中火花对象池：预建 2 个 offscreen emitter 复用（消除 GC 抖动）
-    this.vfxPool = VFX.createVfxPool(this);
-    // ⑥ 爆炸环境残留池（P2 视觉四件套：焦痕/余烬/烟尘；reduced 下返回 null 自动降级）
-    this.residuePool = VFX.createResiduePool(this);
+    // 爆炸/命中火花对象池 + 爆炸环境残留池：已收口到 _prewarm()（T10）
     // P2-7：挂接 __SKY._dynLight 动态光影探针（QA/PM 验收只读接口，不影响玩法）
     VFX.installLightProbes(this);
 
     // 拾取柔光（P3 光效纪律白名单：机/弹/爆/拾取；对象池每实例挂一层，随 active 显隐）
     this.items.children.each((it) => VFX.glowTarget(it, 0x9ff0ff, { radius: 0.38, alpha: 0.22, depth: -1 }));
-    // 玩家弹柔光：capped 池复用（别滥用），由 update 每帧映射到活跃弹；克制到"几乎不可见的辉光"
-    this._bulletGlowPool = [];
-    for (let i = 0; i < 10; i++) {
-      this._bulletGlowPool.push(this.add.image(0, 0, TEXTURE_KEYS.glowSoft)
-        .setDepth(17).setAlpha(0.10).setTint(0x8fdcff)
-        .setBlendMode(Phaser.BlendModes.ADD).setScale(0.07).setVisible(false));
-    }
+    // 玩家弹柔光：capped 池（T10 已收口到 _prewarm()，update 每帧映射到活跃弹）
 
-    // 首击卡顿预热：在 createBulletTrails 之后调用。
-    // 编译粒子管线 / 字体光栅化 / 音频节点路径，确保首次命中无可见卡顿。
-    // reduced-motion 下 VFX.warmup 内部直接 return（warmFonts 仍执行，字体预热不依赖动效）。
-    VFX.warmup(this);
+    // 首击卡顿预热：字体光栅化 / 音频节点路径（VFX.warmup 已收口到 _prewarm，T10；
+    // reduced-motion 下 VFX.warmup 内部直接 return，warmFonts 仍执行，字体预热不依赖动效）。
     warmFonts(this);
     audio.warmup();
     window.__SKY_WARMUP = true;
@@ -380,8 +364,41 @@ export default class GameScene extends Phaser.Scene {
       get: () => ({ bulletLoopCount: this._bulletLoopCount || 0, prewarmMs: this._prewarmMs || 0 }),
     });
 
+    // OPT-16 T10 首帧冷启动与池预填收口：create 末尾统一执行（池预填 + 粒子预热 + _prewarmMs 计时）
+    this._prewarm();
+
     // 场景关闭时清理事件
     this.events.once('shutdown', () => this.cleanup());
+  }
+
+  /** OPT-16 T10 首帧冷启动与池预填收口：把 create 中分散的池预填/粒子预热收敛到单一方法，
+   *  统一计时（_prewarmMs 经 game._probe.prewarmMs 只读观测）；低性能档按 qualityScale
+   *  降低预填量（low=0.45 / mid=0.7 / high=1.0），不改变 maxSize 语义（不足时 Group.get 走既有扩容）。 */
+  _prewarm() {
+    const t0 = performance.now();
+    const qs = (typeof this.qualityScale === 'number' && this.qualityScale > 0) ? this.qualityScale : 1;
+    // 1) 敌弹池预填（原 create L167 循环）：数量按 qualityScale 缩放（low 档降量）
+    const enemyCount = Math.max(1, Math.floor(POOL.enemyBullets * qs));
+    for (let i = 0; i < enemyCount; i++) {
+      const b = this.physics.add.sprite(0, -200, 'bullet_enemy');
+      b.setActive(false).setVisible(false);
+      b.body.enable = false;
+      this.enemyBullets.add(b);
+    }
+    // 2) 玩家激光束池：原 create L158 已按 POOL.playerBeams maxSize 建组（按需扩容），无需循环预填
+    // 3) 子弹特效 emitter 池：爆炸/命中火花/擦弹火花 + 爆炸环境残留（reduced 下返回 null 自动降级）
+    this.vfxPool = VFX.createVfxPool(this);
+    this.residuePool = VFX.createResiduePool(this);
+    // 4) 玩家弹柔光 capped 池：预建 offscreen 柔光复用（原 create L311 循环；update 每帧映射活跃弹）
+    this._bulletGlowPool = [];
+    for (let i = 0; i < 10; i++) {
+      this._bulletGlowPool.push(this.add.image(0, 0, TEXTURE_KEYS.glowSoft)
+        .setDepth(17).setAlpha(0.10).setTint(0x8fdcff)
+        .setBlendMode(Phaser.BlendModes.ADD).setScale(0.07).setVisible(false));
+    }
+    // 5) 粒子管线预热（原 create VFX.warmup 调用点；createBulletTrails 之后执行，reduced 内部短路）
+    VFX.warmup(this);
+    this._prewarmMs = Math.round(performance.now() - t0);
   }
 
   setupColliders() {
@@ -760,11 +777,10 @@ export default class GameScene extends Phaser.Scene {
     // P1 超载：到期恢复射速 + 得分倍率；每帧结算 bonus（真实玩法一帧内即见 ×1.2）
     this._updateOvercharge(time);
     this._flushOverchargeBonus();
-    // P2 擦弹：每 CHECK_EVERY 帧遍历敌弹（玩家存活守卫在 _updateGraze 内）
-    this._grazeTick = (this._grazeTick || 0) + 1;
-    if (this._grazeTick % GRAZE.CHECK_EVERY === 0) this._updateGraze(time);
+    // OPT-16 T3 敌弹遍历合并：回收/擦弹/尾迹单次 children.each（_trailTick 亦在此推进，供玩家弹尾迹复用）
+    this._updateEnemyBullets(time);
 
-    // 回收出屏子弹
+    // 回收出屏玩家弹/金币（敌弹已并入 _updateEnemyBullets，T3）
     this.recycleBullets();
 
     // 追踪导弹转向（B3）：逐帧朝最近目标微调速度方向
@@ -781,23 +797,14 @@ export default class GameScene extends Phaser.Scene {
     }
 
     // 子弹特效尾迹（节流每 2 帧；emitter 为 null 时降级，零运行时报错）
-    if (this.bulletTrails || this.enemyGlow) {
-      this._trailTick = (this._trailTick || 0) + 1;
-      if (this._trailTick % MAGIC.trailTickEvery === 0) {
-        if (this.bulletTrails) {
-          this.playerBullets.children.each((b) => {
-            if (!b.active || b.isBeam) return;
-            const key = b.texture.key.replace(TEXTURE_KEYS.bulletPrefix, '');
-            const e = this.bulletTrails[key];
-            if (e) e.emitParticleAt(b.x, b.y + b.height * 0.4);
-          });
-        }
-        if (this.enemyGlow) {
-          this.enemyBullets.children.each((b) => {
-            if (b.active) this.enemyGlow.emitParticleAt(b.x, b.y);
-          });
-        }
-      }
+    // T3：_trailTick 已由 _updateEnemyBullets 每帧推进（敌弹尾迹并入同 tick），玩家弹尾迹复用同节流
+    if (this.bulletTrails && this._trailTick % MAGIC.trailTickEvery === 0) {
+      this.playerBullets.children.each((b) => {
+        if (!b.active || b.isBeam) return;
+        const key = b.texture.key.replace(TEXTURE_KEYS.bulletPrefix, '');
+        const e = this.bulletTrails[key];
+        if (e) e.emitParticleAt(b.x, b.y + b.height * 0.4);
+      });
     }
 
     // 玩家弹柔光跟随（P3 capped 池：只照亮前 N 颗活跃弹，防滥用）
@@ -900,19 +907,30 @@ export default class GameScene extends Phaser.Scene {
 
   /** 玩家子弹 vs Boss 手动检测 */
   checkBossHits() {
+    if (!this.playerBullets || !this.playerBullets.children || this.playerBullets.children.size === 0) return;
+    if (!this.boss || !this.boss.active) return;
+    // OPT-16 T11：Boss 战每帧对 N 颗玩家弹调 getBounds()（每次分配 Phaser.Rectangle）→ 改手算
+    // AABB 复用（_goBounds 语义一致：含 origin/scale/rotation；相交判定用 RectangleToRectangle 同款严格比较）。
+    // Boss 包围盒在循环内位置不变，循环前求值一次即可（比原实现每弹重算更快，数值零变化）。
+    const ab1 = this._cb1 || (this._cb1 = { left: 0, top: 0, right: 0, bottom: 0 });   // 子弹
+    const ab2 = this._cb2 || (this._cb2 = { left: 0, top: 0, right: 0, bottom: 0 });   // 护盾
+    const ab3 = this._cb3 || (this._cb3 = { left: 0, top: 0, right: 0, bottom: 0 });   // Boss
+    const shieldOk = !!this.boss.shieldPart && !this.boss._shieldBroken;
+    if (shieldOk) this._goBounds(this.boss.shieldPart, ab2);
+    this._goBounds(this.boss, ab3);
     this.playerBullets.children.each((b) => {
       if (!b.active) return;
+      this._goBounds(b, ab1);
       // P1 可破坏护盾部位：优先独立判定（命中护盾扣护盾 HP，不扣 Boss HP / 不触发阶段）。
       // 炸弹（isBomb）走 _explodeBomb 全场 AOE，不进此分支。
-      if (!b.isBomb && this.boss && this.boss.active && this.boss.shieldPart && !this.boss._shieldBroken
-        && Phaser.Geom.Intersects.RectangleToRectangle(b.getBounds(), this.boss.shieldPart.getBounds())) {
+      if (!b.isBomb && shieldOk
+        && ab1.left < ab2.right && ab1.right > ab2.left && ab1.top < ab2.bottom && ab1.bottom > ab2.top) {
         this.killBullet(b);
         VFX.hitSpark(this, b.x, b.y);
         this.boss.hitShieldPart(b.damage || 10, b.element);
         return;
       }
-      if (this.boss && this.boss.active &&
-          Phaser.Geom.Intersects.RectangleToRectangle(b.getBounds(), this.boss.getBounds())) {
+      if (ab1.left < ab3.right && ab1.right > ab3.left && ab1.top < ab3.bottom && ab1.bottom > ab3.top) {
         if (b.isBomb) {
           this._explodeBomb(b.x, b.y, b.explodeRadius, b.damage, b.element);
           this.killBullet(b);
@@ -955,7 +973,9 @@ export default class GameScene extends Phaser.Scene {
     VFX.shake(this, 'medium');
   }
 
-  /** C3 敌弹追踪转向（tracking 弹，逐帧朝玩家微调） */
+  /** C3 敌弹追踪转向（tracking 弹，逐帧朝玩家微调）
+   *  OPT-16 T11 审计：全标量数学（Angle.Between / atan2 / Angle.RotateTo / velocity.length），
+   *  无每帧对象分配，无需改。 */
   steerEnemyBullets() {
     if (!this.enemyBullets) return;
     const p = this.player;
@@ -999,7 +1019,9 @@ export default class GameScene extends Phaser.Scene {
     return null;
   }
 
-  /** 追踪导弹逐帧转向（B3） */
+  /** 追踪导弹逐帧转向（B3）
+   *  OPT-16 T11 审计：全标量数学（Distance.Squared / Angle.Between / atan2 / Wrap / Clamp），
+   *  无每帧对象分配（findNearestTarget 仅返回既有对象引用），无需改。 */
   steerHomingBullets() {
     this.playerBullets.children.each((b) => {
       if (!b.active || !b.homing) return;
@@ -1561,26 +1583,52 @@ export default class GameScene extends Phaser.Scene {
     VFX.bombShockwave(this, this.player.x, this.player.y);
   }
 
-  // ---- 擦弹 Graze（P2）----
-  // 独立距离环判断：d²∈(判定圈², 擦弹环²) 且弹速达标才计一次擦弹。
+  // ---- 敌弹每帧遍历合并（OPT-16 T3）----
+  // 原 _updateGraze 的擦弹单弹判定体 + recycleBullets 的敌弹回收分支 + 敌弹尾迹分支
+  // 合并为对 enemyBullets 的单次 children.each（内部按节流标志分派）。语义逐帧等价：
+  //   回收每帧、擦弹每 GRAZE.CHECK_EVERY 帧、尾迹每 2 帧；玩家存活守卫与同弹冷却 RE_GRAZE_MS 保持。
   // 红线：不消弹、不结算命中、零改动既有 overlap/playerHit/invuln/registerKill/combo 逻辑。
-  _updateGraze(time) {
-    if (!this.player || !this.player.active) return;
-    const gc = this.player.getGrazeCircle();
-    const inner = PLAYER.HITBOX_RADIUS * PLAYER.HITBOX_RADIUS;   // 6² = 36（判定圈外）
-    const outer = gc.r * gc.r;                                    // 24² = 576（擦弹环内）
+  _updateEnemyBullets(time) {
+    // 节流计数先推进（即使组为空也保持与旧 update 相同的帧节奏，避免玩家弹尾迹节流漂移）
+    this._grazeTick = (this._grazeTick || 0) + 1;
+    this._trailTick = (this._trailTick || 0) + 1;
+    if (!this.enemyBullets || !this.enemyBullets.children || this.enemyBullets.children.size === 0) return;
+    // T3 探针：单次遍历计数（window.__GAME._probe.bulletLoopCount 只读观测）
+    this._bulletLoopCount = (this._bulletLoopCount || 0) + 1;
+    const doGraze = this._grazeTick % GRAZE.CHECK_EVERY === 0;
+    const doTrail = this._trailTick % MAGIC.trailTickEvery === 0;
+    const hasGlow = !!this.enemyGlow;
+    const grazeReady = doGraze && !!(this.player && this.player.active);
+    // 擦弹圈只需在 doGraze 帧求值一次（避免每帧 getGrazeCircle；玩家存活守卫保持）
+    let gc = null; let inner = 0; let outer = 0;
+    if (grazeReady) {
+      gc = this.player.getGrazeCircle();
+      inner = PLAYER.HITBOX_RADIUS * PLAYER.HITBOX_RADIUS;   // 6² = 36（判定圈外）
+      outer = gc.r * gc.r;                                    // 24² = 576（擦弹环内）
+    }
     this.enemyBullets.children.each((b) => {
       if (!b.active) return;
-      const dx = b.x - gc.x, dy = b.y - gc.y;
-      const d2 = dx * dx + dy * dy;
-      if (d2 <= inner || d2 >= outer) return;                     // 判定圈内 / 环外都不算
-      const spd = (b.body && b.body.velocity) ? b.body.velocity.length() : 0;
-      if (spd < GRAZE.MIN_SPEED) return;                          // 静止/极慢弹不计
-      if (b._grazedAt != null && (time - b._grazedAt) < GRAZE.RE_GRAZE_MS) return; // 同弹冷却
-      b._grazedAt = time;
-      // OPT-15 V2：擦弹点火花（纯视觉，零数值；复用 vfxPool grazeSpark emitter）
-      VFX.grazeSpark(this, b.x, b.y);
-      this._grantGraze(b.x, b.y);
+      // 1) 每帧：越界回收（原 recycleBullets 敌弹分支，内联；边界 ±30 与原值一致）
+      if (b.y > GAME_HEIGHT + 30 || b.y < -30 || b.x < -30 || b.x > GAME_WIDTH + 30) {
+        this.killBullet(b);
+        return;
+      }
+      // 2) 每 N 帧：擦弹判定（原 _updateGraze 单弹判定体，内联；判定圈内/环外/低速/同弹冷却保持）
+      if (grazeReady) {
+        const dx = b.x - gc.x, dy = b.y - gc.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 > inner && d2 < outer) {
+          const spd = (b.body && b.body.velocity) ? b.body.velocity.length() : 0;
+          if (spd >= GRAZE.MIN_SPEED && (b._grazedAt == null || (time - b._grazedAt) >= GRAZE.RE_GRAZE_MS)) {
+            b._grazedAt = time;
+            // OPT-15 V2：擦弹点火花（纯视觉，零数值；复用 vfxPool grazeSpark emitter）
+            VFX.grazeSpark(this, b.x, b.y);
+            this._grantGraze(b.x, b.y);
+          }
+        }
+      }
+      // 3) 每 2 帧：敌弹尾迹（原 enemyGlow 分支；reduced-motion 下 hasGlow=false 天然跳过）
+      if (doTrail && hasGlow) this.enemyGlow.emitParticleAt(b.x, b.y);
     });
   }
 
@@ -1739,6 +1787,7 @@ export default class GameScene extends Phaser.Scene {
   }
 
   // ---- 磁力：扩大金币吸取范围 ----
+  // OPT-16 T11 审计：标量 Distance.Between / Angle.Between，无每帧对象分配，无需改。
   updateMagnet() {
     if (this.time.now >= (this.buffs.magnetUntil || 0)) return;
     const range = 230;
@@ -2397,11 +2446,7 @@ export default class GameScene extends Phaser.Scene {
         this.killBullet(b);
       }
     });
-    this.enemyBullets.children.each((b) => {
-      if (b.active && (b.y > GAME_HEIGHT + 30 || b.y < -30 || b.x < -30 || b.x > GAME_WIDTH + 30)) {
-        this.killBullet(b);
-      }
-    });
+    // 敌弹越界回收已并入 _updateEnemyBullets（OPT-16 T3 单次遍历），此处不再重复遍历
     this.coins.children.each((c) => {
       if (c.active && c.y > GAME_HEIGHT + 30) {
         c.setActive(false).setVisible(false);

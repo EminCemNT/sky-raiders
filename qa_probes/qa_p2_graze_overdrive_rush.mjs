@@ -122,7 +122,7 @@ const graze = await page.evaluate(async () => {
   b.setPosition(p.x + 15, p.y);
   b.body.velocity.set(0, 200);
   b._grazedAt = null;
-  gs._updateGraze(gs.time.now);
+  gs._grazeTick = 1; gs._updateEnemyBullets(gs.time.now); // OPT-16 T3：擦弹并入 _updateEnemyBullets（CHECK_EVERY=2，对齐 tick → 本次即 graze 帧）
   eb.off('graze-changed', onGraze);
   eb.off('float-score', onFloat);
   return {
@@ -155,14 +155,14 @@ const chain = await page.evaluate(() => {
     return b;
   };
   const deltas = [];
-  mk(15, 0); gs._updateGraze(gs.time.now); deltas.push(gs.score);            // 第 1 次 +5
-  mk(-15, 0); gs._updateGraze(gs.time.now); deltas.push(gs.score - deltas[0]); // 第 2 次 +7
+  mk(15, 0); gs._grazeTick = 1; gs._updateEnemyBullets(gs.time.now); deltas.push(gs.score);            // 第 1 次 +5 (T3 merged)
+  mk(-15, 0); gs._grazeTick = 1; gs._updateEnemyBullets(gs.time.now); deltas.push(gs.score - deltas[0]); // 第 2 次 +7
   for (let i = 0; i < 3; i++) {                                               // 第 3~5 次 +9/+11/+13
     const ang = (i + 1) * 1.2;
     const dx = Math.round(Math.cos(ang) * 15), dy = Math.round(Math.sin(ang) * 15);
     mk(dx, dy);
     const before = gs.score;
-    gs._updateGraze(gs.time.now);
+    gs._grazeTick = 1; gs._updateEnemyBullets(gs.time.now); // OPT-16 T3：擦弹并入 _updateEnemyBullets（CHECK_EVERY=2，对齐 tick → 本次即 graze 帧）
     deltas.push(gs.score - before);
   }
   return { deltas, count: gs.grazeCount, chain: gs.grazeChain };
@@ -188,7 +188,7 @@ const hudGraze = await page.evaluate(() => {
   const b = gs.enemyBullets.get(p.x + 15, p.y, 'bullet_enemy');
   b.setActive(true).setVisible(true); b.body.enable = true;
   b.setPosition(p.x + 15, p.y); b.body.velocity.set(0, 200); b._grazedAt = null;
-  gs._updateGraze(gs.time.now);
+  gs._grazeTick = 1; gs._updateEnemyBullets(gs.time.now); // OPT-16 T3：擦弹并入 _updateEnemyBullets（CHECK_EVERY=2，对齐 tick → 本次即 graze 帧）
   return { text: ui.grazeText ? ui.grazeText.text : null };
 });
 push('HUD 擦弹计数显示「擦弹 1」', hudGraze.text === '擦弹 1', JSON.stringify(hudGraze.text));

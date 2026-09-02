@@ -45,6 +45,54 @@ let _grazeSparkCount = 0;    // V2 累计擦弹火花发射次数（reduced 下�
 let _waveClearCount = 0;     // V3 累计波次清空庆祝次数（Boss 波不 +1）
 let _idleAuraActive = 0;     // V4 当前活跃待机光环数（回收/die 须归零，防对象池监听泄漏）
 
+// ─── OPT-16 T4 跟随型光效合帧（glowTarget 合帧）────────────────────
+// 把 glowTarget / idleAura / playerLight / bossAmbient 的逐实例 update 跟随
+// 收敛为「每场景 1 个 update 监听 + 模块级 registry 单次遍历」；行为等价、
+// 探针计数不变、destroy/shutdown 清理等价。key = scene → entry[]。
+const _glowRegistry = new Map();
+
+/** 幂等注册：每场景只挂 1 个 update 监听；场景 shutdown 自动清 registry + off 监听（零跨场景泄漏）。 */
+function _ensureSceneGlowSync(scene) {
+  if (!scene || _glowRegistry.has(scene)) return;
+  const list = [];
+  _glowRegistry.set(scene, list);
+  const sync = () => {
+    for (let i = 0; i < list.length; i++) {
+      const entry = list[i];
+      if (!entry || !entry.glow || !entry.glow.active) continue;
+      const t = entry.getTarget();
+      if (!t) continue;
+      entry.glow.setPosition(t.x, t.y);
+      entry.glow.setVisible(entry.visible());
+    }
+  };
+  scene.events.on('update', sync);
+  scene.events.once('shutdown', () => {
+    _glowRegistry.delete(scene);
+    scene.events.off('update', sync);
+  });
+}
+
+/** 登记一个跟随光效 entry（合帧遍历消费）。remove() 仅从 registry 摘除（停跟随），
+ *  销毁 glow 的时序由调用方决定（如 bossAmbient 死亡淡出需保留 image）。 */
+function _makeGlowEntry(scene, glow, getTarget, visible) {
+  _ensureSceneGlowSync(scene);
+  const entry = {
+    glow,
+    getTarget,
+    visible,
+    remove() {
+      const list = _glowRegistry.get(scene);
+      if (list) {
+        const idx = list.indexOf(entry);
+        if (idx >= 0) list.splice(idx, 1);
+      }
+    },
+  };
+  _glowRegistry.get(scene).push(entry);
+  return entry;
+}
+
 /**
  * 通用爆炸：击杀敌机、道具引爆等。
  * @param {Phaser.Scene} scene
@@ -762,13 +810,10 @@ export function glowTarget(sprite, color, opts = {}) {
     .setTint(color)
     .setBlendMode(Phaser.BlendModes.ADD)
     .setScale(radius, radius);
-  const sync = () => {
-    glow.setPosition(sprite.x, sprite.y);
-    glow.setVisible(!!(sprite.active && sprite.visible));
-  };
-  scene.events.on('update', sync);
+  // OPT-16 T4 合帧：不再每实例注册 update 监听，改走场景级 registry（每场景 1 个监听）
+  const entry = _makeGlowEntry(scene, glow, () => sprite, () => !!(sprite.active && sprite.visible));
   sprite.once('destroy', () => {
-    scene.events.off('update', sync);
+    entry.remove();
     if (glow && glow.active) glow.destroy();
   });
   return glow;
@@ -798,12 +843,8 @@ export function idleAura(sprite, color, opts = {}) {
     .setBlendMode(Phaser.BlendModes.ADD)
     .setScale(radius, radius);
   _idleAuraActive++;
-  const sync = () => {
-    if (!glow.active) return;
-    glow.setPosition(sprite.x, sprite.y);
-    glow.setVisible(!!(sprite.active && sprite.visible));
-  };
-  scene.events.on('update', sync);
+  // OPT-16 T4 合帧：位置跟随走场景级 registry；呼吸 tween 仍由 Phaser 管理（V4 呼吸节奏不变）
+  const entry = _makeGlowEntry(scene, glow, () => sprite, () => !!(sprite.active && sprite.visible));
   scene.tweens.add({
     targets: glow,
     alpha: { from: alpha, to: alpha + scalePulse * 0.5 },
@@ -815,7 +856,7 @@ export function idleAura(sprite, color, opts = {}) {
   const stop = () => {
     if (stopped) return;
     stopped = true;
-    scene.events.off('update', sync);
+    entry.remove();
     scene.tweens.killTweensOf(glow);
     if (glow.active) glow.destroy();
     _idleAuraActive = Math.max(0, _idleAuraActive - 1);
@@ -876,20 +917,8 @@ export function playerLight(scene, player, opts = {}) {
   const alpha = baseAlpha * tier.alphaMul * (reduce ? ((opts.reducedAlphaMul != null ? opts.reducedAlphaMul : cfg.reducedAlphaMul) || 0.5) : 1);
 
   const image = _softGlow(scene, player.x, player.y, radius, alpha, tint, depth);
-  const ctl = {
-    image,
-    setIntensity(v) { const n = Math.max(0, Math.min(1, Number(v) || 0)); image.setAlpha(alpha * n); },
-    destroy() {
-      if (breathTween) breathTween.remove();
-      scene.events.off('update', sync);
-      if (image.active) image.destroy();
-    },
-  };
-  const sync = () => {
-    image.setPosition(player.x, player.y);
-    image.setVisible(!!(player.active && player.visible));
-  };
-  scene.events.on('update', sync);
+  // OPT-16 T4 合帧：位置跟随走场景级 registry（呼吸 tween 仍由 Phaser 管理）
+  const entry = _makeGlowEntry(scene, image, () => player, () => !!(player.active && player.visible));
 
   // radius 呼吸脉动（reduced-motion 无呼吸）：radius×(1±amp) 之间缓动
   let breathTween = null;
@@ -904,6 +933,15 @@ export function playerLight(scene, player, opts = {}) {
       ease: EASE.breathe,
     });
   }
+  const ctl = {
+    image,
+    setIntensity(v) { const n = Math.max(0, Math.min(1, Number(v) || 0)); image.setAlpha(alpha * n); },
+    destroy() {
+      if (breathTween) breathTween.remove();
+      entry.remove();
+      if (image.active) image.destroy();
+    },
+  };
   player.once('destroy', () => ctl.destroy());
   return ctl;
 }
@@ -927,22 +965,8 @@ export function bossAmbient(scene, boss, color, opts = {}) {
   const alpha = baseAlpha * tier.alphaMul;
 
   const image = _softGlow(scene, boss.x, boss.y, radius, alpha, color, depth);
-  const ctl = {
-    image,
-    setColor(c) { image.setTint(c); },
-    setIntensity(v) { const n = Math.max(0, Math.min(1, Number(v) || 0)); image.setAlpha(alpha * n); },
-    destroy() {
-      EventBus.off(EVENTS.BOSS_PHASE, onPhase);
-      scene.events.off('update', sync);
-      scene.tweens.killTweensOf(image);
-      if (image.active) image.destroy();
-    },
-  };
-  const sync = () => {
-    image.setPosition(boss.x, boss.y);
-    image.setVisible(!!(boss.active && boss.visible));
-  };
-  scene.events.on('update', sync);
+  // OPT-16 T4 合帧：位置跟随走场景级 registry；BOSS_PHASE 脉冲与死亡淡出不变
+  const entry = _makeGlowEntry(scene, image, () => boss, () => !!(boss.active && boss.visible));
 
   // BOSS_PHASE 脉冲：相位切换瞬间 tint 白闪 + alpha/radius 鼓一下（reduced-motion 静态）
   const onPhase = () => {
@@ -963,10 +987,21 @@ export function bossAmbient(scene, boss, color, opts = {}) {
     });
   };
   EventBus.on(EVENTS.BOSS_PHASE, onPhase);
+  const ctl = {
+    image,
+    setColor(c) { image.setTint(c); },
+    setIntensity(v) { const n = Math.max(0, Math.min(1, Number(v) || 0)); image.setAlpha(alpha * n); },
+    destroy() {
+      EventBus.off(EVENTS.BOSS_PHASE, onPhase);
+      entry.remove();
+      scene.tweens.killTweensOf(image);
+      if (image.active) image.destroy();
+    },
+  };
   // P3-12：Boss 死亡环境光 2s 回落（淡出后销毁；Boss.die 于 ~800ms 后 destroy 触发此处）
   boss.once('destroy', () => {
     EventBus.off(EVENTS.BOSS_PHASE, onPhase);
-    scene.events.off('update', sync);
+    entry.remove();                 // 停跟随（不再 setPosition/setVisible），但保留 image 做淡出
     if (!image.active) return;
     scene.tweens.killTweensOf(image);
     scene.tweens.add({
@@ -1024,6 +1059,15 @@ export function localIllum(scene, x, y, color, opts = {}) {
  */
 export function installLightProbes(scene) {
   if (!scene || !scene.game) return;
+  // OPT-16 T4 QA 探针钩子：暴露本模块实例（与游戏静态 import 同一实例），
+  // 供探针驱动真实注册路径（window.__GAME._vfx.glowTarget / idleAura / bossAmbient 等）。
+  // 背景：探针内 `await import('/src/systems/VFX.js')` 会被 Vite 视为第二个模块实例，
+  //       其 _glowRegistry/_idleAuraActive 与游戏静态 import 不共享 → 探针断言失真。
+  //       _vfxProbeApi 定义于模块末尾（本钩子在运行时读取，彼时已初始化）。append-only。
+  Object.defineProperty(scene.game, '_vfx', {
+    configurable: true,
+    get() { return _vfxProbeApi; },
+  });
   Object.defineProperty(scene.game, '_dynLight', {
     configurable: true,
     get() {
@@ -1306,3 +1350,17 @@ export function spawnResidue(scene, pool, x, y, tier = 'small') {
     }
   }
 }
+
+// ─── OPT-16 T4 QA 探针钩子：暴露本模块实例（供 window.__GAME._vfx 读取）──────
+// 与 installLightProbes 中的 `_vfx` getter 配合；全部成员为 export function（已提升），
+// 模块末尾初始化后即可被运行时调用的 installLightProbes 读取。append-only。
+const _vfxProbeApi = {
+  glowTarget,
+  idleAura,
+  playerLight,
+  bossAmbient,
+  warmup,
+  createVfxPool,
+  createResiduePool,
+  installLightProbes,
+};
