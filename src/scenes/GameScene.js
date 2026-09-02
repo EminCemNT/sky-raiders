@@ -920,6 +920,11 @@ export default class GameScene extends Phaser.Scene {
     this._goBounds(this.boss, ab3);
     this.playerBullets.children.each((b) => {
       if (!b.active) return;
+      // OPT-16 T11 修复（D1）：恢复每弹 Boss 存活守卫。同帧第 1 弹击杀 Boss 时
+      // boss.hit()→die()→BOSS_DEFEATED 同步触发 _onBossDefeated 置 this.boss=null，
+      // 若仅靠循环前一次求值（shieldOk/ab2 已预算），后续弹仍会走护盾分支对 null 解引用。
+      // 该守卫与基线每弹守卫语义一致；AABB 预算复用收益保留（Boss 同帧内不移动，存活时预算有效）。
+      if (!this.boss || !this.boss.active) return;
       this._goBounds(b, ab1);
       // P1 可破坏护盾部位：优先独立判定（命中护盾扣护盾 HP，不扣 Boss HP / 不触发阶段）。
       // 炸弹（isBomb）走 _explodeBomb 全场 AOE，不进此分支。
