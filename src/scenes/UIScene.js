@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, LEVELS, SHIPS, WINGMAN, PLAYER, EVENT_MODES, OVERCHARGE, PERFORMANCE, EASE, COMBO_BURST, PAUSE_ATMO, MAGIC } from '../config/GameConfig.js';
+import { SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, LEVELS, SHIPS, WINGMAN, PLAYER, EVENT_MODES, OVERCHARGE, PERFORMANCE, EASE, COMBO_BURST, PAUSE_ATMO, MAGIC, DAILY_CHALLENGE } from '../config/GameConfig.js'; // DAILY_CHALLENGE: OPT-16 C5 今日挑战
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
 import { t } from '../config/Locale.js';
@@ -34,6 +34,8 @@ export default class UIScene extends Phaser.Scene {
     // P0 留存-活动轮换：事件模式（金币冲刺/限时生存）HUD 走倒计时文本
     this._eventMode = this.mode === 'coin_rush' || this.mode === 'survival';
     this._eventCfg = EVENT_MODES[this.mode] || null;
+    // OPT-16 C5 每日种子挑战：HUD 需在 Phase C 播报当日种子（GameScene.launch 透传；非 daily 为 null）
+    this._dailySeed = (data && data.dailySeed) || null;
   }
 
   create() {
@@ -258,9 +260,16 @@ export default class UIScene extends Phaser.Scene {
     this._renderElement(this._element);   // 开局元素指示（元素核心轮换初始值）
 
     // Phase C：关卡开场大字 banner（Stage Banner，Back.easeOut 弹入 + 辉光 + 淡出）
-    const stageName = this.mode === 'bossrush' ? 'BOSS RUSH'
+    // OPT-16 C5 每日种子挑战：daily 播报「今日挑战 · 今日种子 #xxxxxx · 目标 N」
+    const isDaily = this.mode === 'daily';
+    const dailyGoal = (DAILY_CHALLENGE && DAILY_CHALLENGE.targetScore != null) ? DAILY_CHALLENGE.targetScore : 60000;
+    const seedShort = String(this._dailySeed == null ? '' : this._dailySeed).slice(0, 6);
+    const stageName = isDaily ? t('dailyChallenge')
+      : this.mode === 'bossrush' ? 'BOSS RUSH'
       : (this._eventCfg ? t(`eventName_${this.mode}`) : t(`levelName_${lvl.id}`));
-    const stageSub = this.mode === 'bossrush' ? t('stageSubRush')
+    const stageSub = isDaily
+      ? `${t('dailySeedLabel', { seed: seedShort })}  ${t('dailyChallengeGoal', { score: dailyGoal })}`
+      : this.mode === 'bossrush' ? t('stageSubRush')
       : (this._eventCfg ? t('stageSubEvent', { duration: this._eventCfg.duration }) : t('stageSubLevel', { level: lvl.id }));
     this.showStageBanner(stageName, stageSub);
 

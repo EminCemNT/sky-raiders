@@ -3,10 +3,11 @@ import {
   SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, COLORS, PLAYER, BULLET, LEVELS, BOSS_RUSH, SHIPS, ELEMENTS, WINGMAN,
   DIFFICULTIES, getDifficulty, POWERUP, GRAZE, OVERDRIVE, OVERCHARGE, FOCUS, bossRushScale, PERFORMANCE, POOL, COMBAT_PERF,
   EVENT_MODES, getCurrentEvent, MODULE_DROP_CHANCE, getShipSkins, TOWER, TOWER_BUFFS, LIGHTS, TRANSITION,
-  RELIEF, COMBO_BURST, ELEMENT_STORM, EASE, ENV_NARRATIVE, TEXTURE_KEYS, MAGIC,
+  RELIEF, COMBO_BURST, ELEMENT_STORM, EASE, ENV_NARRATIVE, TEXTURE_KEYS, MAGIC, DAILY_CHALLENGE,
 } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
+import { vibrate } from '../utils/Haptics.js'; // OPT-16 C7 移动端震动（低频事件点接入）
 import { t } from '../config/Locale.js';
 import { Ads } from '../systems/Ads.js';
 import { createStarfield } from '../systems/Starfield.js';
@@ -49,8 +50,11 @@ export default class GameScene extends Phaser.Scene {
   }
 
   init(data) {
-    this.mode = (data && data.mode) || 'normal'; // 'normal' | 'bossrush' | 'endless' | 'coin_rush' | 'survival'
+    this.mode = (data && data.mode) || 'normal'; // 'normal' | 'bossrush' | 'endless' | 'coin_rush' | 'survival' | 'daily'(C5)
     this.levelId = data.levelId || 1;
+    // OPT-16 C5 每日种子挑战：mode='daily' → 独立结算域（不写榜/勋章/成就/每日任务/新手计划）
+    this.dailyRun = this.mode === 'daily';
+    this.dailySeed = this.dailyRun ? (data && data.dailySeed) : null;
     this.forceTutorial = !!(data && data.forceTutorial); // 菜单"教程"按钮强制重看
     // P0 留存-活动轮换：事件模式配置（coin_rush/survival），非事件模式为 null
     this.eventCfg = (data && data.mode && EVENT_MODES[data.mode]) || null;
@@ -115,7 +119,8 @@ export default class GameScene extends Phaser.Scene {
     this._reliefOverlay = null;
     this._reliefCtl = null;
     // 成就系统：本局开始，重置会话态并预载累计数据
-    AchievementManager.startRun(this.mode, this.levelId);
+    // OPT-16 C5 每日种子挑战：dailyRun=true → 全程 ignore（不产出成就/不解锁，红线）
+    AchievementManager.startRun(this.mode, this.levelId, { ignore: this.dailyRun });
   }
 
   create() {
@@ -134,7 +139,10 @@ export default class GameScene extends Phaser.Scene {
     }
 
     // P0 四档难度：读存档选择，标准档系数全 1.0（与现状逐字段等价，零回归）
-    this.difficultyCfg = getDifficulty(SaveManager.load().selectedDifficulty) || DIFFICULTIES[1];
+    // OPT-16 C5 每日种子挑战：dailyRun 固定 standard（同一天全设备同难度公平，PM 假设）
+    this.difficultyCfg = this.dailyRun
+      ? (getDifficulty((DAILY_CHALLENGE && DAILY_CHALLENGE.difficulty) || 'standard') || DIFFICULTIES[1])
+      : (getDifficulty(SaveManager.load().selectedDifficulty) || DIFFICULTIES[1]);
 
     // 背景渐变（按关卡色调）
     const bg = this.add.graphics().setDepth(-200);
@@ -263,6 +271,8 @@ export default class GameScene extends Phaser.Scene {
         endless: this.mode === 'endless' || !!this.eventCfg,
         endlessBossEvery: this.isTower ? (TOWER.BOSS_EVERY || 10) : 0,
         awaitBuff: this.isTower,
+        // OPT-16 C5 每日种子挑战：固定 variant 0 → 同一天两次进入波次一致（C5.1）
+        fixedVariantIndex: this.dailyRun ? 0 : undefined,
       });
     }
     this.boss = null;
@@ -314,6 +324,7 @@ export default class GameScene extends Phaser.Scene {
       bombs: PLAYER.START_BOMBS,
       lives: this.lives,
       element: this.player.shipElement,
+      dailySeed: this.dailyRun ? this.dailySeed : undefined, // OPT-16 C5：Phase C 播报当日种子
     });
 
     // 初始 HUD 同步
@@ -342,7 +353,8 @@ export default class GameScene extends Phaser.Scene {
     this.setupWingmanCollider();
 
     // 首玩教程：首次进入游戏显示操作引导（Boss Rush / 无尽 / 活动模式跳过，避免阻塞）；forceTutorial 供菜单"教程"按钮重看
-    if (this.mode !== 'bossrush' && this.mode !== 'endless' && !this.eventCfg && (!SaveManager.get('tutorialDone') || this.forceTutorial)) this.showTutorial();
+    // OPT-16 C5 每日种子挑战：固定标准波次挑战，跳过教程（菜单已可进入 → 玩家已知基本操作）
+    if (this.mode !== 'bossrush' && this.mode !== 'endless' && !this.eventCfg && !this.dailyRun && (!SaveManager.get('tutorialDone') || this.forceTutorial)) this.showTutorial();
 
     // A9 连续失败救济局（仅 normal 主线）：failStreak[levelId] >= 3 → 开局弹三选一
     //（降难度 session 覆盖 / 临时增益 +1 命或 +10% 攻击 / 拒绝）。无尽已有广告复活兜底，不触发。
@@ -595,6 +607,7 @@ export default class GameScene extends Phaser.Scene {
 
     this._onBossDefeated = () => {
       this.requestHitStop(120);     // Boss 击破：强命中定格（P3 视觉打磨，350→120 收敛不拖沓）
+      vibrate('kill'); // C7 震动：Boss 击破
       if (this.boss && this.boss.active) {
         // P2 Boss Rush 差异化：按机库稀有概率追加掉落并累计（普通模式 extraRare=0，行为不变）
         const rareChance = (this.mode === 'bossrush' && this._rushScale) ? this._rushScale.rareChance : 0;
@@ -1497,6 +1510,7 @@ export default class GameScene extends Phaser.Scene {
     if (this.combo > this.maxCombo) this.maxCombo = this.combo;
     const mult = this.comboMultiplier();
     this.stats.kills++;
+    vibrate('kill'); // C7 震动：击杀（Haptics 内置 120ms 节流，防每杀一震）
     this._addProgress('daily', 'kills', 1); // #每日任务：击杀进度
     const amount = Math.round(10 * mult);
     EventBus.emit(EVENTS.SCORE_CHANGED, amount);
@@ -2042,9 +2056,12 @@ export default class GameScene extends Phaser.Scene {
   // 任何救济接受 → _reliefRun=true + AchievementManager.setIgnore(true)（成就全程抑制）
   // ───────────────────────────────────────────────────────────────
 
-  /** 全局守卫：救济局返回 false（该局「写盘/成就/排行/勋章」链路短路），其余 true */
+  /**
+   * 全局守卫：救济局返回 false（该局「写盘/成就/排行/勋章」链路短路），其余 true。
+   * OPT-16 C5 每日挑战同构：dailyRun=true → false（不写 topScores/levelMedals/league/成就/每日任务/新手计划）。
+   */
   _shouldRecordPersist() {
-    return !this._reliefRun;
+    return !this._reliefRun && !this.dailyRun;
   }
 
   /**
@@ -2061,6 +2078,8 @@ export default class GameScene extends Phaser.Scene {
       reliefRun: !!this._reliefRun,
       reliefCombatMul: this._reliefCombatMul || null,
       reliefAtkPicked: !!this._reliefAtkPicked,
+      // OPT-16 C5 每日挑战：重开需保留 mode='daily' + 当日种子（同一天两次重开仍同图）
+      dailySeed: this.dailyRun ? this.dailySeed : undefined,
     };
   }
 
@@ -2300,12 +2319,13 @@ export default class GameScene extends Phaser.Scene {
     this.stats.damageTaken += dmg;
     this.player.takeDamage(dmg);
     this.breakCombo(); // 受击断连
-    if (landed) this.losePower(); // 受击火力 -1（下限 0）
+    if (landed) { this.losePower(); vibrate('hit'); } // C7 震动：受击已落地才震（无敌穿过不震）
   }
 
   useBomb() {
     if (this.bombs <= 0 || this.gameEnded) return;
     this.bombs--;
+    vibrate('clear'); // C7 震动：炸弹清屏
     this._addProgress('daily', 'bombs', 1); // #每日任务：清屏炸弹进度
     EventBus.emit(EVENTS.HUD_BOMBS, this.bombs);
 
@@ -2659,6 +2679,28 @@ export default class GameScene extends Phaser.Scene {
       elapsedMs: Math.max(0, this.time.now - (this._levelStartTime || this.time.now)),
       damageTaken: this.stats.damageTaken || 0,
     };
+
+    // OPT-16 C5 每日种子挑战：独立结算域收尾（只在 dailyRun 生效）。
+    //   达成目标（victory 且 scaledScore≥target）→ cleared=true + claim 发 1 次金币（claimed 幂等，同日不重复）。
+    //   更高分才覆盖 bestScore；不写 topScores/levelMedals/league/成就/每日任务/新手计划（_shouldRecordPersist 已短路）。
+    if (this.dailyRun) {
+      const dcfg = DAILY_CHALLENGE || {};
+      const goal = (dcfg.targetScore != null) ? dcfg.targetScore : 60000;
+      const reward = (dcfg.rewardCoins != null) ? dcfg.rewardCoins : 500;
+      const cleared = !!victory && scaledScore >= goal;
+      SaveManager.recordDailyChallenge(scaledScore, cleared);
+      if (cleared) SaveManager.claimDailyChallenge();
+      SaveManager.flushNow(); // C5 关键：结算即落盘当日挑战态（ResultScene 读盘一致）
+      const dc = SaveManager.getDailyChallenge(); // 结算后重读：claimed 反映刚 claim 的幂等态（避免展示「达成未领」）
+      result.daily = {
+        seed: this.dailySeed || SaveManager.dailySeedStr(),
+        bestScore: dc.bestScore || 0,
+        cleared: !!dc.cleared,
+        claimed: !!dc.claimed,
+        goal,
+        reward,
+      };
+    }
 
     // 成就评估（#成就）：事件已实时上报，这里做局末兜底评估（无伤/通关/BossRush 等）。
     // 活动模式胜利不计"通关任意一关/无伤"类成就（victory 仅透传给结算展示，reportRun 按活动压制）

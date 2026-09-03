@@ -32,16 +32,18 @@ export default class WaveSystem {
     this._delayTimer = 0;
     this.bossSpawned = false;
     // A6 波次变体：局随机锁定 1 套变体表（同局内不换表）；无 waveVariants 回退 null（走 wavePlan）
-    this.variantPlan = this._pickVariantPlan(this.level, this.endless);
+    // OPT-16 C5 每日种子挑战：opts.fixedVariantIndex 非空 → 固定取该下标（0=首套），保证同一天两次同图
+    this.variantPlan = this._pickVariantPlan(this.level, this.endless, opts.fixedVariantIndex);
 
     this.startNextWave();
   }
 
   /** A6 局随机锁定变体表：优先取 level.waveVariants 随机 1 套；无则 null（回退 wavePlan）。无尽不适用。 */
-  _pickVariantPlan(level, endless) {
+  _pickVariantPlan(level, endless, fixedIdx) {
     if (endless) return null;
     const variants = level && level.waveVariants;
     if (!variants || variants.length === 0) return null;
+    if (fixedIdx != null && fixedIdx >= 0) return variants[Math.min(fixedIdx, variants.length - 1)];
     return variants[Math.floor(Math.random() * variants.length)];
   }
 

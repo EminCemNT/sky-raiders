@@ -121,6 +121,20 @@ export default class ResultScene extends Phaser.Scene {
       { label: t('resKills'), value: r.kills || 0 },
       { label: t('resCoins'), value: r.coins || 0 },
     ];
+    // OPT-16 C5 每日种子挑战：结算追加「今日种子 # · 今日最佳 · 目标/领取态」两行（独立结算域，纯展示零业务）
+    if (r.daily) {
+      const dSeedShort = String(r.daily.seed == null ? '' : r.daily.seed).slice(0, 6);
+      lines.push({
+        label: t('dailySeedLabel', { seed: dSeedShort }),
+        value: t('dailyChallengeBest', { score: r.daily.bestScore || 0 }),
+      });
+      lines.push({
+        label: t('dailyChallengeGoal', { score: r.daily.goal || 0 }),
+        value: r.daily.claimed ? t('dailyChallengeDone')
+          : r.daily.cleared ? t('dailyChallengeCleared')
+          : t('dailyChallengeReward', { coins: r.daily.reward || 0 }),
+      });
+    }
     if (r.mode === 'endless') {
       lines.push({ label: t('resWave'), value: t('resWaveVal', { wave: r.wave || 0 }) });
       // P1 留存·深空爬塔：无尽结算显示爬塔层数（含破新高标识）
@@ -169,7 +183,7 @@ export default class ResultScene extends Phaser.Scene {
     // 行数多收紧行距，保证最后一颗按钮中心 ≤919（底缘仍在屏内可点）。按钮 58 高、行距 80。
     //   约束：btnY(dataEndY+140) + (btnRows-1)*80 ≤ 919；dataEndY = dataStartY + N*rowGap
     //   btnRows：无尽/活动 2 颗；普通胜利且非末关 3 颗；其余 2 颗。
-    const btnRows = (r.mode === 'endless' || r.mode === 'coin_rush' || r.mode === 'survival')
+    const btnRows = (r.mode === 'endless' || r.mode === 'coin_rush' || r.mode === 'survival' || r.mode === 'daily')
       ? 2
       : ((r.victory && (r.levelId || 1) < LEVELS.length) ? 3 : 2);
     const maxRowSpan = 919 - dataStartY - 140 - (btnRows - 1) * 80; // 3按钮 219 / 2按钮 299
@@ -231,6 +245,15 @@ export default class ResultScene extends Phaser.Scene {
     } else if (r.mode === 'coin_rush' || r.mode === 'survival') {
       this.makeButton(cx, btnY, t('resAgainEvent'), () => {
         transition.goto(this, SCENES.GAME, { mode: r.mode });
+      });
+      this.makeButton(cx, btnY + 80, t('backMenu'), () => {
+        transition.goto(this, SCENES.MENU);
+      });
+    } else if (r.mode === 'daily') {
+      // OPT-16 C5 每日种子挑战：重进保持 mode='daily' + 当日种子（同一天两次重开仍同图）；不进「下一关」
+      const dailySeed = (r.daily && r.daily.seed) || undefined;
+      this.makeButton(cx, btnY, t('resRetry'), () => {
+        transition.goto(this, SCENES.GAME, { mode: 'daily', levelId: r.levelId || 1, dailySeed });
       });
       this.makeButton(cx, btnY + 80, t('backMenu'), () => {
         transition.goto(this, SCENES.MENU);

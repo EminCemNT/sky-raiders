@@ -1426,3 +1426,39 @@ export const TIPS = {
   novice:   ['tip_nov_mov', 'tip_nov_shot', 'tip_nov_focus', 'tip_nov_bomb', 'tip_nov_shield', 'tip_nov_power', 'tip_nov_graze', 'tip_nov_coin'],
   advanced: ['tip_adv_grazeEnergy', 'tip_adv_combo', 'tip_adv_element', 'tip_adv_magnet', 'tip_adv_tower', 'tip_adv_medal', 'tip_adv_overcharge', 'tip_adv_skill'],
 };
+
+// ───────────────────────────────────────────────────────────────
+// OPT-16 C7 移动端震动反馈：事件 → 震动模式（append-only，数值可调；Haptics.vibrate 消费）
+//   hit   受击（已落地）
+//   kill  敌机/Boss 击破（Haptics 内置 120ms 节流，防每杀一震）
+//   clear 炸弹/技能清屏
+//   boss  Boss 阶段/演出（预留）
+//   graze 擦弹（极短；默认不接入，避免高频震动）
+// ───────────────────────────────────────────────────────────────
+export const HAPTICS = {
+  patterns: {
+    hit: 80,
+    kill: [15, 30, 15],
+    clear: [20, 40, 60],
+    boss: 50,
+    graze: 8,
+  },
+};
+
+// ───────────────────────────────────────────────────────────────
+// OPT-16 C5 每日种子挑战：同一天所有人同一固定波次/种子（append-only）
+//   levelId     固定关卡（同一天同图；默认 1，可后续按 seed 轮换关卡）
+//   difficulty  固定难度档（standard=公平，跨设备一致）
+//   seedSalt    种子盐（与 SaveManager._dailySeed FNV-1a 复用，日期追加构成 dailySeed）
+//   targetScore 当日目标分数（victory 且 scaledScore≥target → cleared=true）
+//   rewardCoins 达成奖励（cleared 后 claimDailyChallenge 发 1 次，claimed 幂等）
+//   消费方：SaveManager.getDailyChallenge/recordDailyChallenge/claimDailyChallenge +
+//           GameScene.dailyRun 独立结算域 + MenuScene「今日挑战」入口。
+// ───────────────────────────────────────────────────────────────
+export const DAILY_CHALLENGE = {
+  levelId: 1,
+  difficulty: 'standard',
+  seedSalt: 'sky-daily',
+  targetScore: 60000,
+  rewardCoins: 500,
+};

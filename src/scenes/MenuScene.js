@@ -1,6 +1,8 @@
 import Phaser from 'phaser';
-import { SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, LEVELS, DIFFICULTIES, PERFORMANCE, MEDALS, getCurrentEvent, TOUCH, CODEX_DECOR, EASE, TIPS } from '../config/GameConfig.js';
+import { SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, LEVELS, DIFFICULTIES, PERFORMANCE, MEDALS, getCurrentEvent, TOUCH, CODEX_DECOR, EASE, TIPS, DAILY_CHALLENGE } from '../config/GameConfig.js'; // OPT-16 C5 今日挑战入口
 import { SaveManager } from '../utils/SaveManager.js';
+import { copySaveText, downloadSaveFile, importSave, resetProgress } from '../utils/SaveTransfer.js'; // OPT-16 C4/C8
+import { hapticsSupported } from '../utils/Haptics.js'; // OPT-16 C7 移动端震动开关
 import { t, setLocale } from '../config/Locale.js';
 import { Ads } from '../systems/Ads.js';
 import { AchievementManager } from '../systems/AchievementManager.js';
@@ -272,7 +274,7 @@ export default class MenuScene extends Phaser.Scene {
     const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.7)
       .setOrigin(0).setInteractive();
     ov.add(dim);
-    this.addPanel(ov, cx);
+    this.addPanel(ov, cx, 70, 928); // OPT-16 C4/C8：底部加高，容纳存档管理行
     this.addGlowTitle(ov, cx, 250, t('settingsTitle'), THEME.titleColor);
 
     // 四档难度按钮（P0）：一排四档，当前档选中高亮；点击切换 → 持久化 + 刷新高亮
@@ -289,9 +291,7 @@ export default class MenuScene extends Phaser.Scene {
       const btn = new NeonButton(this, x, 330, t(`diff_${d.id}`), {
         w: btnW, h: btnH, fontSize: 16, glow: true,
         onDown: () => {
-          audio.sfx('ui');
-          SaveManager.set('selectedDifficulty', d.id);
-          this.refreshDifficultySelect();
+          this._trySelectDifficulty(d.id); // OPT-16 C1 难度门禁：勋章不足时拦截 hard/hell 新点击
         },
       });
       ov.add(btn.container);
@@ -369,7 +369,7 @@ export default class MenuScene extends Phaser.Scene {
       fontFamily: THEME.fontFamily, fontSize: '18px', color: THEME.textPrimary,
     }).setOrigin(0, 0.5);
     ov.add(langLabel);
-    const langBtn = new NeonButton(this, cx + 60, 744, '', { w: 170, h: 40, fontSize: 15, glow: true, onDown: () => {
+    const langBtn = new NeonButton(this, cx + 60, 744, '', { w: 170, h: 32, fontSize: 15, glow: true, onDown: () => {
       audio.sfx('ui');
       const cur = SaveManager.load().lang || 'zh';
       const next = cur === 'en' ? 'zh' : 'en';
@@ -382,13 +382,29 @@ export default class MenuScene extends Phaser.Scene {
     this._langBtn = langBtn;
     this.refreshLangSelect();
 
+    // OPT-16 C7 移动端震动开关：平台支持才显示（桌面 navigator.vibrate 缺失 → 整行隐藏，不报错 C7.4）
+    if (hapticsSupported()) {
+      const hapLabel = this.add.text(cx - 150, 776, t('haptics'), {
+        fontFamily: THEME.fontFamily, fontSize: '18px', color: THEME.textPrimary,
+      }).setOrigin(0, 0.5);
+      ov.add(hapLabel);
+      const hapBtn = new NeonButton(this, cx + 60, 776, '', { w: 170, h: 32, fontSize: 14, glow: true, onDown: () => {
+        audio.sfx('ui');
+        SaveManager.set('haptics', SaveManager.load().haptics === false); // false→开；开/缺省→关
+        this.refreshHapticsSelect();
+      } });
+      ov.add(hapBtn.container);
+      this._hapticsBtn = hapBtn;
+      this.refreshHapticsSelect();
+    }
+
     // OPT-16 C2 昵称编辑器：昵称行（标签 + 当前值/编辑按钮）。点击弹 DOM 输入浮层，
     // 校验后写既有 nickname（零新存档字段）；结算分享卡 _resolveNickname 自动走用户值。
-    const nickLabel = this.add.text(cx - 150, 806, t('nicknameEdit'), {
+    const nickLabel = this.add.text(cx - 150, 812, t('nicknameEdit'), {
       fontFamily: THEME.fontFamily, fontSize: '18px', color: THEME.textPrimary,
     }).setOrigin(0, 0.5);
     ov.add(nickLabel);
-    const nickBtn = new NeonButton(this, cx + 60, 806, '', { w: 170, h: 40, fontSize: 13, glow: true, onDown: () => {
+    const nickBtn = new NeonButton(this, cx + 60, 812, '', { w: 170, h: 34, fontSize: 13, glow: true, onDown: () => {
       audio.sfx('ui');
       this._openNicknameEditor();
     } });
@@ -396,7 +412,27 @@ export default class MenuScene extends Phaser.Scene {
     this._nicknameBtn = nickBtn;
     this.refreshNicknameRow();
 
-    ov.add(this.makeMenuBtn(cx, 858, t('close'), () => this.closeSettings()));
+    // OPT-16 C4/C8 存档管理（底部低风险区）：导出存档 / 导入存档 + 重置进度，关闭钮并入末行
+    {
+      const exportBtn = new NeonButton(this, cx - 95, 852, t('saveExport'), {
+        w: 180, h: 38, fontSize: 14, glow: true, onDown: () => this._onExportSave(),
+      });
+      ov.add(exportBtn.container);
+      this._saveExportBtn = exportBtn;
+      const importBtn = new NeonButton(this, cx + 95, 852, t('saveImport'), {
+        w: 180, h: 38, fontSize: 14, glow: true, onDown: () => this._onImportSave(),
+      });
+      ov.add(importBtn.container);
+      this._saveImportBtn = importBtn;
+      const resetBtn = new NeonButton(this, cx - 95, 896, t('resetProgress'), {
+        w: 180, h: 38, fontSize: 14, stroke: THEME.lockedStroke, glow: false, onDown: () => this._onResetProgress(),
+      });
+      ov.add(resetBtn.container);
+      this._resetProgressBtn = resetBtn;
+      ov.add(new NeonButton(this, cx + 95, 896, t('close'), {
+        w: 180, h: 38, fontSize: 14, onDown: () => this.closeSettings(),
+      }).container);
+    }
     this.fadeInPanel(ov);
   }
 
@@ -424,6 +460,15 @@ export default class MenuScene extends Phaser.Scene {
     if (this._langBtn) {
       this._langBtn.setLabel(cur === 'en' ? t('langEn') : t('langZh'));
       this._langBtn.setSelected(cur === 'en');
+    }
+  }
+
+  /** OPT-16 C7 刷新震动开关按钮（开=高亮；关=默认） */
+  refreshHapticsSelect() {
+    const on = SaveManager.load().haptics !== false;
+    if (this._hapticsBtn) {
+      this._hapticsBtn.setLabel(on ? t('hapticsOn') : t('hapticsOff'));
+      this._hapticsBtn.setSelected(on);
     }
   }
 
@@ -560,6 +605,173 @@ export default class MenuScene extends Phaser.Scene {
     }
   }
 
+  // ---- OPT-16 C4/C8 存档导出/导入/重置（逻辑在独立文件 SaveTransfer.js；设置面板底部入口）----
+
+  /** C4 导出存档：点击即复制到剪贴板并 toast；剪贴板不可用回退下载 .json */
+  async _onExportSave() {
+    audio.sfx('ui');
+    try {
+      const res = await copySaveText();
+      if (res && res.ok) { this.flashToast(t('saveExportOk')); return; }
+    } catch (e) { /* 回退下载 */ }
+    const dl = downloadSaveFile();
+    this.flashToast(dl.ok ? t('saveExportOk') : t('saveImportFail'));
+  }
+
+  /** C4 导入存档：DOM 浮层粘贴 JSON → importSave（结构校验/sanitize/备份/覆盖全在内部） */
+  _onImportSave() {
+    audio.sfx('ui');
+    if (this._saveImportEl) return; // 防重复叠层
+    const ov = document.createElement('div');
+    ov.id = 'save-import-overlay';
+    Object.assign(ov.style, {
+      position: 'fixed', inset: '0', zIndex: '9500',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'rgba(2,6,14,0.82)',
+    });
+    const card = document.createElement('div');
+    Object.assign(card.style, {
+      width: '440px', maxWidth: '94vw', padding: '22px 20px 18px', boxSizing: 'border-box',
+      background: 'linear-gradient(180deg,#0e2740,#081627)',
+      border: '1px solid rgba(124,243,255,.6)', borderRadius: '14px',
+      boxShadow: '0 0 26px rgba(80,200,255,.35), inset 0 0 0 1px rgba(120,200,255,.08)',
+      textAlign: 'center',
+    });
+    const title = document.createElement('div');
+    title.textContent = t('saveImport');
+    Object.assign(title.style, {
+      color: '#7cf3ff', fontSize: '18px', fontWeight: '800', letterSpacing: '2px',
+      marginBottom: '14px', fontFamily: 'PingFang SC, Microsoft YaHei, sans-serif',
+    });
+    const ta = document.createElement('textarea');
+    ta.placeholder = t('saveImportPlaceholder');
+    Object.assign(ta.style, {
+      width: '100%', boxSizing: 'border-box', height: '150px', resize: 'vertical',
+      padding: '10px 12px', borderRadius: '8px', border: '1px solid rgba(124,243,255,.5)',
+      background: 'rgba(3,10,20,.9)', color: '#eaf6ff', fontSize: '13px', outline: 'none',
+      fontFamily: 'Consolas, Menlo, monospace', textAlign: 'left',
+    });
+    const err = document.createElement('div');
+    Object.assign(err.style, { minHeight: '20px', marginTop: '8px', color: '#ff7a7a', fontSize: '13px', lineHeight: '20px' });
+    const btns = document.createElement('div');
+    Object.assign(btns.style, { display: 'flex', gap: '12px', marginTop: '6px' });
+    const mkBtn = (label, color, border) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      Object.assign(b.style, {
+        flex: '1', padding: '10px 0', borderRadius: '8px', cursor: 'pointer',
+        color, background: 'rgba(20,40,70,.8)', border: `1px solid ${border}`,
+        fontSize: '15px', fontWeight: '700', fontFamily: 'PingFang SC, Microsoft YaHei, sans-serif',
+      });
+      return b;
+    };
+    const okBtn = mkBtn(t('saveImport'), '#ffd86b', 'rgba(255,216,107,.8)');
+    const cancelBtn = mkBtn(t('close'), '#bcd7ee', 'rgba(150,180,210,.5)');
+    btns.append(okBtn, cancelBtn);
+    card.append(title, ta, err, btns);
+    ov.append(card);
+    document.body.appendChild(ov);
+    this._saveImportEl = ov;
+    this._saveImportHandler = (e) => {
+      // 阻止冒泡：MenuScene create 全局 keydown-ENTER/SPACE 会 startGame，导入输入时不能误触发
+      e.stopPropagation();
+      if (e.key === 'Escape') { e.preventDefault(); cancelBtn.click(); }
+    };
+    ta.addEventListener('keydown', this._saveImportHandler);
+    const cleanup = () => {
+      if (this._saveImportEl) { this._saveImportEl.remove(); this._saveImportEl = null; }
+      if (this._saveImportHandler) { ta.removeEventListener('keydown', this._saveImportHandler); this._saveImportHandler = null; }
+    };
+    okBtn.addEventListener('click', () => {
+      const text = ta.value;
+      if (!text || !text.trim()) { err.textContent = t('saveImportFail'); return; }
+      const res = importSave(text); // 同步；失败不破坏当前档（内部备份/回滚）
+      if (res.ok) {
+        cleanup();
+        this.flashToast(t('saveImportOk'));
+        this.refreshNicknameRow();
+        if (this.saveInfoText) this.saveInfoText.setText(this._saveInfoLabel());
+      } else {
+        err.textContent = t('saveImportFail');
+        ta.style.borderColor = '#ff7a7a';
+      }
+    });
+    cancelBtn.addEventListener('click', () => { err.textContent = ''; cleanup(); });
+    ov.addEventListener('pointerdown', (e) => { if (e.target === ov) cleanup(); });
+    setTimeout(() => { try { ta.focus(); } catch (e) { /* ignore */ } }, 30);
+  }
+
+  /** 关闭导入 DOM 浮层（closeSettings/语言切换等兜底清理） */
+  _closeSaveImportOverlay() {
+    if (this._saveImportEl) {
+      if (this._saveImportHandler) this._saveImportHandler = null;
+      this._saveImportEl.remove();
+      this._saveImportEl = null;
+    }
+  }
+
+  /** C8 重置进度：强确认弹窗（desc 提示不可撤销 + 建议先导出；确认钮延时 2s 防误触） */
+  _onResetProgress() {
+    audio.sfx('ui');
+    if (this._resetConfirmOv) return; // 防重复叠层
+    const cx = GAME_WIDTH / 2, cy = GAME_HEIGHT / 2;
+    const ov = this.add.container(0, 0).setDepth(302);
+    this._resetConfirmOv = ov;
+    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.68).setOrigin(0).setInteractive();
+    const panel = this.add.rectangle(cx, cy, 470, 262, 0x0a1a2e, 0.98)
+      .setStrokeStyle(2, THEME.titleColor, 0.9);
+    const title = this.add.text(cx, cy - 98, t('resetConfirmTitle'), {
+      fontFamily: THEME.fontFamily, fontSize: '26px', fontStyle: '800', color: THEME.titleColor,
+    }).setOrigin(0.5).setShadow(0, 0, '#000000', 8, true, true);
+    const desc = this.add.text(cx, cy - 44, t('resetConfirmDesc'), {
+      fontFamily: THEME.fontFamily, fontSize: '14px', color: THEME.textPrimary, align: 'center', wordWrap: { width: 410 },
+    }).setOrigin(0.5);
+    const tip = this.add.text(cx, cy - 4, t('resetExportTip'), {
+      fontFamily: THEME.fontFamily, fontSize: '13px', color: THEME.textSecondary, align: 'center',
+    }).setOrigin(0.5);
+    const exportTipBtn = new NeonButton(this, cx - 105, cy + 40, t('saveExport'), {
+      w: 190, h: 36, fontSize: 13, glow: true, onDown: () => {
+        const dl = downloadSaveFile();
+        this.flashToast(dl.ok ? t('saveExportOk') : t('saveImportFail'));
+      },
+    });
+    const doResetBtn = new NeonButton(this, cx + 105, cy + 40, '', {
+      w: 190, h: 36, fontSize: 13, stroke: 0x883322, onDown: () => this._doResetProgress(),
+    });
+    const cancelBtn = new NeonButton(this, cx, cy + 92, t('close'), {
+      w: 150, h: 36, fontSize: 14, onDown: () => this._closeResetConfirm(),
+    });
+    ov.add([dim, panel, title, desc, tip, exportTipBtn.container, doResetBtn.container, cancelBtn.container]);
+    dim.on('pointerdown', () => this._closeResetConfirm());
+    // 延时 2s 防误触：倒计时；结束后才可确认
+    doResetBtn.setEnabled(false);
+    let left = 2;
+    const tick = () => {
+      doResetBtn.setLabel(left > 0 ? `${t('resetConfirm')} (${left})` : t('resetConfirm'));
+      if (left <= 0) { doResetBtn.setEnabled(true); return; }
+      left -= 1;
+      setTimeout(tick, 1000);
+    };
+    tick();
+  }
+
+  /** C8 关闭重置确认弹窗 */
+  _closeResetConfirm() {
+    if (this._resetConfirmOv) { this._resetConfirmOv.destroy(); this._resetConfirmOv = null; }
+  }
+
+  /** C8 执行重置：SaveTransfer.resetProgress()（保留设置，进度/收藏回默认）；成功后刷新菜单文案 */
+  _doResetProgress() {
+    const res = resetProgress();
+    if (!res.ok) { this.flashToast(t('saveImportFail')); this._closeResetConfirm(); return; }
+    this._closeResetConfirm();
+    this._closeSaveImportOverlay();
+    this.closeSettings();
+    if (this.saveInfoText) this.saveInfoText.setText(this._saveInfoLabel());
+    this.flashToast(t('resetDone'));
+  }
+
   // ---- OPT-16 C9 主菜单轮换战术提示：顶部一条 tips 文本，点击「下一条」轮换（纯展示零业务）----
 
   /** C9 渲染一条战术提示：按 tutorialDone 分流 novice/advanced 池（只读不写档，C9.1/C9.2）；
@@ -597,6 +809,55 @@ export default class MenuScene extends Phaser.Scene {
     (this._difficultyBtns || []).forEach(({ btn, id }) => btn.setSelected(id === cur));
   }
 
+  // ---- OPT-16 C1 难度门禁：勋章阈值解锁困难/地狱（只拦设置面板手动新点击）----
+  /** C1 难度选择入口：casual/standard 永不拦截；hard/hell 勋章不足时弹锁定提示（不改 selectedDifficulty） */
+  _trySelectDifficulty(id) {
+    audio.sfx('ui');
+    // C1.4：休闲/标准任意勋章可点；勋章口径与关卡面板提示同源 countMedals()（只读派生）
+    if (id === 'hard' || id === 'hell') {
+      const total = SaveManager.countMedals();
+      if (total < MEDALS.THRESHOLD) { this._showDiffLocked(MEDALS.THRESHOLD - total); return; }
+    }
+    SaveManager.set('selectedDifficulty', id); // 正常持久化（与现状一致）
+    this.refreshDifficultySelect();
+  }
+
+  /** C1 高难锁定提示：标题 + 还差 n 枚 + 主按钮跳关卡面板看勋章目标；不改当前选中档高亮 */
+  _showDiffLocked(need) {
+    if (this._diffLockedOv) return; // 已打开防重复叠层
+    const cx = GAME_WIDTH / 2, cy = GAME_HEIGHT / 2;
+    const ov = this.add.container(0, 0).setDepth(302); // 高于设置面板(300)的内嵌子层
+    this._diffLockedOv = ov;
+    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.55).setOrigin(0).setInteractive();
+    const panel = this.add.rectangle(cx, cy, 440, 218, 0x0a1a2e, 0.98)
+      .setStrokeStyle(2, THEME.titleColor, 0.9);
+    const title = this.add.text(cx, cy - 58, t('diffLockedTitle'), {
+      fontFamily: THEME.fontFamily, fontSize: '26px', fontStyle: '800', color: THEME.titleColor,
+    }).setOrigin(0.5).setShadow(0, 0, '#000000', 8, true, true);
+    const desc = this.add.text(cx, cy - 6, t('diffLockedNeed', { n: need }), {
+      fontFamily: THEME.fontFamily, fontSize: '15px', color: THEME.textPrimary, align: 'center', wordWrap: { width: 380 },
+    }).setOrigin(0.5);
+    // 主按钮「前往关卡面板查看勋章目标」：关设置 → 开关卡面板；次按钮关闭（点遮罩 = 关闭）
+    const goBtn = new NeonButton(this, cx - 112, cy + 58, t('diffLockedHint'), {
+      w: 216, h: 46, fontSize: 13, glow: true, onDown: () => {
+        this._closeDiffLocked();
+        this.closeSettings();
+        this.openLevelSelect();
+      },
+    });
+    const closeBtn = new NeonButton(this, cx + 112, cy + 58, t('close'), {
+      w: 128, h: 46, fontSize: 14, onDown: () => this._closeDiffLocked(),
+    });
+    ov.add([dim, panel, title, desc, goBtn.container, closeBtn.container]);
+    dim.on('pointerdown', () => this._closeDiffLocked());
+    this.fadeInPanel(ov);
+  }
+
+  /** C1 关闭高难锁定提示 */
+  _closeDiffLocked() {
+    if (this._diffLockedOv) { this._diffLockedOv.destroy(); this._diffLockedOv = null; }
+  }
+
   /** 刷新三档画质按钮选中态（当前档高亮） */
   refreshQualitySelect() {
     const cur = SaveManager.load().quality || PERFORMANCE.defaultTier;
@@ -607,7 +868,11 @@ export default class MenuScene extends Phaser.Scene {
     if (this.settingsOverlay) { this.settingsOverlay.destroy(); this.settingsOverlay = null; }
     this.settingsOpen = false;
     this._closeNicknameEditor(); // OPT-16 C2：兜底清理 DOM 输入浮层（语言切换等路径）
+    this._closeDiffLocked(); // OPT-16 C1：兜底清理高难锁定提示（语言切换等路径）
+    this._closeSaveImportOverlay(); // OPT-16 C4：兜底清理导入 DOM 浮层
+    this._closeResetConfirm(); // OPT-16 C8：兜底清理重置确认弹窗
     this._noAdsBtn = null;
+    this._hapticsBtn = null; // OPT-16 C7
     this._touchOffsetBtn = null;
     this._langBtn = null;
     this._nicknameBtn = null;
@@ -986,7 +1251,34 @@ export default class MenuScene extends Phaser.Scene {
     if (acts.chests[5] || acts.count < 5) chest5.container.setAlpha(0.55);
     ov.add([chest3.container, chest5.container]);
 
-    ov.add(this.makeMenuBtn(cx, chestY + 70, t('later'), () => this.closeDailyQuest()));
+    // ── OPT-16 C5 每日种子挑战：合并进「每日任务」面板（PM：避免主菜单裸按钮）。
+    //    独立结算域（不进榜/不进每日任务/不领活跃宝箱）；同一天同图同 seed。
+    const dcInfo = SaveManager.getDailyChallenge(); // 跨天自动重置；{date,bestScore,cleared,claimed,seed,targetScore,rewardCoins}
+    const dSeedShort = String(dcInfo.seed == null ? '' : dcInfo.seed).slice(0, 6);
+    const dcY = chestY + 48;
+    const dcStatus = dcInfo.cleared
+      ? (dcInfo.claimed ? t('dailyChallengeDone') : t('dailyChallengeUnclaimed'))
+      : `${t('dailyChallengeGoal', { score: dcInfo.targetScore })} · ${t('dailyChallengeReward', { coins: dcInfo.rewardCoins })}`;
+    ov.add(this.add.text(cx - 188, dcY - 15, `${t('dailyChallenge')} · ${t('dailySeedLabel', { seed: dSeedShort })}`, {
+      fontFamily: THEME.fontFamily, fontSize: '17px', fontStyle: '800', color: THEME.titleColor,
+    }).setOrigin(0, 0.5));
+    ov.add(this.add.text(cx - 188, dcY + 13, dcStatus, {
+      fontFamily: THEME.fontFamily, fontSize: '14px',
+      color: dcInfo.cleared ? THEME.textSuccess : THEME.textSecondary,
+    }).setOrigin(0, 0.5));
+    ov.add(new NeonButton(this, cx + 128, dcY, t('dailyChallengeEnter'), {
+      w: 118, h: 42, fontSize: 16, glow: true,
+      onDown: () => {
+        audio.sfx('ui');
+        transition.goto(this, SCENES.GAME, {
+          mode: 'daily',
+          levelId: (DAILY_CHALLENGE && DAILY_CHALLENGE.levelId) || 1,
+          dailySeed: SaveManager.dailySeedStr(),
+        });
+      },
+    }).container);
+
+    ov.add(this.makeMenuBtn(cx, chestY + 118, t('later'), () => this.closeDailyQuest()));
     this.fadeInPanel(ov);
   }
 

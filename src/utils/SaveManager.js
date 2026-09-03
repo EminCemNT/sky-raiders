@@ -1,4 +1,4 @@
-import { SAVE_KEY, DAILY_QUEST_POOL, DAILY_QUEST_PICK, DAILY_QUEST_ALL_CLEAR_BONUS, DIFFICULTIES, PERFORMANCE, NEWBIE_PLAN, UPGRADE_TREE, MODULES, MODULE_SLOTS, MODULE_SHOP, SKIN_PRICE, WEEKLY_LEAGUE, getIsoWeekKey, CHECKIN_REWARDS, CHECKIN_MAKEUP_COST, RETURN_GIFT, ACTIVE_CHEST, EVENTS } from '../config/GameConfig.js';
+import { SAVE_KEY, DAILY_QUEST_POOL, DAILY_QUEST_PICK, DAILY_QUEST_ALL_CLEAR_BONUS, DIFFICULTIES, PERFORMANCE, NEWBIE_PLAN, UPGRADE_TREE, MODULES, MODULE_SLOTS, MODULE_SHOP, SKIN_PRICE, WEEKLY_LEAGUE, getIsoWeekKey, CHECKIN_REWARDS, CHECKIN_MAKEUP_COST, RETURN_GIFT, ACTIVE_CHEST, EVENTS, DAILY_CHALLENGE } from '../config/GameConfig.js';
 import { EventBus } from './EventBus.js';
 
 /**
@@ -41,6 +41,8 @@ const DEFAULT_SAVE = {
   sensitivity: 1.0,
   touchOffset: 36,
   lang: 'zh',
+  // OPT-16 C7 移动端震动开关（append-only；默认开，老档缺省回退 true，见 load）
+  haptics: true,
   // 每日任务（留存系统 #每日任务）：date=当天日期 / claimed=是否已领 / progress=各指标进度 / picked=当天抽中的指标
   dailyQuest: { date: '', claimed: false, progress: {}, picked: [] },
   // P0 留存-关卡勋章：{ [levelId]: ['c1','c3',...] } 达成记勋章；medalCount=累计勋章数（派生字段，读时重算自愈）
@@ -86,6 +88,9 @@ const DEFAULT_SAVE = {
   nickname: '',
   lastScore: 0,
   prevScore: 0,
+  // OPT-16 C5 每日种子挑战（append-only）：date=当天 YYYY-MM-DD（跨天自动重置）/
+  //   bestScore=当日最佳分（更高才覆盖）/ cleared=当日曾达成目标 / claimed=已领奖（幂等）
+  dailyChallenge: { date: '', bestScore: 0, cleared: false, claimed: false },
 };
 
 let cache = null;
@@ -137,6 +142,7 @@ function freshSave() {
     nickname: '',
     lastScore: 0,
     prevScore: 0,
+    dailyChallenge: { date: '', bestScore: 0, cleared: false, claimed: false },
   };
 }
 
@@ -230,6 +236,13 @@ export const SaveManager = {
         nickname: (typeof parsed.nickname === 'string') ? parsed.nickname : '',
         lastScore: Math.max(0, Math.floor(Number(parsed.lastScore) || 0)),
         prevScore: Math.max(0, Math.floor(Number(parsed.prevScore) || 0)),
+        // OPT-16 C7 震动开关（append-only）：老档缺省回退 true；false → 关
+        haptics: (parsed.haptics !== false),
+        // OPT-16 C5 每日种子挑战（append-only）：深合并，老档缺失兜底默认；claimed 为 PM 附录A 之外 append 补充
+        dailyChallenge: {
+          date: '', bestScore: 0, cleared: false, claimed: false,
+          ...((parsed.dailyChallenge) || {}),
+        },
       };
       // 勋章计数是派生字段：每次 load 从 levelMedals 重算，老存档/脏数据自动自愈
       cache.medalCount = Object.values(cache.levelMedals || {})
@@ -730,6 +743,28 @@ export const SaveManager = {
     this.save();
   },
 
+  // ---- OPT-16 C4/C8 整档覆盖（append-only 公开方法；不改旧字段语义/不碰私有降频机制）----
+  /**
+   * 以 DEFAULT_SAVE 为底整体覆盖当前存档（缺字段兜底默认，字段级清洗与 load() 完全一致）。
+   * 仅 C4 导入 / C8 重置使用；实现先落盘 next 再走 load() 同款深合并，保证 load() 再次返回等价。
+   * @param {object} next 目标整档（缺字段由 DEFAULT 兜底；非法/越界走 load() 同款钳位）
+   * @returns merged 合并后完整档
+   */
+  replaceSave(next) {
+    const incoming = (next && typeof next === 'object') ? next : {};
+    const prevCache = cache;
+    try {
+      localStorage.setItem(SAVE_KEY, JSON.stringify(incoming)); // 仅作为 merge 输入
+      cache = null; // 强制走 load() 的 DEFAULT 兜底 + 字段级深合并/清洗
+      const merged = this.load();
+      this.flushNow(); // 立即落盘合并结果（保证导入/重置后读盘即等价）
+      return merged;
+    } catch (e) {
+      cache = prevCache; // 失败恢复内存态（不破坏当前档）
+      throw e;
+    }
+  },
+
   // ---- P2 体验细节·皮肤装饰（只新增字段与方法，不改旧字段）----
   /** 当前战机皮肤索引（无记录默认 0） */
   getSkin(shipId) {
@@ -906,6 +941,62 @@ export const SaveManager = {
     const mod = this.addRandomModule();
     this.save();
     return { claimed: true, coins, module: mod ? mod.key : null, count: da.count };
+  },
+
+  // ---- OPT-16 C5 每日种子挑战（append-only：字段已在 DEFAULT_SAVE/load 兜底；此处仅当日方法）----
+
+  /** C5 当日种子编号：seedSalt + 当天日期 → FNV-1a（同一天全设备一致）。0 保留给"无种子"态不冲突。 */
+  dailySeedStr() {
+    const cfg = DAILY_CHALLENGE || {};
+    return this._dailySeed(`${cfg.seedSalt || 'sky-daily'}_${this._todayStr()}`);
+  },
+
+  /**
+   * 当日挑战快照（跨天自动重置）：返回 { date, bestScore, cleared, claimed, seed, targetScore, rewardCoins }
+   */
+  getDailyChallenge() {
+    const s = this.load();
+    const today = this._todayStr();
+    if (s.dailyChallenge.date !== today) {
+      s.dailyChallenge = { date: today, bestScore: 0, cleared: false, claimed: false };
+      this.save();
+    }
+    const cfg = DAILY_CHALLENGE || {};
+    return {
+      ...s.dailyChallenge,
+      seed: this.dailySeedStr(),
+      targetScore: (cfg.targetScore != null) ? cfg.targetScore : 60000,
+      rewardCoins: (cfg.rewardCoins != null) ? cfg.rewardCoins : 500,
+    };
+  },
+
+  /** C5 挑战局结算：更高分覆盖 bestScore；cleared 幂等置 true（不自动发奖，发奖走 claim） */
+  recordDailyChallenge(score, cleared) {
+    const s = this.load();
+    const today = this._todayStr();
+    if (s.dailyChallenge.date !== today) this.getDailyChallenge();
+    const dc = s.dailyChallenge;
+    const v = Math.max(0, Math.floor(Number(score) || 0));
+    if (v > (dc.bestScore || 0)) dc.bestScore = v;
+    if (cleared) dc.cleared = true;
+    this.save();
+    return { ...dc };
+  },
+
+  /** C5 领取达成奖励：cleared 且未领 → 发 1 次金币；已领/未达成不重复。返回 { claimed, reason, reward } */
+  claimDailyChallenge() {
+    const s = this.load();
+    const today = this._todayStr();
+    if (s.dailyChallenge.date !== today) this.getDailyChallenge();
+    const dc = s.dailyChallenge;
+    const cfg = DAILY_CHALLENGE || {};
+    const reward = (cfg.rewardCoins != null) ? cfg.rewardCoins : 500;
+    if (!dc.cleared) return { claimed: false, reason: 'not-cleared', reward: 0 };
+    if (dc.claimed) return { claimed: false, reason: 'claimed', reward: 0 };
+    s.coins = (s.coins || 0) + reward;
+    dc.claimed = true;
+    this.save();
+    return { claimed: true, reason: 'ok', reward };
   },
 
   // ---- P1 留存·回归激励（断签召回）----
