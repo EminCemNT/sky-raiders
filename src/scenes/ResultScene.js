@@ -157,10 +157,25 @@ export default class ResultScene extends Phaser.Scene {
         .join(' / ');
       lines.push({ label: t('resMedals'), value: names });
     }
+    // OPT-16 C3 战后复盘：本局详情三行（擦弹/局时长/受击），纯展示零业务。
+    // 放最高分行之前、全模式一致显示；与既有行同 {label,value} 格式。
+    lines.push({ label: t('resGrazes'), value: r.grazes || 0 });
+    lines.push({ label: t('resTime'), value: this._fmtDuration(r.elapsedMs) });
+    lines.push({ label: t('resHits'), value: r.damageTaken || 0 });
     lines.push({ label: t('resBest'), value: r.bestScore ?? 0 });
     const dataStartY = 400;
+    // OPT-16 C3：详情行追加后行数可达 9-10（无尽/活动原本就有 5-7 行），若保持 40px 行距
+    // 会把底部按钮挤出 960px 画布。这里做「行距自适应」：行数少保持 40（与旧布局逐像素一致），
+    // 行数多收紧行距，保证最后一颗按钮中心 ≤919（底缘仍在屏内可点）。按钮 58 高、行距 80。
+    //   约束：btnY(dataEndY+140) + (btnRows-1)*80 ≤ 919；dataEndY = dataStartY + N*rowGap
+    //   btnRows：无尽/活动 2 颗；普通胜利且非末关 3 颗；其余 2 颗。
+    const btnRows = (r.mode === 'endless' || r.mode === 'coin_rush' || r.mode === 'survival')
+      ? 2
+      : ((r.victory && (r.levelId || 1) < LEVELS.length) ? 3 : 2);
+    const maxRowSpan = 919 - dataStartY - 140 - (btnRows - 1) * 80; // 3按钮 219 / 2按钮 299
+    const rowGap = Math.min(40, Math.max(24, Math.floor(maxRowSpan / lines.length)));
     lines.forEach((l, i) => {
-      this.add.text(cx, dataStartY + i * 40, `${l.label}   ${l.value}${l.newBest ? t('resNewRecord') : ''}`, {
+      this.add.text(cx, dataStartY + i * rowGap, `${l.label}   ${l.value}${l.newBest ? t('resNewRecord') : ''}`, {
         fontFamily: THEME.fontFamily, fontSize: '22px',
         color: l.newBest ? THEME.textGoldLight : THEME.textPrimary,
         fontStyle: l.newBest ? '800' : 'normal',
@@ -168,8 +183,8 @@ export default class ResultScene extends Phaser.Scene {
     });
 
     // ── UI P2 信息层：完成度条（NeonBar）+ 连击峰值面板 ──
-    // 动态下移：数据行数（normal 4 行 / endless 5 行）决定信息层与按钮基准 Y，避免遮挡。
-    const dataEndY = dataStartY + lines.length * 40;
+    // 动态下移：数据行数与行距决定信息层与按钮基准 Y，避免遮挡（C3 行多时行距自适应收紧）。
+    const dataEndY = dataStartY + lines.length * rowGap;
     const barY = dataEndY + 18;
     const comboY = barY + 56;
     const btnY = comboY + 66;
@@ -268,6 +283,12 @@ export default class ResultScene extends Phaser.Scene {
   makeButton(x, y, label, cb) {
     // P1 UI：统一复用 NeonButton（辉光 + hover + 按压缩放），与 MenuScene 风格一致
     return new NeonButton(this, x, y, label, { glow: true, onDown: cb }).container;
+  }
+
+  /** OPT-16 C3 战后复盘：局时长格式化。95_000 → '1:35'；<1min → '0:42'（纯展示） */
+  _fmtDuration(ms) {
+    const s = Math.max(0, Math.round((Number(ms) || 0) / 1000));
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   }
 
   // ---- P1 留存·社交排行：成绩分享卡（纯本地，无后端）----

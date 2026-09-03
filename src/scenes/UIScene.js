@@ -212,6 +212,8 @@ export default class UIScene extends Phaser.Scene {
       fontFamily: THEME.fontFamily, fontSize: '46px', fontStyle: '800', color: THEME.titleColor,
     }).setOrigin(0.5).setShadow(0, 0, THEME.titleShadow, 16, true, true);
     const resumeBtn = this.makePauseButton(GAME_WIDTH / 2, 440, t('uiResume'), () => this.togglePause());
+    // OPT-16 C6 暂停面板「重开本局」：放「继续」下方、quit 上方（y485），二次确认后同参数重进（主动放弃，不结算/不计数）
+    const restartBtn = this.makePauseButton(GAME_WIDTH / 2, 485, t('uiRestart'), () => this._confirmRestart());
     const quitBtn = this.makePauseButton(GAME_WIDTH / 2, 530, t('uiQuit'), () => this.quitToMenu());
     // P1-6 可见判定点开关（斑鸠/虫姬同款）：暂停面板内一键切换存档 showHitbox
     const hbBtn = new NeonButton(this, GAME_WIDTH / 2, 620, this._hitboxLabel(), {
@@ -222,7 +224,7 @@ export default class UIScene extends Phaser.Scene {
         audio.sfx('ui');
       },
     });
-    this.pauseOverlay.add([dim, pTitle, resumeBtn, quitBtn, hbBtn.container]);
+    this.pauseOverlay.add([dim, pTitle, resumeBtn, restartBtn, quitBtn, hbBtn.container]);
 
     // 键盘暂停（P / ESC）
     this.input.keyboard.on('keydown-P', () => this.togglePause());
@@ -450,6 +452,59 @@ export default class UIScene extends Phaser.Scene {
       this._paused = true;
       this.pauseOverlay.setVisible(true);
     }
+  }
+
+  // ---- OPT-16 C6 暂停面板「重开本局」：二次确认 → 同参数重进 GameScene ----
+
+  /** C6 弹「重开本局」二次确认（静态面板 + 确定/取消；reduced-motion N/A） */
+  _confirmRestart() {
+    if (this._restartConfirm) return; // 已打开防重复叠层
+    if (transition.ready && transition._busy) return; // 过渡中不叠加（与 quit 一致）
+    const cx = GAME_WIDTH / 2, cy = GAME_HEIGHT / 2;
+    const ov = this.add.container(0, 0).setDepth(260);
+    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.68).setOrigin(0).setInteractive();
+    const panel = this.add.rectangle(cx, cy, 400, 190, 0x0a1a2e, 0.98)
+      .setStrokeStyle(2, THEME.titleColor, 0.9);
+    const title = this.add.text(cx, cy - 60, t('restartConfirmTitle'), {
+      fontFamily: THEME.fontFamily, fontSize: '26px', fontStyle: '800', color: THEME.titleColor,
+    }).setOrigin(0.5).setShadow(0, 0, '#000000', 8, true, true);
+    const desc = this.add.text(cx, cy - 8, t('restartConfirmDesc'), {
+      fontFamily: THEME.fontFamily, fontSize: '15px', color: THEME.textPrimary, align: 'center', wordWrap: { width: 340 },
+    }).setOrigin(0.5);
+    const okBtn = new NeonButton(this, cx - 88, cy + 54, t('uiRestart'), {
+      w: 150, h: 44, fontSize: 15, glow: true, onDown: () => this._doRestart(),
+    });
+    const cancelBtn = new NeonButton(this, cx + 88, cy + 54, t('restartCancel'), {
+      w: 150, h: 44, fontSize: 15, onDown: () => this._closeRestartConfirm(),
+    });
+    ov.add([dim, panel, title, desc, okBtn.container, cancelBtn.container]);
+    dim.on('pointerdown', () => this._closeRestartConfirm()); // 点遮罩 = 取消
+    this._restartConfirm = ov;
+  }
+
+  /** C6 关闭二次确认弹窗 */
+  _closeRestartConfirm() {
+    if (this._restartConfirm) { this._restartConfirm.destroy(); this._restartConfirm = null; }
+  }
+
+  /** C6 执行重开：读 GameScene.getRunParams() → 复位暂停态 → 同参数重进（等同 Quit 后手动 Start，一次点击） */
+  _doRestart() {
+    if (transition.ready && transition._busy) { this._closeRestartConfirm(); return; }
+    const g = this.scene.get(SCENES.GAME);
+    if (!g || typeof g.getRunParams !== 'function') { this._closeRestartConfirm(); return; } // 防御：无 GameScene 静默返回
+    const params = g.getRunParams();
+    this._closeRestartConfirm();
+    this._stopPausePulse();
+    this._paused = false;
+    this.pauseOverlay.setVisible(false);
+    this.scene.resume(SCENES.GAME);
+    // 淡出后停旧 GAME/UI，再以同参数启动新 GameScene（重开为主动放弃：不进 endGame → 不计 failStreak/不写结算）
+    transition.goto(this, SCENES.GAME, params, {
+      beforeStart: () => {
+        this.scene.stop(SCENES.GAME);
+        this.scene.stop(SCENES.UI);
+      },
+    });
   }
 
   /**

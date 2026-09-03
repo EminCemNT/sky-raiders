@@ -107,10 +107,10 @@ export default class GameScene extends Phaser.Scene {
     //   _reliefCombatMul  选项 A：休闲档敌人/Boss 战斗系数（session 覆盖，不写 selectedDifficulty）
     //   _reliefAtkPicked  选项 B：已选 +10% 攻击（Player.reliefAtkMul 消费）
     //   _reliefOverlay/_reliefCtl  救济提示面板（与爬塔增益面板同款）
-    this._reliefRun = false;
+    this._reliefRun = !!(data && data.reliefRun); // OPT-16 C6 暂停重开：救济 session 覆盖保留（正常进入=全 false/null）
     this._reliefEligible = false;
-    this._reliefCombatMul = null;
-    this._reliefAtkPicked = false;
+    this._reliefCombatMul = (data && data.reliefCombatMul) || null; // OPT-16 C6 恢复：选项 A 战斗系数
+    this._reliefAtkPicked = !!(data && data.reliefAtkPicked); // OPT-16 C6 恢复：选项 B +10% 攻击已选
     this._reliefOpen = false;
     this._reliefOverlay = null;
     this._reliefCtl = null;
@@ -346,7 +346,8 @@ export default class GameScene extends Phaser.Scene {
 
     // A9 连续失败救济局（仅 normal 主线）：failStreak[levelId] >= 3 → 开局弹三选一
     //（降难度 session 覆盖 / 临时增益 +1 命或 +10% 攻击 / 拒绝）。无尽已有广告复活兜底，不触发。
-    if (this.mode === 'normal' && !this._tutorialCtl) {
+    // OPT-16 C6 暂停重开：_reliefRun 已 true（救济局重开）→ 不重复弹面板；其余仍按 failStreak 判定。
+    if (this.mode === 'normal' && !this._tutorialCtl && !this._reliefRun) {
       this._reliefEligible = SaveManager.getFailStreak(this.levelId) >= (RELIEF.failStreakThreshold || 3);
       if (this._reliefEligible) this.showReliefPanel();
     }
@@ -2047,6 +2048,23 @@ export default class GameScene extends Phaser.Scene {
   }
 
   /**
+   * OPT-16 C6 暂停面板「重开本局」：返回与本局相同参数的重进 payload（供 UIScene 读）。
+   * 机体/皮肤由 GameScene.create 重新读取 SaveManager.selectedShip/skins → 无需在此带 ship（与 Quit→Start 等价）。
+   * 救济 session 覆盖透传保留（C6.4）：reliefRun/reliefCombatMul/reliefAtkPicked → init 恢复；
+   * 事件/无尽等 mode 隐含 eventCfg/波次表，由 mode+levelId 派生，同参数重进即等同重开。
+   * @returns {{mode: string, levelId: number, reliefRun: boolean, reliefCombatMul: object|null, reliefAtkPicked: boolean}}
+   */
+  getRunParams() {
+    return {
+      mode: this.mode,
+      levelId: this.levelId,
+      reliefRun: !!this._reliefRun,
+      reliefCombatMul: this._reliefCombatMul || null,
+      reliefAtkPicked: !!this._reliefAtkPicked,
+    };
+  }
+
+  /**
    * D1 P2 修复：统一局内「每日任务 / 新手计划」持久化进度入账守卫。
    * 救济局(_reliefRun=true)不累加进度（防刷）；局内金币入账、击杀/连击等实时统计不受影响。
    * @param {'daily'|'newbie'} type
@@ -2636,6 +2654,10 @@ export default class GameScene extends Phaser.Scene {
       // OPT-13 批B B15 分享卡：同关同模式排除本局的历史最高分（0=无历史 → 首秀）+ 本局难度（边框强调色）
       prevSameBest,
       difficulty: (this.difficultyCfg && this.difficultyCfg.id) || 'standard',
+      // OPT-16 C3 战后复盘：结算 payload 只读透传（纯展示，不入存档）。ResultScene 详情行展示。
+      grazes: this.grazeCount || 0,
+      elapsedMs: Math.max(0, this.time.now - (this._levelStartTime || this.time.now)),
+      damageTaken: this.stats.damageTaken || 0,
     };
 
     // 成就评估（#成就）：事件已实时上报，这里做局末兜底评估（无伤/通关/BossRush 等）。

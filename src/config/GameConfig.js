@@ -1415,3 +1415,14 @@ export const MAGIC = {
   hudGrazeY: 124,              // UIScene 右侧信息列：擦弹 y
   hudEnergyX: 204,             // UIScene 左侧文本列 x（HP/能量文本）
 };
+
+// ───────────────────────────────────────────────────────────────
+// OPT-16 C9 主菜单轮换战术提示：词条 key 池（append-only，MenuScene._renderTip 消费）
+//   novice   = tutorialDone=false 新手池
+//   advanced = tutorialDone=true 进阶池
+// 相邻不重复由 MenuScene._lastTipKey 会话级保证；词条缺失静默隐藏（C9.5）。
+// ───────────────────────────────────────────────────────────────
+export const TIPS = {
+  novice:   ['tip_nov_mov', 'tip_nov_shot', 'tip_nov_focus', 'tip_nov_bomb', 'tip_nov_shield', 'tip_nov_power', 'tip_nov_graze', 'tip_nov_coin'],
+  advanced: ['tip_adv_grazeEnergy', 'tip_adv_combo', 'tip_adv_element', 'tip_adv_magnet', 'tip_adv_tower', 'tip_adv_medal', 'tip_adv_overcharge', 'tip_adv_skill'],
+};

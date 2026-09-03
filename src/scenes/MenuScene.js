@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, LEVELS, DIFFICULTIES, PERFORMANCE, MEDALS, getCurrentEvent, TOUCH, CODEX_DECOR, EASE } from '../config/GameConfig.js';
+import { SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, LEVELS, DIFFICULTIES, PERFORMANCE, MEDALS, getCurrentEvent, TOUCH, CODEX_DECOR, EASE, TIPS } from '../config/GameConfig.js';
 import { SaveManager } from '../utils/SaveManager.js';
 import { t, setLocale } from '../config/Locale.js';
 import { Ads } from '../systems/Ads.js';
@@ -61,6 +61,19 @@ export default class MenuScene extends Phaser.Scene {
       fontFamily: THEME.fontFamily, fontSize: '17px', color: THEME.subBright, fontStyle: '700',
     }).setOrigin(0.5).setAlpha(0.75).setDepth(2).setLetterSpacing(8);
     this.tweens.add({ targets: this.subTitle, alpha: { from: 0.5, to: 0.95 }, duration: 2200, yoyo: true, repeat: -1, ease: EASE.breathe });
+
+    // OPT-16 C9 主菜单轮换战术提示（纯展示零业务）：顶部空隙一条 tips，点击「下一条」轮换。
+    // 放 y=40（顶版号 y14 之下、标题能量环 y74 之上），不与任何主按钮/controlsHint/存档信息重叠。
+    // reduced-motion 友好：入场淡入省略（静态直接显示）；词条缺失/空池静默隐藏（C9.5）。
+    this.tipText = this.add.text(cx, 40, '', {
+      fontFamily: THEME.fontFamily, fontSize: '13px', fontStyle: '700', color: THEME.subBright,
+    }).setOrigin(0.5).setAlpha(0.9).setDepth(2).setInteractive({ useHandCursor: true });
+    this.tipText.on('pointerdown', () => { audio.sfx('ui'); this._nextTip(); });
+    if (!this.reduceMotion) {
+      this.tipText.setAlpha(0);
+      this.tweens.add({ targets: this.tipText, alpha: 0.9, duration: 320, ease: EASE.enter });
+    }
+    this._renderTip();
 
     // 标题能量环装饰（缓慢旋转 + 脉动）
     this.energyRing = this.add.graphics().setPosition(cx, 218).setDepth(0);
@@ -214,6 +227,8 @@ export default class MenuScene extends Phaser.Scene {
   }
 
   startGame() {
+    // OPT-16 C2 防御：昵称编辑浮层打开时忽略键盘快捷（避免误触发开局）
+    if (this._nickInputEl) return;
     // 「开始游戏」= 进入已解锁的最高关（继续进度）
     const unlocked = SaveManager.load().unlockedLevel || 1;
     const lvl = Math.min(unlocked, LEVELS.length);
@@ -222,6 +237,7 @@ export default class MenuScene extends Phaser.Scene {
 
   /** 无尽模式（Score Attack）：无限波次 + 难度递增，直到命尽 */
   startEndless() {
+    if (this._nickInputEl) return; // OPT-16 C2 防御同上
     transition.goto(this, SCENES.GAME, { mode: 'endless', levelId: 1 });
   }
 
@@ -366,7 +382,21 @@ export default class MenuScene extends Phaser.Scene {
     this._langBtn = langBtn;
     this.refreshLangSelect();
 
-    ov.add(this.makeMenuBtn(cx, 806, t('close'), () => this.closeSettings()));
+    // OPT-16 C2 昵称编辑器：昵称行（标签 + 当前值/编辑按钮）。点击弹 DOM 输入浮层，
+    // 校验后写既有 nickname（零新存档字段）；结算分享卡 _resolveNickname 自动走用户值。
+    const nickLabel = this.add.text(cx - 150, 806, t('nicknameEdit'), {
+      fontFamily: THEME.fontFamily, fontSize: '18px', color: THEME.textPrimary,
+    }).setOrigin(0, 0.5);
+    ov.add(nickLabel);
+    const nickBtn = new NeonButton(this, cx + 60, 806, '', { w: 170, h: 40, fontSize: 13, glow: true, onDown: () => {
+      audio.sfx('ui');
+      this._openNicknameEditor();
+    } });
+    ov.add(nickBtn.container);
+    this._nicknameBtn = nickBtn;
+    this.refreshNicknameRow();
+
+    ov.add(this.makeMenuBtn(cx, 858, t('close'), () => this.closeSettings()));
     this.fadeInPanel(ov);
   }
 
@@ -397,6 +427,170 @@ export default class MenuScene extends Phaser.Scene {
     }
   }
 
+  // ---- OPT-16 C2 昵称编辑器：设置面板昵称行 + DOM 输入浮层 ----
+
+  /** C2 校验昵称：trim 后 1–12 字符，字符集 中文字母数字_-（PM 假设） */
+  _validateNickname(raw) {
+    const v = String(raw == null ? '' : raw).trim();
+    if (v.length < 1 || v.length > 12) return { ok: false, reason: 'len' };
+    if (!/^[\u4e00-\u9fa5A-Za-z0-9_-]+$/.test(v)) return { ok: false, reason: 'char' };
+    return { ok: true, value: v };
+  }
+
+  /** C2 昵称行展示文案：非空=用户昵称；空=默认名+随机后缀（纯展示，不写档） */
+  _nicknameRowLabel() {
+    const s = SaveManager.load();
+    if (typeof s.nickname === 'string' && s.nickname) return s.nickname;
+    if (this._nickPreviewSuffix == null) {
+      this._nickPreviewSuffix = String(Math.floor(Math.random() * 90) + 10); // 10-99
+    }
+    return `${t('nicknameDefault')}·${this._nickPreviewSuffix}`;
+  }
+
+  /** C2 刷新昵称按钮文案（含随机后缀预览，仅展示不写档） */
+  refreshNicknameRow() {
+    if (this._nicknameBtn) {
+      this._nicknameBtn.setLabel(this._nicknameRowLabel());
+      this._nicknameBtn.setSelected(false);
+    }
+  }
+
+  /** C2 昵称编辑浮层：半透明遮罩 + DOM <input>（纯本地，无网络/后端）。确认合法才写 nickname。 */
+  _openNicknameEditor() {
+    if (this._nickInputEl) return; // 已打开，避免重复叠层
+    const s = SaveManager.load();
+    const cur = (typeof s.nickname === 'string' && s.nickname) ? s.nickname : '';
+    const ov = document.createElement('div');
+    ov.id = 'nickname-editor-overlay';
+    Object.assign(ov.style, {
+      position: 'fixed', inset: '0', zIndex: '9500',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'rgba(2,6,14,0.82)',
+    });
+    const card = document.createElement('div');
+    Object.assign(card.style, {
+      width: '300px', padding: '22px 20px 18px', boxSizing: 'border-box',
+      background: 'linear-gradient(180deg,#0e2740,#081627)',
+      border: '1px solid rgba(124,243,255,.6)', borderRadius: '14px',
+      boxShadow: '0 0 26px rgba(80,200,255,.35), inset 0 0 0 1px rgba(120,200,255,.08)',
+      textAlign: 'center',
+    });
+    const title = document.createElement('div');
+    title.textContent = t('nicknameEdit');
+    Object.assign(title.style, {
+      color: '#7cf3ff', fontSize: '18px', fontWeight: '800', letterSpacing: '2px',
+      marginBottom: '14px', fontFamily: 'PingFang SC, Microsoft YaHei, sans-serif',
+    });
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.maxLength = 12;
+    input.value = cur;
+    input.placeholder = t('nicknamePlaceholder');
+    Object.assign(input.style, {
+      width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: '8px',
+      border: '1px solid rgba(124,243,255,.5)', background: 'rgba(3,10,20,.9)',
+      color: '#eaf6ff', fontSize: '17px', outline: 'none', textAlign: 'center',
+      fontFamily: 'PingFang SC, Microsoft YaHei, sans-serif',
+    });
+    const err = document.createElement('div');
+    Object.assign(err.style, {
+      minHeight: '20px', marginTop: '8px', color: '#ff7a7a', fontSize: '13px', lineHeight: '20px',
+    });
+    const btns = document.createElement('div');
+    Object.assign(btns.style, { display: 'flex', gap: '12px', marginTop: '6px' });
+    const mkBtn = (label, color, border) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      Object.assign(b.style, {
+        flex: '1', padding: '9px 0', borderRadius: '8px', cursor: 'pointer',
+        color, background: 'rgba(20,40,70,.8)', border: `1px solid ${border}`,
+        fontSize: '15px', fontWeight: '700', fontFamily: 'PingFang SC, Microsoft YaHei, sans-serif',
+      });
+      return b;
+    };
+    const okBtn = mkBtn(t('saveOk'), '#ffd86b', 'rgba(255,216,107,.8)');
+    const cancelBtn = mkBtn(t('close'), '#bcd7ee', 'rgba(150,180,210,.5)');
+    btns.append(okBtn, cancelBtn);
+    card.append(title, input, err, btns);
+    ov.append(card);
+    document.body.appendChild(ov);
+    this._nickInputEl = ov;
+    this._nickInputHandler = (e) => {
+      // 阻止冒泡：MenuScene create 里全局 keydown-ENTER/SPACE 会 startGame，不能在编辑昵称时误触发
+      e.stopPropagation();
+      if (e.key === 'Enter') { e.preventDefault(); okBtn.click(); }
+      else if (e.key === 'Escape') { e.preventDefault(); cancelBtn.click(); }
+    };
+    input.addEventListener('keydown', this._nickInputHandler);
+    const cleanup = () => {
+      if (this._nickInputEl) { this._nickInputEl.remove(); this._nickInputEl = null; }
+      if (this._nickInputHandler) { input.removeEventListener('keydown', this._nickInputHandler); this._nickInputHandler = null; }
+      if (this._nickEditorCallback) this._nickEditorCallback = null;
+    };
+    okBtn.addEventListener('click', () => {
+      const res = this._validateNickname(input.value);
+      if (!res.ok) {
+        err.textContent = res.reason === 'len' ? t('nicknameLenErr', { n: 12 }) : t('nicknameCharErr');
+        input.style.borderColor = '#ff7a7a';
+        return;
+      }
+      SaveManager.set('nickname', res.value);
+      this.refreshNicknameRow();
+      this.flashToast(t('saveOk'));
+      cleanup();
+    });
+    cancelBtn.addEventListener('click', () => {
+      err.textContent = '';
+      cleanup();
+    });
+    // 点遮罩关闭（不写档）
+    ov.addEventListener('pointerdown', (e) => {
+      if (e.target === ov) { cleanup(); }
+    });
+    setTimeout(() => { try { input.focus(); } catch (e) { /* ignore */ } }, 30);
+  }
+
+  /** 关闭昵称浮层（外部调用：closeSettings/语言切换等兜底清理） */
+  _closeNicknameEditor() {
+    if (this._nickInputEl) {
+      if (this._nickInputHandler) this._nickInputHandler = null;
+      this._nickInputEl.remove();
+      this._nickInputEl = null;
+    }
+  }
+
+  // ---- OPT-16 C9 主菜单轮换战术提示：顶部一条 tips 文本，点击「下一条」轮换（纯展示零业务）----
+
+  /** C9 渲染一条战术提示：按 tutorialDone 分流 novice/advanced 池（只读不写档，C9.1/C9.2）；
+   *  相邻不重复（C9.3）；空池 / 词条缺失 → 静默隐藏不报错（C9.5）。 */
+  _renderTip() {
+    if (!this.tipText) return;
+    const s = SaveManager.load();
+    const poolKey = s.tutorialDone ? 'advanced' : 'novice';
+    const pool = (TIPS[poolKey] || []);
+    if (!pool.length) { this.tipText.setVisible(false); return; } // C9.5 空池静默
+    let idx = (this._tipIdx == null) ? Math.floor(Math.random() * pool.length) : this._tipIdx;
+    const key = pool[idx];
+    // 相邻不重复：随机撞到上一条则顺移 1（单元素池无法避免重复，可接受）
+    if (key === this._lastTipKey && pool.length > 1) idx = (idx + 1) % pool.length;
+    this._tipIdx = idx;
+    this._lastTipKey = pool[idx];
+    const txt = t(pool[idx]);
+    if (!txt || txt === pool[idx]) { this.tipText.setVisible(false); return; } // C9.5 词条缺失静默隐藏
+    this.tipText.setText(txt).setVisible(true);
+  }
+
+  /** C9 点击「下一条」：按当前 tutorialDone 对应池顺序取下一条并重渲染 */
+  _nextTip() {
+    const s = SaveManager.load();
+    const pool = TIPS[s.tutorialDone ? 'advanced' : 'novice'] || [];
+    if (!pool.length) { if (this.tipText) this.tipText.setVisible(false); return; }
+    this._tipIdx = (this._tipIdx == null ? -1 : this._tipIdx) + 1;
+    if (this._tipIdx >= pool.length) this._tipIdx = 0;
+    this._renderTip();
+  }
+
   /** 刷新四档难度按钮选中态（当前档高亮） */
   refreshDifficultySelect() {
     const cur = SaveManager.load().selectedDifficulty || 'standard';
@@ -412,9 +606,11 @@ export default class MenuScene extends Phaser.Scene {
   closeSettings() {
     if (this.settingsOverlay) { this.settingsOverlay.destroy(); this.settingsOverlay = null; }
     this.settingsOpen = false;
+    this._closeNicknameEditor(); // OPT-16 C2：兜底清理 DOM 输入浮层（语言切换等路径）
     this._noAdsBtn = null;
     this._touchOffsetBtn = null;
     this._langBtn = null;
+    this._nicknameBtn = null;
     this._sensSlider = null;
   }
 
