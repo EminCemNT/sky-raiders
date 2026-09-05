@@ -130,6 +130,8 @@ function freshSave() {
     sensitivity: 1.0,
     touchOffset: 36,
     lang: 'zh',
+    // OPT-16 C7 移动端震动开关（与 DEFAULT_SAVE/load() 三处形状一致，显式列键）
+    haptics: true,
     league: { week: '', score: 0, claimed: false, rank: 0 },
     towerTop: 0,
     dailyActs: { date: '', count: 0, chests: { 3: false, 5: false } },
