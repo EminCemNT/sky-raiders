@@ -582,9 +582,13 @@ export default class HangarScene extends Phaser.Scene {
     const shipIdx = (save.selectedShip != null) ? save.selectedShip : 0;
     const ship = (SHIPS && SHIPS[shipIdx]) ? SHIPS[shipIdx] : (SHIPS ? SHIPS[0] : null);
     if (ship && ship.passive) {
+      // OPT-16 C11 霆光与苍鹰同为 thunder 元素但系数不同：优先 per-ship 词条 passiveDesc_{id}，
+      // 缺失（既有 3 架）回退 element 词条 passive_{element} → 既有显示零感知
+      const descKey = `passiveDesc_${ship.id}`;
+      const descTxt = t(descKey);
       this.modulePassiveText.setText(t('modulePassive', {
         ship: t(`ship_${ship.id}`),
-        desc: t(`passive_${ship.passive.element}`),
+        desc: (descTxt === descKey) ? t(`passive_${ship.passive.element}`) : descTxt,
       }));
     } else {
       this.modulePassiveText.setText(t('modulePassiveNone'));

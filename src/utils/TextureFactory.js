@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { COLORS } from '../config/GameConfig.js';
+import { COLORS, SHIPS } from '../config/GameConfig.js';
 
 /**
  * TextureFactory —— 程序化生成全部游戏纹理（科幻扁平霓虹风格）。
@@ -43,9 +43,10 @@ export function generateAll(scene) {
   const g = scene.make.graphics({ x: 0, y: 0, add: false });
 
   drawPlayer(g); g.generateTexture('player', 48, 54);
-  // P2 体验细节·皮肤装饰：3 战机 × 3 皮肤纹理（append-only，原 player 纹理不动）
+  // P2 体验细节·皮肤装饰：战机 × 3 皮肤纹理（append-only，原 player 纹理不动）
   // key = player_skin_{shipId}_{skinId}，全部 48×54 与原机同尺寸，保证 physics body 不漂移
-  for (let shipId = 0; shipId < 3; shipId++) {
+  // OPT-16 C11：上限由固定 3 改为 SHIPS.length（第 4 架霆光自动生成 player_skin_3_0..2）
+  for (let shipId = 0; shipId < SHIPS.length; shipId++) {
     for (let skinId = 0; skinId < 3; skinId++) {
       drawPlayerSkin(g, shipId, skinId);
       g.generateTexture(`player_skin_${shipId}_${skinId}`, 48, 54);
@@ -181,6 +182,12 @@ const SKIN_PALETTES = [
     { light: 0xd8f4ff, mid: 0x9ff0ff, deep: 0x2a7a9a, wing: 0x55b8d8, neon: 0xc9f8ff, core: 0xf0fbff, cockpit: 0x0a2a3a, tip: 0xffffff, glow: 0x9ff0ff, variant: 0 },
     { light: 0xcfd4da, mid: 0x55606a, deep: 0x1c2026, wing: 0x3a424c, neon: 0x9aa4ae, core: 0xe4e8ec, cockpit: 0x0a0c10, tip: 0xffffff, glow: 0x55606a, variant: 1 },
     { light: 0xd8ffea, mid: 0x7cffa0, deep: 0x1a7a3a, wing: 0x42c96e, neon: 0xc0ffd4, core: 0xf0fff6, cockpit: 0x0a2a16, tip: 0xffffff, glow: 0x7cffa0, variant: 2 },
+  ],
+  // OPT-16 C11 霆光：雷黄 / 紫电 / 墨青（第 4 组，字段与既有同构，append-only）
+  [ // 霆光：雷黄 / 紫电 / 墨青
+    { light: 0xfff3c0, mid: 0xffe14a, deep: 0x9a7a10, wing: 0xd9b52a, neon: 0xfff0a0, core: 0xfff8dc, cockpit: 0x3a2a08, tip: 0xffffff, glow: 0xffe14a, variant: 0 },
+    { light: 0xeadcff, mid: 0xb26bff, deep: 0x5a2a9a, wing: 0x8a4bd0, neon: 0xcfbfff, core: 0xf0e6ff, cockpit: 0x1c0f33, tip: 0xffffff, glow: 0xb26bff, variant: 1 },
+    { light: 0xd2fff8, mid: 0x2fd4c8, deep: 0x0f6a62, wing: 0x22b3a8, neon: 0xa8fff6, core: 0xeafffc, cockpit: 0x0a2a26, tip: 0xffffff, glow: 0x2fd4c8, variant: 2 },
   ],
 ];
 

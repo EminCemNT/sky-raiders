@@ -34,3 +34,11 @@ sky-raiders-web.zip
 docs/_*.md
 qa_probes/*_diff_*.txt
 *.tmp
+
+# OPT-16 C11/C10 仓库卫生补强（append-only）：根目录会话临时诊断产物统一忽略
+/_*.txt
+/_*.mjs
+/_*.log
+/_*.js
+/_*.html
+qa_probes/_*.mjs

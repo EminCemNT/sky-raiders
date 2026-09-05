@@ -3,7 +3,7 @@ import {
   SCENES, GAME_WIDTH, GAME_HEIGHT, EVENTS, COLORS, PLAYER, BULLET, LEVELS, BOSS_RUSH, SHIPS, ELEMENTS, WINGMAN,
   DIFFICULTIES, getDifficulty, POWERUP, GRAZE, OVERDRIVE, OVERCHARGE, FOCUS, bossRushScale, PERFORMANCE, POOL, COMBAT_PERF,
   EVENT_MODES, getCurrentEvent, MODULE_DROP_CHANCE, getShipSkins, TOWER, TOWER_BUFFS, LIGHTS, TRANSITION,
-  RELIEF, COMBO_BURST, ELEMENT_STORM, EASE, ENV_NARRATIVE, TEXTURE_KEYS, MAGIC, DAILY_CHALLENGE,
+  RELIEF, COMBO_BURST, ELEMENT_STORM, EASE, ENV_NARRATIVE, TEXTURE_KEYS, MAGIC, DAILY_CHALLENGE, BOSS_HARD,
 } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { SaveManager } from '../utils/SaveManager.js';
@@ -1067,9 +1067,13 @@ export default class GameScene extends Phaser.Scene {
     const bossBulletMul = (this._reliefCombatMul && this._reliefCombatMul.bossBulletMul)
       || (this.difficultyCfg && this.difficultyCfg.bossBulletMul) || 1;
     const baseDifficulty = (overrides && overrides.difficulty) || (this.level && this.level.difficulty) || 1;
+    // OPT-16 C10 高难终局（方案A）：仅 hell 档传 hardPhase=true → Boss phase3 追加高难 pattern（C10.1）
+    const hardPhase = !!(this.difficultyCfg && BOSS_HARD && BOSS_HARD.difficulty
+      && this.difficultyCfg.id === BOSS_HARD.difficulty);
     this.boss = new Boss(this, bossKey, {
       ...cfg,
       difficulty: baseDifficulty * bossBulletMul,
+      hardPhase,
     });
     // Boss 柔光（P3 光效纪律白名单：机/弹/爆/拾取；随 Boss 销毁自动清理）
     if (this.boss) VFX.glowTarget(this.boss, cfg.color || COLORS.enemy, { radius: 0.75, alpha: 0.25, depth: -1 });

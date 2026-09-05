@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GAME_WIDTH, GAME_HEIGHT, BULLET, EVENTS, COLORS, RAGE, EASE, IDLE_AURA } from '../config/GameConfig.js';
+import { GAME_WIDTH, GAME_HEIGHT, BULLET, EVENTS, COLORS, RAGE, EASE, IDLE_AURA, BOSS_HARD } from '../config/GameConfig.js';
 import { EventBus } from '../utils/EventBus.js';
 import { audio } from '../systems/AudioSystem.js';
 import * as VFX from '../systems/VFX.js';
@@ -30,6 +30,9 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
     this.maxHp = config.maxHp || 3000;
     this.hp = this.maxHp;
     this.difficulty = config.difficulty || 1;
+    // OPT-16 C10 高难终局（方案A）：仅 hell 档传 hardPhase=true（默认 false = 既有行为零回归）
+    this.hardPhase = !!config.hardPhase;
+    this._hardPatIdx = 0; // _fireHardPattern 轮换游标（局内，不入存档）
     this.bulletSpeed = BULLET.ENEMY_SPEED * 0.9 * this.difficulty;
     this.phase = 1;
     this.body.setSize(this.width * 0.7, this.height * 0.6);
@@ -138,6 +141,14 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
       );
       return Phaser.Display.Color.GetColor(c.r, c.g, c.b);
     }
+    // OPT-16 C10 hell 高难形态：phase3 呈现紫色「终局形态」（append-only；
+    // 狂暴让位 → _enraging 仍走下方既有红，RAGE 视觉语义零改动）
+    if (this.hardPhase && this.phase >= 3 && !this._enraging) {
+      const c = Phaser.Display.Color.Interpolate.ColorWithColor(
+        base, Phaser.Display.Color.IntegerToColor(0xb26bff), 100, 58,
+      );
+      return Phaser.Display.Color.GetColor(c.r, c.g, c.b);
+    }
     // 三阶段（狂暴）：向红偏移，呈现愤怒形态
     const c = Phaser.Display.Color.Interpolate.ColorWithColor(
       base, Phaser.Display.Color.IntegerToColor(0xff3344), 100, 60,
@@ -167,7 +178,9 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
     const g = this.fxG;
     if (!g) return;
     g.clear();
-    const col = this.phase >= 3 ? 0xff4455 : this.phase === 2 ? 0xffb066 : 0xffffff;
+    // OPT-16 C10 hell 高难形态：phase3 非狂暴时能量环/描边换紫（append-only；狂暴让位走既有红）
+    const hellCol = (this.hardPhase && this.phase >= 3 && !this._enraging) ? 0x8f5bff : null;
+    const col = hellCol || (this.phase >= 3 ? 0xff4455 : this.phase === 2 ? 0xffb066 : 0xffffff);
     const ringAlpha = this.phase === 1 ? 0.20 : this.phase === 2 ? 0.45 : 0.85;
     const ringW = this.phase === 1 ? 2 : this.phase === 2 ? 3 : 5;
     const R = this.phase === 1 ? 76 : this.phase === 2 ? 82 : 88;
@@ -259,6 +272,13 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
   }
 
   firePattern() {
+    // OPT-16 C10 高难终局（方案A）：仅 hell 档 + phase3 + 非狂暴时，从 BOSS_HARD.phase3Patterns
+    // 轮换追加高难 pattern（append-only 前置分支；0.66/0.33 阶段机与 switch 既有 pattern 零改动；
+    // 狂暴让位 C10.4：_enraging 时 update 走 _updateEnrage，此处再兜底不叠加）
+    if (this.hardPhase && this.phase >= 3 && !this._enraging) {
+      this._fireHardPattern();
+      return;
+    }
     switch (this.pattern) {
       case 'ring': this._patternRing(); break;
       case 'spiral': this._patternSpiral(); break;
@@ -273,6 +293,55 @@ export default class Boss extends Phaser.Physics.Arcade.Sprite {
     }
     // P1 盾破期间：弹幕增强（额外瞄准弹雨，全弹幕朝玩家）
     if (this._shieldBroken) this._patternShieldBurst();
+  }
+
+  // ───────────────────────────────────────────────────────────────
+  // OPT-16 C10 高难终局（方案A）：hell 档 phase3 附加 pattern 轮换（append-only）。
+  // _fireHardPattern 按 BOSS_HARD.phase3Patterns 轮换；骨架复用既有 spiral/cross 几何，
+  // 密度/速度乘 BOSS_HARD.densityMul/speedMul；low 档仍走既有 _density() 减半纪律。
+  // 硬性红线「禁止无解」：spiral/cross 天然保留弹缝（非全屏墙），狂暴 _enraging 让位（不进此分支）。
+  // ───────────────────────────────────────────────────────────────
+  _fireHardPattern() {
+    const BH = BOSS_HARD || {};
+    const list = (BH.phase3Patterns && BH.phase3Patterns.length) ? BH.phase3Patterns : ['spiral', 'cross'];
+    const idx = (this._hardPatIdx || 0) % list.length;
+    this._hardPatIdx = ((this._hardPatIdx || 0) + 1) % list.length;
+    const dm = (typeof BH.densityMul === 'number') ? BH.densityMul : 1;
+    const sm = (typeof BH.speedMul === 'number') ? BH.speedMul : 1;
+    if (list[idx] === 'cross') this._hardCross(dm, sm);
+    else this._hardSpiral(dm, sm);
+  }
+
+  /** 高难螺旋：旋转多臂（同 _patternSpiral 骨架，密度/速度乘高难系数；螺旋自然缝隙可躲） */
+  _hardSpiral(dm, sm) {
+    const arms = 2 + this.phase; // 3 / 4 / 5 条螺旋臂（phase3 → 5）
+    const per = Math.max(1, Math.round((3 + this.phase) * this._density() * dm));
+    this._spiralAng += 0.3 + this.phase * 0.08;
+    for (let a = 0; a < arms; a++) {
+      const base = this._spiralAng + (Math.PI * 2 / arms) * a;
+      for (let i = 0; i < per; i++) {
+        this.spawnBullet(base + i * 0.14, this.bulletSpeed * 0.7 * sm);
+      }
+    }
+  }
+
+  /** 高难十字：朝玩家扇射 + 正交十字（同 _patternCross 骨架；保留可躲弹缝） */
+  _hardCross(dm, sm) {
+    const player = this.scene.player;
+    const base = (player && player.active)
+      ? Phaser.Math.Angle.Between(this.x, this.y, player.x, player.y)
+      : Math.PI / 2;
+    const n = Math.max(2, Math.round((4 + this.phase * 2) * this._density() * dm));
+    const spread = 0.5 + this.phase * 0.25;
+    for (let i = 0; i < n; i++) {
+      const ang = base + (spread / Math.max(1, n - 1)) * i - spread / 2;
+      this.spawnBullet(ang, this.bulletSpeed * sm);
+    }
+    if (this.phase >= 2) {
+      [0, Math.PI / 2, Math.PI, Math.PI * 1.5].forEach((ang) => {
+        this.spawnBullet(ang, this.bulletSpeed * 0.85 * sm);
+      });
+    }
   }
 
   /** 盾破期间弹幕密度系数（>1 = 更密集；无盾时 1.4） */

@@ -582,6 +582,9 @@ export const SHIPS = [
     passive: { element: 'fire', name: '烈焰', desc: '灼烧伤害 +25%', dotMul: 1.25 } },
   { id: 2, name: '寒霜', weapon: 'laser',   element: 'ice',   tint: 0x9ff0ff, desc: '激光机·冰减速',
     passive: { element: 'ice', name: '极寒', desc: '减速强度 +20%', slowMul: 0.8 } },
+  // OPT-16 C11 第4架战机（MVP 免费可选；append-only，不改既有 3 架字段/被动/皮肤）
+  { id: 3, name: '霆光', weapon: 'pulse', element: 'thunder', tint: 0xffe14a, desc: '速射机·雷暴双麻痹',
+    passive: { element: 'thunder', name: '连锁雷', desc: '麻痹时长 +30%', stunMul: 1.3 } },
 ];
 
 // 战机皮肤（P2 体验细节·皮肤装饰，append-only）：
@@ -605,6 +608,12 @@ export const SHIP_SKINS = [
     { id: 0, name: '冰蓝', accent: 0x9ff0ff },
     { id: 1, name: '玄黑', accent: 0x55606a },
     { id: 2, name: '翠绿', accent: 0x7cffa0 },
+  ] },
+  // OPT-16 C11 第4架战机「霆光」皮肤（append-only，不改既有 3 架皮肤字段）
+  { shipId: 3, name: '霆光', skins: [
+    { id: 0, name: '雷黄', accent: 0xffe14a },
+    { id: 1, name: '紫电', accent: 0xb26bff },
+    { id: 2, name: '墨青', accent: 0x2fd4c8 },
   ] },
 ];
 
@@ -999,6 +1008,26 @@ export const RAGE = {
   moveSpeedMul: 0.5,
   gapMul: 3,
   fireGapMs: 500,
+};
+
+// ───────────────────────────────────────────────────────────────
+// OPT-16 C10 Boss 高难终局·改型方案 A（append-only，纯数据配置）：
+//   方案 A：仅 hell 难度在 phase 3（血量 ≤0.33 档）内轮换追加高难弹幕 pattern。
+//   不改 0.66/0.33 阶段机、不改 RAGE 触发语义/狂暴时间轴（狂暴仍让位优先）。
+//   difficulty     启用档（'hell' ｜ 'hard' ｜ null=关闭）；GameScene.spawnBoss 按 id 匹配传 hardPhase
+//   phase3Patterns phase 3 内轮换的高难 pattern 名（值与 Boss 既有 pattern 语义一致，
+//                  _fireHardPattern 内部实现螺旋/十字骨架，复用既有 spawnBullet）
+//   visualKey      _syncPhaseVisuals 的 hell 档 key（换色分支，见 Boss.js）
+//   densityMul     高难 pattern 弹量系数（>1 更密；low 档仍走既有 _density 减半纪律）
+//   speedMul       高难 pattern 弹速系数（必须保留可躲缝隙）
+// 消费方：Boss.js（constructor 字段/firePattern 前置分支/_fireHardPattern/_getPhaseTint）+ GameScene.spawnBoss。
+// ───────────────────────────────────────────────────────────────
+export const BOSS_HARD = {
+  difficulty: 'hell',
+  phase3Patterns: ['spiral', 'cross'],
+  visualKey: 'hell',
+  densityMul: 1.2,
+  speedMul: 1.1,
 };
 
 // ───────────────────────────────────────────────────────────────

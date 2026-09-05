@@ -358,6 +358,7 @@ const zh = {
   ship_0: '苍鹰',
   ship_1: '赤焰',
   ship_2: '寒霜',
+  ship_3: '霆光',
   w_pulse: '脉冲机枪',
   w_missile: '追踪导弹',
   w_laser: '激光束',
@@ -402,6 +403,8 @@ const zh = {
   passive_thunder: '麻痹时长 +15%',
   passive_fire: '灼烧伤害 +25%',
   passive_ice: '减速强度 +20%',
+  // OPT-16 C11 霆光被动（thunder 元素与苍鹰共用 element 词条，需 per-ship 区分文案；HangarScene 优先取本条）
+  passiveDesc_3: '麻痹时长 +30%',
   skinTitle: '皮肤装饰',
   skinShipLabel: '{ship} · 当前：{skin}',
   skinStatusEquipped: '已装备',
@@ -420,6 +423,10 @@ const zh = {
   skin_2_0: '冰蓝',
   skin_2_1: '玄黑',
   skin_2_2: '翠绿',
+  // OPT-16 C11 第4架霆光皮肤名（append-only）
+  skin_3_0: '雷黄',
+  skin_3_1: '紫电',
+  skin_3_2: '墨青',
 
   // ── game scene（教程 / 广告复活 / 爬塔增益 / 浮字）──
   tutStep1: '移动战机：拖动屏幕，或用方向键 / WASD',
@@ -1011,6 +1018,7 @@ const en = {
   ship_0: 'Eagle',
   ship_1: 'Blaze',
   ship_2: 'Frost',
+  ship_3: 'Thunderflash',
   w_pulse: 'Pulse MG',
   w_missile: 'Homing Missile',
   w_laser: 'Laser',
@@ -1055,6 +1063,8 @@ const en = {
   passive_thunder: 'Stun +15%',
   passive_fire: 'Burn damage +25%',
   passive_ice: 'Slow +20%',
+  // OPT-16 C11 Thunderflash passive (thunder shares element word with Eagle → per-ship override)
+  passiveDesc_3: 'Stun +30%',
   skinTitle: 'Ship Skins',
   skinShipLabel: '{ship} · Current: {skin}',
   skinStatusEquipped: 'Equipped',
@@ -1073,6 +1083,10 @@ const en = {
   skin_2_0: 'Ice Blue',
   skin_2_1: 'Onyx',
   skin_2_2: 'Emerald',
+  // OPT-16 C11 Thunderflash skin names (append-only)
+  skin_3_0: 'Volt Yellow',
+  skin_3_1: 'Violet Arc',
+  skin_3_2: 'Teal Storm',
 
   // ── game scene ──
   tutStep1: 'Move: drag the screen, or use arrow keys / WASD',
