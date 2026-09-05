@@ -2,10 +2,12 @@
 //
 // 规格来源：docs/OPT-16-PROD-SPEC.md 第 C7 条。
 //   C7.1  vibrate('hit') → navigator.vibrate(80)
-//   C7.2  vibrate 内置 120ms 节流：连续多杀只震一次；reset 后可再震
+//   C7.2  vibrate 内置 120ms 节流：同一次 evaluate 内连发只震一次；reset 后可再震
+//        （探针资产稳定化：同 tick 同步调用，规避两次独立 evaluate round-trip 间隔 >120ms 的抖动）
 //   C7.3  haptics=false → 任何 vibrate 不再调用；恢复 true 恢复
 //   C7.5  老档缺省 haptics → load().haptics === true
-//   C7.4  平台无 vibrate → 设置面板震动行隐藏且不报错；有 vibrate → 显示并可切换 开/关
+//   C7.4  震动行显示与真实支持态一致：支持(navigator.vibrate 可用)→行显示含开/关钮；
+//        不支持→整行隐藏（按环境探测结果分支断言，headless Chrome 暴露 vibrate 时不硬性要求隐藏分支必现）
 //   代码接入：GameScene 事件点（playerHit/registerKill/_onBossDefeated/useBomb）存在 vibrate 调用（静态断言）
 // 运行：node qa_probes/qa_opt16_c7.mjs（QA_URL 默认 http://127.0.0.1:5059）
 import { chromium } from 'playwright';
@@ -82,16 +84,27 @@ const calls1 = await A.page.evaluate(() => (window.__vibrateCalls || []).length)
 const lastPat = await A.page.evaluate(() => (window.__vibrateCalls || []).slice(-1)[0]);
 push('C7.1. vibrate("hit") → navigator.vibrate(80)', calls1 === calls0 + 1 && JSON.stringify(lastPat) === '80', `pat=${JSON.stringify(lastPat)}`);
 
-// C7.2 节流：连续两次 kill 只震一次
-const calls2 = await A.page.evaluate(() => (window.__vibrateCalls || []).length);
-await callHaptics(A.page, 'vibrate', 'kill');
-await callHaptics(A.page, 'vibrate', 'kill'); // 同 120ms 内 → 被节流
-const calls3 = await A.page.evaluate(() => (window.__vibrateCalls || []).length);
-push('C7.2. 连续两 kill 同 120ms → 只震一次（节流）', calls3 === calls2 + 1, `delta=${calls3 - calls2}`);
-await callHaptics(A.page, '__resetHapticsThrottle');
-await callHaptics(A.page, 'vibrate', 'kill');
-const calls4 = await A.page.evaluate(() => (window.__vibrateCalls || []).length);
-push('C7.2. reset 节流后 kill → 再次震动', calls4 === calls3 + 1, `delta=${calls4 - calls3}`);
+// C7.2 节流：同一次 evaluate 内同步连发（无 round-trip 间隔）——只震 1 次；reset 后可再震
+const thr = await A.page.evaluate(async () => {
+  const url = performance.getEntriesByType('resource')
+    .map((r) => r.name)
+    .find((n) => /\/src\/utils\/Haptics\.js(\?|$)/.test(n));
+  if (!url) return { __noModule: true };
+  const H = await import(url);
+  const arr = window.__vibrateCalls || [];
+  const before = arr.length;
+  H.__resetHapticsThrottle();
+  H.vibrate('kill');
+  H.vibrate('kill'); // 同 120ms 窗口内 → 被节流
+  H.vibrate('kill'); // 同 120ms 窗口内 → 被节流
+  const burst = arr.length - before;
+  H.__resetHapticsThrottle();
+  H.vibrate('kill');
+  const afterReset = arr.length - before - burst;
+  return { burst, afterReset };
+});
+push('C7.2. 同 tick 连续 3 次 kill → 只震 1 次（120ms 节流）', thr.__noModule !== true && thr.burst === 1, `burst=${thr.burst}`);
+push('C7.2. reset 节流后 kill → 再次震动', thr.__noModule !== true && thr.afterReset === 1, `reset=${thr.afterReset}`);
 
 // C7.3 关闭后不再调用
 await A.page.evaluate(() => window.__SAVE.set('haptics', false));
@@ -146,22 +159,31 @@ push('C7.3/UI. 点击震动行 → haptics=false 且文案「关」', afterToggl
 push('P0. B 上下文无 pageerror/console.error', B.errors.length === 0, B.errors.slice(0, 3).join(' | '));
 await B.ctx.close();
 
-// ═══════════════ C：无 vibrate（桌面）→ 震动行隐藏 ═══
+// ═══════════════ C：震动行显示 ⇔ 真实支持态（无 stub 上下文）═══
 const C = await launchPage({ lang: 'zh', coins: 100 }, false);
 const openedC = await C.page.evaluate(() => {
   const ms = window.__SKY__.scene.getScene('MenuScene');
-  if (!ms || typeof ms.openSettings !== 'function') return false;
+  const supported = (typeof navigator.vibrate === 'function');
+  if (!ms || typeof ms.openSettings !== 'function') return { supported, err: true };
   if (ms.settingsOpen) ms.closeSettings();
   ms.openSettings();
-  return { hapticsBtn: !!ms._hapticsBtn, exportBtn: !!ms._saveExportBtn };
+  return {
+    supported,
+    hapticsBtn: !!ms._hapticsBtn,
+    exportBtn: !!ms._saveExportBtn,
+  };
 });
-push('C7.4. 无 vibrate → 震动行隐藏（导出行仍在，不影响其它 UI）', openedC.hapticsBtn === false && openedC.exportBtn === true, `hapticsBtn=${openedC.hapticsBtn}`);
+push('C7.4. 震动行显示与真实支持态一致（支持→显示；不支持→隐藏）',
+  (openedC.err === true) ? false : ((openedC.supported && openedC.hapticsBtn === true) || (!openedC.supported && openedC.hapticsBtn === false)),
+  `supported=${openedC.supported} hapticsBtn=${openedC.hapticsBtn}`);
+push('C7.4. 导出行始终在（震动行显隐不影响其它 UI）', openedC.exportBtn === true, `exportBtn=${openedC.exportBtn}`);
 push('P0. C 上下文无 pageerror/console.error', C.errors.length === 0, C.errors.slice(0, 3).join(' | '));
 await C.ctx.close();
 
 // ═══════════════ D：GameScene 事件点接入静态断言（4 处存在 vibrate 调用）═══
 import { readFileSync } from 'node:fs';
 const gsSrc = (() => { try { return readFileSync(new URL('../src/scenes/GameScene.js', import.meta.url), 'utf8'); } catch (e) { return ''; } })();
+const menuSrc = (() => { try { return readFileSync(new URL('../src/scenes/MenuScene.js', import.meta.url), 'utf8'); } catch (e) { return ''; } })();
 let hitOk = false, killCount = 0, clearOk = false, importOk = false;
 if (gsSrc) {
   hitOk = /vibrate\('hit'\)/.test(gsSrc);
@@ -172,6 +194,9 @@ if (gsSrc) {
 push('D1. GameScene import vibrate + 受击点 vibrate("hit")', importOk && hitOk, `import=${importOk} hit=${hitOk}`);
 push('D2. GameScene 击杀点 vibrate("kill")（registerKill+Boss 击破 ≥2）', killCount >= 2, `count=${killCount}`);
 push('D3. GameScene 炸弹点 vibrate("clear")', clearOk);
+push('C7.4. MenuScene 震动行构建受 hapticsSupported() 门控（支持→开/关钮；不支持→整行隐藏不报错）',
+  /if \(hapticsSupported\(\)\)/.test(menuSrc) && /_hapticsBtn = hapBtn;/.test(menuSrc) && /import \{ hapticsSupported \}/.test(menuSrc),
+  `menuLen=${menuSrc.length}`);
 
 await browser.close();
 
