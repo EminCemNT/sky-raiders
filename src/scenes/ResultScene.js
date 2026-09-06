@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, LEVELS, SHIPS, getShipSkins, PERFORMANCE, EASE } from '../config/GameConfig.js';
+import { SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, LEVELS, SHIPS, getShipSkins, PERFORMANCE, EASE, levelMedalRequirement } from '../config/GameConfig.js';
 import { SaveManager } from '../utils/SaveManager.js';
 import { t } from '../config/Locale.js';
 import { createStarfield } from '../systems/Starfield.js';
@@ -258,7 +258,9 @@ export default class ResultScene extends Phaser.Scene {
       this.makeButton(cx, btnY + 80, t('backMenu'), () => {
         transition.goto(this, SCENES.MENU);
       });
-    } else if (r.victory && (r.levelId || 1) < LEVELS.length) {
+    } else if (r.victory && (r.levelId || 1) < LEVELS.length
+      // OPT-17 P5 勋章门禁：下一关若需勋章（L5=6）而不足，不进「下一关」走重玩分支（与关卡面板/continue 同判）
+      && SaveManager.countMedals() >= levelMedalRequirement((r.levelId || 1) + 1)) {
       this.makeButton(cx, btnY, t('resNextLevel'), () => {
         transition.goto(this, SCENES.GAME, { levelId: (r.levelId || 1) + 1 });
       });

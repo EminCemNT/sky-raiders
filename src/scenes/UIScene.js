@@ -1040,8 +1040,10 @@ export default class UIScene extends Phaser.Scene {
 
   showAchievementBanner(def, onDone) {
     const hiddenLocked = def.hidden && !SaveManager.hasAchievement(def.id);
-    const label = hiddenLocked ? '???' : def.name;
-    const desc = hiddenLocked ? '？？？' : def.desc;
+    // OPT-17 P5：横幅文案改走 Locale（t 键全覆盖），AchievementManager 数据 desc 保持红线零 diff。
+    // （all_clear desc 阈值文案随 LEVELS.length=5 动态适配，硬编码 def.desc 会过时）
+    const label = hiddenLocked ? '???' : (t(`ach_${def.id}`) !== `ach_${def.id}` ? t(`ach_${def.id}`) : def.name);
+    const desc = hiddenLocked ? '？？？' : (t(`ach_${def.id}_desc`) !== `ach_${def.id}_desc` ? t(`ach_${def.id}_desc`) : def.desc);
     // 成就图标：矢量勋章 / 锁（取代 emoji def.icon/🏅，跨端字形一致）
     const iconKey = hiddenLocked ? 'icon_lock' : 'icon_medal';
     const c = this.add.container(GAME_WIDTH / 2, -60).setDepth(150);

@@ -412,6 +412,77 @@ export const LEVELS = [
       ],
     ],
   },
+  // OPT-17 P5：L5「深渊回响」（霆光雷域高难关，append-only 新增，不改 L1-L4 任何字段）。
+  // 定位 = 通 L4 后解锁的第 5 关「高难挑战」：difficulty 2.5 全作最高 + 9 波全型混编。
+  // 霆光雷域主题 = P7 霆光「专属挑战场景」的载体（金色雷域视觉 / 霆光主场叙事），
+  // Boss 复用 nova pattern（零 Boss.js 改动），shield 200 强化。
+  {
+    id: 5, name: '深渊回响', bg: 'bg_abyss', waves: 9, bossKey: 'boss_echo',
+    difficulty: 2.5,
+    // OPT-17 P5 勋章门禁：累计勋章 ≥6（=MEDALS.THRESHOLD，注释对齐不引用防 TDZ）才解锁本关
+    // 消费方：MenuScene.openLevelSelect 卡 / startGame continue / ResultScene 下一关 三处同判。
+    minMedals: 6,
+    theme: {
+      skyTop: 0x3a2400, skyBottom: 0x120a02,
+      starTints: [0xffe14a, 0xd6a14a, 0x7c5aff, 0xbfe0ff],
+      accent: 0xffe14a,
+      nebula: { tints: [0x4a2f0a, 0x2a1a4a], alpha: 0.28 },
+      cloudTint: 0xd6b14a,
+      silhouette: { kind: 'building', color: 0x120a02, density: 1, speed: 48 },
+    },
+    boss: { maxHp: 6400, pattern: 'nova', name: '湮灭回响 Echo-X', color: 0xffe14a, shieldHp: 200 },
+    challenges: [
+      { id: 'c1', type: 'killRate', target: 0.7, name: '歼灭70%' },
+      { id: 'c2', type: 'timeLimit', target: 140, name: '140秒速通' },
+      { id: 'c3', type: 'singleWeapon', name: '单武器通关' },
+    ],
+    wavePlan: [
+      { count: 12, comp: [['small', 'straight', 1], ['small', 'sine', 1], ['small', 'dive', 1]] },
+      { count: 13, comp: [['small', 'sine', 2], ['mid', 'straight', 1], ['mid', 'dive', 1]] },
+      { count: 14, comp: [['small', 'dive', 2], ['mid', 'sine', 2], ['diver', 'dive', 1]] },
+      { count: 15, comp: [['small', 'sine', 1], ['mid', 'dive', 2], ['diver', 'dive', 1], ['turret', 'turret', 1, 'aimed']] },
+      { count: 16, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['mid', 'sine', 2], ['diver', 'dive', 2]] },
+      { count: 18, comp: [['small', 'dive', 2], ['mid', 'sine', 2], ['mid', 'straight', 2], ['diver', 'dive', 2], ['shield', 'straight', 1, 'spread']] },
+      { count: 20, comp: [['small', 'sine', 2], ['mid', 'dive', 2], ['mid', 'straight', 1], ['diver', 'dive', 2], ['summoner', 'straight', 1, 'ring'], ['kamikaze', 'kamikaze', 1, 'straight']] },
+      { count: 22, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['small', 'sine', 1], ['mid', 'dive', 1], ['mid', 'sine', 1], ['diver', 'dive', 2], ['turret', 'turret', 1, 'aimed'], ['shield', 'straight', 1, 'spread']] },
+      { count: 24, comp: [['small', 'sine', 2], ['mid', 'dive', 2], ['mid', 'straight', 1], ['diver', 'dive', 3], ['summoner', 'straight', 1, 'ring'], ['shield', 'straight', 1, 'spread'], ['kamikaze', 'kamikaze', 1, 'straight']] },
+    ],
+    waveVariants: [
+      [ // V1 回响浪潮：diver 狂潮 + summoner 支援
+        { count: 12, comp: [['small', 'straight', 1], ['small', 'sine', 1], ['small', 'dive', 1]] },
+        { count: 13, comp: [['small', 'sine', 2], ['mid', 'straight', 1], ['diver', 'dive', 1]] },
+        { count: 14, comp: [['small', 'dive', 2], ['mid', 'sine', 2], ['mid', 'straight', 1]] },
+        { count: 15, comp: [['small', 'sine', 1], ['mid', 'dive', 2], ['diver', 'dive', 2]] },
+        { count: 16, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['mid', 'sine', 2], ['diver', 'dive', 2]] },
+        { count: 18, comp: [['small', 'dive', 2], ['mid', 'sine', 2], ['mid', 'straight', 2], ['diver', 'dive', 2], ['summoner', 'straight', 1, 'ring']] },
+        { count: 20, comp: [['small', 'sine', 1], ['mid', 'dive', 2], ['mid', 'straight', 1], ['diver', 'dive', 3], ['summoner', 'straight', 1, 'ring'], ['kamikaze', 'kamikaze', 1, 'straight']] },
+        { count: 22, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['small', 'sine', 1], ['mid', 'dive', 1], ['diver', 'dive', 3], ['summoner', 'straight', 1, 'ring'], ['shield', 'straight', 1, 'spread']] },
+        { count: 24, comp: [['small', 'sine', 2], ['mid', 'dive', 2], ['mid', 'straight', 1], ['diver', 'dive', 3], ['summoner', 'straight', 1, 'ring'], ['shield', 'straight', 1, 'spread'], ['kamikaze', 'kamikaze', 1, 'straight']] },
+      ],
+      [ // V2 雷域炮阵：turret 密集 + shield 坚壁（霆光麻痹主场）
+        { count: 12, comp: [['small', 'straight', 1], ['small', 'sine', 1], ['mid', 'straight', 1]] },
+        { count: 13, comp: [['small', 'sine', 2], ['mid', 'straight', 1], ['turret', 'turret', 1, 'aimed']] },
+        { count: 14, comp: [['small', 'dive', 2], ['mid', 'sine', 2], ['mid', 'straight', 1]] },
+        { count: 15, comp: [['small', 'sine', 2], ['mid', 'dive', 2], ['mid', 'straight', 1], ['turret', 'turret', 1, 'aimed']] },
+        { count: 16, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['mid', 'sine', 2], ['shield', 'straight', 1, 'spread']] },
+        { count: 18, comp: [['small', 'dive', 2], ['mid', 'sine', 2], ['mid', 'straight', 2], ['diver', 'dive', 1], ['turret', 'turret', 1, 'aimed']] },
+        { count: 20, comp: [['small', 'sine', 1], ['mid', 'dive', 2], ['mid', 'straight', 1], ['mid', 'sine', 1], ['shield', 'straight', 1, 'spread'], ['turret', 'turret', 1, 'aimed']] },
+        { count: 22, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['small', 'sine', 1], ['mid', 'dive', 1], ['mid', 'sine', 1], ['diver', 'dive', 2], ['shield', 'straight', 1, 'spread'], ['kamikaze', 'kamikaze', 1, 'straight']] },
+        { count: 24, comp: [['small', 'sine', 2], ['mid', 'dive', 2], ['mid', 'straight', 1], ['mid', 'sine', 1], ['diver', 'dive', 3], ['shield', 'straight', 1, 'spread'], ['kamikaze', 'kamikaze', 1, 'straight'], ['turret', 'turret', 1, 'aimed']] },
+      ],
+      [ // V3 终焉回响：全型均衡终极压力
+        { count: 12, comp: [['small', 'straight', 1], ['small', 'sine', 1], ['small', 'dive', 1]] },
+        { count: 13, comp: [['small', 'sine', 2], ['mid', 'straight', 1], ['mid', 'dive', 1]] },
+        { count: 14, comp: [['small', 'dive', 2], ['mid', 'sine', 2], ['mid', 'straight', 1], ['diver', 'dive', 1]] },
+        { count: 15, comp: [['small', 'sine', 2], ['mid', 'dive', 2], ['mid', 'straight', 1], ['diver', 'dive', 1]] },
+        { count: 16, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['mid', 'sine', 2], ['diver', 'dive', 1], ['shield', 'straight', 1, 'spread']] },
+        { count: 18, comp: [['small', 'dive', 2], ['mid', 'sine', 2], ['mid', 'straight', 2], ['diver', 'dive', 1], ['turret', 'turret', 1, 'aimed']] },
+        { count: 20, comp: [['small', 'sine', 2], ['mid', 'dive', 2], ['mid', 'straight', 1], ['mid', 'sine', 1], ['diver', 'dive', 2], ['turret', 'turret', 1, 'aimed']] },
+        { count: 22, comp: [['small', 'straight', 1], ['small', 'dive', 1], ['small', 'sine', 1], ['mid', 'dive', 1], ['mid', 'sine', 1], ['diver', 'dive', 2], ['summoner', 'straight', 1, 'ring'], ['kamikaze', 'kamikaze', 1, 'straight']] },
+        { count: 24, comp: [['small', 'sine', 2], ['mid', 'dive', 2], ['mid', 'straight', 1], ['mid', 'sine', 1], ['diver', 'dive', 3], ['shield', 'straight', 1, 'spread'], ['kamikaze', 'kamikaze', 1, 'straight'], ['turret', 'turret', 1, 'aimed']] },
+      ],
+    ],
+  },
 ];
 
 // Boss Rush 序列（独立于主线 4 关）：连打现有 4 个 Boss，血量随轮次递增。
@@ -788,6 +859,16 @@ export const MEDALS = {
   THRESHOLD: 6,
   THRESHOLD_LABEL: '高难挑战',
 };
+
+/**
+ * OPT-17 P5：关卡勋章门禁辅助（数据驱动，供 MenuScene/ResultScene 三处同判）。
+ * 返回进入该关所需累计勋章数；无门禁关返回 0（L1-L4 恒 0，历史行为零回归）。
+ * L5 定义在 LEVELS 内（minMedals: 6），本函数按 id 查找，避免各消费点硬编码数字。
+ */
+export function levelMedalRequirement(levelId) {
+  const lvl = LEVELS.find((l) => l && l.id === levelId);
+  return (lvl && typeof lvl.minMedals === 'number') ? lvl.minMedals : 0;
+}
 
 // 新手 7 日计划：每日目标。metric 必须与 GameScene/SaveManager 的进度钩子一致：
 //   clears          通关任意一关（normal 胜利）

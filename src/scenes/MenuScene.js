@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, LEVELS, DIFFICULTIES, PERFORMANCE, MEDALS, getCurrentEvent, TOUCH, CODEX_DECOR, EASE, TIPS, DAILY_CHALLENGE } from '../config/GameConfig.js'; // OPT-16 C5 今日挑战入口
+import { SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, LEVELS, DIFFICULTIES, PERFORMANCE, MEDALS, getCurrentEvent, TOUCH, CODEX_DECOR, EASE, TIPS, DAILY_CHALLENGE, levelMedalRequirement } from '../config/GameConfig.js'; // OPT-16 C5 今日挑战入口
 import { SaveManager } from '../utils/SaveManager.js';
 import { copySaveText, downloadSaveFile, importSave, resetProgress } from '../utils/SaveTransfer.js'; // OPT-16 C4/C8
 import { hapticsSupported } from '../utils/Haptics.js'; // OPT-16 C7 移动端震动开关
@@ -239,8 +239,12 @@ export default class MenuScene extends Phaser.Scene {
     // OPT-16 C2 防御：昵称编辑浮层打开时忽略键盘快捷（避免误触发开局）
     if (this._nickInputEl) return;
     // 「开始游戏」= 进入已解锁的最高关（继续进度）
+    // OPT-17 P5：高难关 L5 需勋章门禁（levelMedalRequirement），continue 遇到未达标
+    // 勋章的高难关时回退到前一关，避免 4→5 卡死（只能从关卡选择手动进已达标最高关）。
     const unlocked = SaveManager.load().unlockedLevel || 1;
-    const lvl = Math.min(unlocked, LEVELS.length);
+    const medals = SaveManager.countMedals();
+    let lvl = Math.min(unlocked, LEVELS.length);
+    while (lvl > 1 && medals < levelMedalRequirement(lvl)) lvl -= 1;
     transition.goto(this, SCENES.GAME, { levelId: lvl });
   }
 
@@ -899,11 +903,15 @@ export default class MenuScene extends Phaser.Scene {
     this.addGlowTitle(ov, cx, 110, t('levelSelectTitle'), THEME.titleColor);
 
     const save = SaveManager.load();
-    const cardW = 380, cardH = 132, gap = 16;
+    // OPT-17 P5：卡高/间距压缩以容纳 L5（LEVELS.length 4→5）仍一屏放得下。
+    // 原 132/16 5 卡会顶到 summary(924)/close(954) 越出面板底 910 —— 压缩后 5 卡底 ≤ 面板底。
+    const cardW = 380, cardH = 116, gap = 10;
     const startY = 200;
     LEVELS.forEach((lvl, i) => {
       const y = startY + i * (cardH + gap);
-      const unlocked = lvl.id <= (save.unlockedLevel || 1);
+      // OPT-17 P5 勋章门禁：L5(minMedals:6) 需累计勋章达标才解锁；L1-L4 无 minMedals → req=0 恒通过，行为不变。
+      const reqMedals = levelMedalRequirement(lvl.id);
+      const unlocked = lvl.id <= (save.unlockedLevel || 1) && SaveManager.countMedals() >= reqMedals;
       const stars = save.levelStars[lvl.id] || 0;
       const c = this.add.container(cx, y);
       const bgColor = unlocked ? THEME.btnBg : THEME.lockedBg;
@@ -1363,23 +1371,27 @@ export default class MenuScene extends Phaser.Scene {
         normal: t('mode_normal'), endless: t('mode_endless'), bossrush: t('mode_bossrush'),
         coin_rush: t('mode_coin_rush'), survival: t('mode_survival'),
       };
+      // OPT-17 P6：排行主行 = 名次 + 昵称 + 分数（昵称右侧留白防撞分数），
+      // 副行 = 模式 + 日期（12px 小字）。昵称与 _nicknameRowLabel 同源（含默认回退）。
+      const lbNick = this._nicknameRowLabel();
       top.slice(0, 10).forEach((s, i) => {
         const y = startY + i * rowH;
         const rankColor = i === 0 ? THEME.textGoldLight : (i === 1 ? '#cfe8ff' : (i === 2 ? '#ffb070' : THEME.textSecondary));
-        ov.add(this.add.text(cx - 210, y, `${i + 1}`, {
+        ov.add(this.add.text(62, y, `${i + 1}`, {
           fontFamily: THEME.fontFamily, fontSize: '24px', fontStyle: '800', color: rankColor,
         }).setOrigin(0.5));
-        ov.add(this.add.text(cx - 160, y, `${s.score || 0}`, {
-          fontFamily: THEME.scoreFont, fontSize: '24px', fontStyle: '700', color: THEME.white,
+        ov.add(this.add.text(100, y, lbNick, {
+          fontFamily: THEME.fontFamily, fontSize: '16px', fontStyle: '700', color: THEME.textPrimary,
         }).setOrigin(0, 0.5));
+        ov.add(this.add.text(488, y, `${s.score || 0}`, {
+          fontFamily: THEME.scoreFont, fontSize: '24px', fontStyle: '700', color: THEME.white,
+        }).setOrigin(1, 0.5));
         const modeName = s.mode === 'endless'
           ? t('modeEndlessFloor', { floor: s.levelId || 1 })
           : (MODE_LABEL[s.mode] || t('mode_normal'));
-        ov.add(this.add.text(cx + 40, y, modeName, {
-          fontFamily: THEME.fontFamily, fontSize: '15px', color: THEME.textSecondary,
-        }).setOrigin(0, 0.5));
-        ov.add(this.add.text(cx + 180, y, s.date || '', {
-          fontFamily: THEME.fontFamily, fontSize: '14px', color: THEME.textDim,
+        const sub = [modeName, s.date || ''].filter(Boolean).join(' · ');
+        ov.add(this.add.text(100, y + 20, sub, {
+          fontFamily: THEME.fontFamily, fontSize: '12px', color: THEME.textDim,
         }).setOrigin(0, 0.5));
       });
     }

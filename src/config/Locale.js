@@ -110,10 +110,12 @@ const zh = {
   levelName_2: '陨石带',
   levelName_3: '敌方要塞',
   levelName_4: '终焉星核',
+  levelName_5: '深渊回响',
   bossName_1: '哨兵 Sentinel',
   bossName_2: '粉碎者 Crusher',
   bossName_3: '霸主 Overlord',
   bossName_4: '湮灭者 Annihilator',
+  bossName_5: '湮灭回响 Echo-X',
 
   // ── achievements（id 稳定映射，AchievementManager 零 diff）──
   achTitle: '成就勋章',
@@ -139,7 +141,7 @@ const zh = {
   ach_coin_30: '金银满仓',
   ach_coin_30_desc: '单局收集 30 枚金币',
   ach_all_clear: '苍穹制霸',
-  ach_all_clear_desc: '累计通关全部 4 关',
+  ach_all_clear_desc: '累计通关全部主线关卡',
   ach_three_star: '完美主义',
   ach_three_star_desc: '单局达成 3 星通关',
   ach_boss_sentinel: '哨兵克星',
@@ -770,10 +772,12 @@ const en = {
   levelName_2: 'Asteroid Belt',
   levelName_3: 'Enemy Fortress',
   levelName_4: 'Final Core',
+  levelName_5: 'Echo Abyss',
   bossName_1: 'Sentinel',
   bossName_2: 'Crusher',
   bossName_3: 'Overlord',
   bossName_4: 'Annihilator',
+  bossName_5: 'Echo-X Annihilator',
 
   // ── achievements ──
   achTitle: 'Achievements',
@@ -799,7 +803,7 @@ const en = {
   ach_coin_30: 'Rich Haul',
   ach_coin_30_desc: 'Collect 30 coins in a run',
   ach_all_clear: 'Sky Conqueror',
-  ach_all_clear_desc: 'Clear all 4 levels',
+  ach_all_clear_desc: 'Clear all main levels',
   ach_three_star: 'Perfectionist',
   ach_three_star_desc: 'Clear a level with 3 stars',
   ach_boss_sentinel: 'Sentinel Slayer',
