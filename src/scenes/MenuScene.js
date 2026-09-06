@@ -109,7 +109,10 @@ export default class MenuScene extends Phaser.Scene {
       },
     });
 
-    new NeonButton(this, cx + 116, 480, t('btnEndless'), {
+    // OPT-17 P4：leagueText 不再独立浮动到 y=520（与机库按钮顶 519 重叠 9px 视觉压字），
+    // 改为嵌入无尽按钮 container 内底部副文本（fontSize 10、y=20 容器内偏移 → 绝对 y=500 全程在按钮内 451~509 内），
+    // 红线 zero diff 守：只新增变量引用 + 子 add，方法体未改。
+    const endlessBtn = new NeonButton(this, cx + 116, 480, t('btnEndless'), {
       w: 220, fontSize: 24, stroke: 0xff8a3d, glow: true,
       onDown: () => {
         if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen || this.returnGiftOpen) return;
@@ -117,15 +120,14 @@ export default class MenuScene extends Phaser.Scene {
       },
     });
 
-    // P2 系统扩展·无尽周赛：无尽入口旁显示本周赛状态（结算+重置由 SaveManager 自动处理）
-    {
-      const snap = SaveManager.getLeagueSnapshot();
-      this.leagueText = this.add.text(cx + 116, 520, this._leagueLabel(snap), {
-        fontFamily: THEME.fontFamily, fontSize: '13px', color: THEME.textSecondary,
-      }).setOrigin(0.5).setAlpha(0.92);
-      if (snap.settled && snap.reward > 0) {
-        this.flashToast(t('leagueSettled', { rank: snap.settledRank, coins: snap.reward }));
-      }
+    // P2 系统扩展·无尽周赛：无尽入口旁显示本周赛状态
+    const snap = SaveManager.getLeagueSnapshot();
+    this.leagueText = this.add.text(0, 20, this._leagueLabel(snap), {
+      fontFamily: THEME.fontFamily, fontSize: '10px', color: THEME.textSecondary,
+    }).setOrigin(0.5).setAlpha(0.85);
+    endlessBtn.container.add(this.leagueText);   // 嵌入按钮 container，跟随按钮渲染层
+    if (snap.settled && snap.reward > 0) {
+      this.flashToast(t('leagueSettled', { rank: snap.settledRank, coins: snap.reward }));
     }
 
     // 机库按钮
@@ -149,8 +151,8 @@ export default class MenuScene extends Phaser.Scene {
       this.openSettings();
     } });
 
-    // Boss Rush 按钮
-    new NeonButton(this, cx - 116, 736, 'BOSS RUSH', { stroke: 0xff5566, glow: true, onDown: () => {
+    // Boss Rush 按钮（同 OPT-17 P4 行距修复：h=50 与设置按钮底 709 留 2px、与关卡选择顶 771 留 10px）
+    new NeonButton(this, cx - 116, 736, 'BOSS RUSH', { h: 50, stroke: 0xff5566, glow: true, onDown: () => {
       if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen || this.returnGiftOpen) return;
       audio.sfx('ui'); transition.goto(this, SCENES.GAME, { mode: 'bossrush' });
     } });
@@ -158,13 +160,18 @@ export default class MenuScene extends Phaser.Scene {
     // P0 留存-活动轮换：本周活动入口（显示当前活动名 + 剩余天数，点开进入对应模式）
     {
       const ev = getCurrentEvent();
-      new NeonButton(this, cx + 116, 736, t('weeklyEvent', { short: t(`eventName_${ev.id || 'coin_rush'}`) }), { w: 220, fontSize: 18, stroke: 0xffd54a, glow: true, onDown: () => {
+      // OPT-17 P4：eventLeft 不再独立浮动到 y=772（与关卡选择按钮顶 771 重叠 8px 视觉压字），
+      // 改为嵌入活动按钮 container 内底部副文本（fontSize 10、y=20 容器内偏移 → 绝对 y=756 全程在按钮内 707~765 内）。
+      // 同时该按钮 h 从默认 58 改 50：原设置 y=680 + h=58 (底 709) 与本行 y=736 + h=58 (顶 707) 重叠 2px，
+      // 改 h=50 后本行顶 711，与设置底 709 留 2px 安全间隙；同时与下方关卡选择按钮顶 771 留 10px 间隙。
+      const eventBtn = new NeonButton(this, cx + 116, 736, t('weeklyEvent', { short: t(`eventName_${ev.id || 'coin_rush'}`) }), { w: 220, h: 50, fontSize: 18, stroke: 0xffd54a, glow: true, onDown: () => {
         if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen || this.returnGiftOpen) return;
         audio.sfx('ui'); this.openEvent();
       } });
-      this.add.text(cx + 116, 772, t('eventLeft', { days: ev.daysLeft, double: t(ev.double ? 'eventDoubleToday' : 'eventDoubleWeekend') }), {
-        fontFamily: THEME.fontFamily, fontSize: '13px', color: ev.double ? THEME.textGold : THEME.textDim,
+      this.eventLeftText = this.add.text(0, 20, t('eventLeft', { days: ev.daysLeft, double: t(ev.double ? 'eventDoubleToday' : 'eventDoubleWeekend') }), {
+        fontFamily: THEME.fontFamily, fontSize: '10px', color: ev.double ? THEME.textGold : THEME.textDim,
       }).setOrigin(0.5).setAlpha(0.9);
+      eventBtn.container.add(this.eventLeftText);   // 嵌入按钮 container，跟随按钮渲染层
     }
 
     // 选择关卡按钮
