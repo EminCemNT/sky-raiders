@@ -271,7 +271,7 @@ export default class MenuScene extends Phaser.Scene {
     const cx = GAME_WIDTH / 2;
     const ov = this.add.container(0, 0).setDepth(300);
     this.settingsOverlay = ov;
-    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.7)
+    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.9)
       .setOrigin(0).setInteractive();
     ov.add(dim);
     this.addPanel(ov, cx, 70, 928); // OPT-16 C4/C8：底部加高，容纳存档管理行
@@ -718,7 +718,7 @@ export default class MenuScene extends Phaser.Scene {
     const cx = GAME_WIDTH / 2, cy = GAME_HEIGHT / 2;
     const ov = this.add.container(0, 0).setDepth(302);
     this._resetConfirmOv = ov;
-    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.68).setOrigin(0).setInteractive();
+    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.9).setOrigin(0).setInteractive();
     const panel = this.add.rectangle(cx, cy, 470, 262, 0x0a1a2e, 0.98)
       .setStrokeStyle(2, THEME.titleColor, 0.9);
     const title = this.add.text(cx, cy - 98, t('resetConfirmTitle'), {
@@ -828,7 +828,7 @@ export default class MenuScene extends Phaser.Scene {
     const cx = GAME_WIDTH / 2, cy = GAME_HEIGHT / 2;
     const ov = this.add.container(0, 0).setDepth(302); // 高于设置面板(300)的内嵌子层
     this._diffLockedOv = ov;
-    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.55).setOrigin(0).setInteractive();
+    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.9).setOrigin(0).setInteractive();
     const panel = this.add.rectangle(cx, cy, 440, 218, 0x0a1a2e, 0.98)
       .setStrokeStyle(2, THEME.titleColor, 0.9);
     const title = this.add.text(cx, cy - 58, t('diffLockedTitle'), {
@@ -885,7 +885,7 @@ export default class MenuScene extends Phaser.Scene {
     const cx = GAME_WIDTH / 2;
     const ov = this.add.container(0, 0).setDepth(300);
     this.levelSelectOverlay = ov;
-    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.78)
+    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.9)
       .setOrigin(0).setInteractive();
     ov.add(dim);
     this.addPanel(ov, cx);
@@ -982,7 +982,7 @@ export default class MenuScene extends Phaser.Scene {
     const cx = GAME_WIDTH / 2;
     const ov = this.add.container(0, 0).setDepth(300);
     this.achievementsOverlay = ov;
-    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.82)
+    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.9)
       .setOrigin(0).setInteractive();
     ov.add(dim);
     this.addPanel(ov, cx);
@@ -1037,7 +1037,7 @@ export default class MenuScene extends Phaser.Scene {
     const cx = GAME_WIDTH / 2;
     const ov = this.add.container(0, 0).setDepth(300);
     this.checkinOverlay = ov;
-    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.78)
+    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.9)
       .setOrigin(0).setInteractive();
     ov.add(dim);
     this.addPanel(ov, cx);
@@ -1164,7 +1164,7 @@ export default class MenuScene extends Phaser.Scene {
     const cx = GAME_WIDTH / 2;
     const ov = this.add.container(0, 0).setDepth(300);
     this.dailyQuestOverlay = ov;
-    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.78)
+    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.9)
       .setOrigin(0).setInteractive();
     ov.add(dim);
     this.addPanel(ov, cx);
@@ -1300,7 +1300,7 @@ export default class MenuScene extends Phaser.Scene {
     const cx = GAME_WIDTH / 2;
     const ov = this.add.container(0, 0).setDepth(300);
     this.returnGiftOverlay = ov;
-    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.8)
+    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.9)
       .setOrigin(0).setInteractive();
     ov.add(dim);
     this.addPanel(ov, cx, 250, GAME_HEIGHT - 180, 460);
@@ -1339,7 +1339,7 @@ export default class MenuScene extends Phaser.Scene {
     const cx = GAME_WIDTH / 2;
     const ov = this.add.container(0, 0).setDepth(300);
     this.leaderboardOverlay = ov;
-    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.82)
+    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.9)
       .setOrigin(0).setInteractive();
     ov.add(dim);
     this.addPanel(ov, cx, 90, GAME_HEIGHT - 110, 470);
@@ -1392,7 +1392,7 @@ export default class MenuScene extends Phaser.Scene {
     const cx = GAME_WIDTH / 2;
     const ov = this.add.container(0, 0).setDepth(300);
     this.codexOverlay = ov;
-    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.82)
+    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.9)
       .setOrigin(0).setInteractive();
     ov.add(dim);
     this.addPanel(ov, cx, 56, GAME_HEIGHT - 40, 486);
@@ -1521,7 +1521,7 @@ export default class MenuScene extends Phaser.Scene {
     const cx = GAME_WIDTH / 2;
     const ov = this.add.container(0, 0).setDepth(300);
     this.newbiePlanOverlay = ov;
-    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.78)
+    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.9)
       .setOrigin(0).setInteractive();
     ov.add(dim);
     this.addPanel(ov, cx, 60, GAME_HEIGHT - 36, 472);
@@ -1591,7 +1591,7 @@ export default class MenuScene extends Phaser.Scene {
     const cx = GAME_WIDTH / 2;
     const ov = this.add.container(0, 0).setDepth(300);
     this.eventOverlay = ov;
-    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.78)
+    const dim = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.9)
       .setOrigin(0).setInteractive();
     ov.add(dim);
     this.addPanel(ov, cx, 160, GAME_HEIGHT - 160, 470);
