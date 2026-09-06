@@ -386,6 +386,16 @@ class AudioSystem {
         this._tone(523, 'triangle', 0.10, 0.20, 784);
         this._tone(784, 'triangle', 0.12, 0.18, 1046);
         break;
+      case 'chainThunder': {
+        // OPT-17 P8 霆光「传导」专属电弧音（append-only）：sawtooth 高频滑落(放电嘶鸣)
+        // + square 高频短脉冲(电弧"啪") + highpass 噪声裂纹(放电噼啪)。140ms 节流防
+        // 传导链高频连发变噪；视觉已有 conductionArc + banner，本音补全听觉差异化。
+        if (!this._throttle('chainThunder', 140)) return;
+        this._tone(1900, 'sawtooth', 0.13, 0.13, 280, false);
+        this._toneAt(3300, 'square', 0.045, 0.09, 2400, 0.02, false);
+        this._noiseBurst(0.06, 0.09, 5000, 'highpass');
+        break;
+      }
       case 'bomb':
         this._duckBgm();
         this._noiseBurst(0.5, 0.55, 600);

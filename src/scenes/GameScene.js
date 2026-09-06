@@ -1360,8 +1360,13 @@ export default class GameScene extends Phaser.Scene {
     if (count > 0) {
       EventBus.emit(EVENTS.FLOAT_SCORE, { x, y, amount: count * 10, special: true, label: `${name} ×${count}` });
       VFX.reactionRing(this, x, y, element);
-      if (element === 'thunder') VFX.conductionArc(this, x, y);
-      audio.sfx('powerup');
+      if (element === 'thunder') {
+        // OPT-17 P8：霆光「传导」听觉差异化 —— 电弧放电音（视觉 arc 已有，原共用 powerup 无雷感）
+        VFX.conductionArc(this, x, y);
+        audio.sfx('chainThunder');
+      } else {
+        audio.sfx('powerup');
+      }
     }
   }
 
