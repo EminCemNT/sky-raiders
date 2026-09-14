@@ -1458,13 +1458,19 @@ export default class GameScene extends Phaser.Scene {
 
   /** 命中定格（hitStop）：冻结物理世界（子弹/敌机/敌弹）强化打击感；指针拖动玩家不受影响。
    *  @param {number} ms 定格时长（真实毫秒）
-   *  内置 70ms 冷却防连杀卡顿；reduced-motion 下跳过。camera 演出（shake/flash）不受影响。 */
+   *  OPT-18 F5 分级冷却：原统一 70ms 冷却会把「击杀 / 敌亡 / Boss 击破」这类重要事件一并拦掉
+   *  （普攻高频命中持续占用冷却窗口 → 重要反馈被稀释）。现按时长分级：
+   *    ms >= 45（击杀45 / 敌亡60 / 自爆90 / Boss120~180 / 炸弹250）→ 25ms 冷却，几乎必触发；
+   *    ms <  45（普攻33）→ 保持 70ms 冷却防高射速连发卡顿（原行为零回归）。
+   *  `_hitStopMs` 取 max 不累加，故连杀不会叠加成长定格。
+   *  内置冷却防连杀卡顿；reduced-motion 下跳过。camera 演出（shake/flash）不受影响。 */
   requestHitStop(ms) {
     if (typeof window !== 'undefined' && window.matchMedia
       && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+    const gap = (ms >= 45) ? 25 : 70;                 // F5：重要事件放宽冷却，普攻保持防抖
     if (now < this._hitStopGapUntil) return;          // 冷却中：忽略，避免叠加卡顿
-    this._hitStopGapUntil = now + 70;
+    this._hitStopGapUntil = now + gap;
     this._hitStopMs = Math.max(this._hitStopMs || 0, ms);
     if (this.physics && this.physics.world && !this.physics.world.isPaused) {
       this.physics.world.pause();

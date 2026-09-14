@@ -566,6 +566,10 @@ function drawBulletEnemy(g) {
   // 外发光（红橙，0.34→0.42 提亮，9→11px 扩大）
   g.fillStyle(COLORS.enemyBullet, 0.42);
   g.fillCircle(9, 9, 11);
+  // OPT-18 V2：冷色高对比描边 —— 敌弹本体为暖红橙，在紫红/暖色关卡背景上对比度不足；
+  // 加一圈亮青细边形成冷暖分离，提升弹幕辨识度（仅视觉，纹理仍 18×18，判定/尺寸零影响）。
+  g.lineStyle(2, 0x7cf3ff, 0.85);
+  g.strokeCircle(9, 9, 7.6);
   // 球体渐变 红→橙
   g.fillGradientStyle(0xffd0a0, 0xff7a3c, 0xff5a3c, 0xd93420, 1);
   g.fillCircle(9, 9, 7);

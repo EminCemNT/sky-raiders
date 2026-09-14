@@ -288,6 +288,16 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     const key = baseKey;
     const b = this.bullets.get(this.x + p.dx, this.y - 20, key);
     if (!b) return;
+    // OPT-18 F1：普通射击枪口火光（轻量）——此前仅激光有发射闪光，普攻机首无反馈。
+    // 80ms 节流：高射速武器每发都爆粒子会变噪，故只按频率采样；元素机用对应元素色。
+    {
+      const now = this.scene.time.now;
+      if (!this._lastMuzzle || now - this._lastMuzzle > 80) {
+        this._lastMuzzle = now;
+        const ELEM_TINT = { fire: 0xff7a3a, ice: 0x6fd6ff, thunder: 0xffe14a };
+        if (VFX.muzzleFlash) VFX.muzzleFlash(this.scene, this.x + p.dx, this.y - 24, ELEM_TINT[this.shipElement] || 0x9ff0ff);
+      }
+    }
     // P1-2 池贴图不变量：复用的子弹可能残留旧贴图键，先统一成本次请求的贴图，
     // 用 drawKey（元素弹时与 key 不同）重设，再读 bw/bh 计算 body。
     if (b.texture && b.texture.key !== drawKey) b.setTexture(drawKey);

@@ -199,8 +199,9 @@ export function createStarfield(scene, { layers = 4, starTints = null, theme = n
       const s = scene.add.image(x, Phaser.Math.Between(0, GAME_HEIGHT), 'particle_streak')
         .setDepth(-95)
         .setTint(0x7cf3ff)
-        .setScale(2.2 + i * 0.6, 150 + i * 20)
-        .setAlpha(0.08 + i * 0.02)   // P3：流光 alpha 微提 0.05~0.11 → 0.08~0.14
+        // OPT-18 V1：光带收窄 35% + 压暗约半，退入背景层不再与弹幕/玩家机争焦点（原 2.2+i*0.6 宽 / 0.08+i*0.02 亮）
+        .setScale(1.4 + i * 0.35, 150 + i * 20)
+        .setAlpha(0.040 + i * 0.010)
         .setBlendMode(Phaser.BlendModes.ADD);
       s._speed = Phaser.Math.Between(45, 95) * tier.speedMul;
       s._baseX = x;

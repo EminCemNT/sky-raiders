@@ -516,7 +516,25 @@ export function playerHitFlash(scene, shieldActive) {
       onComplete: () => { if (shield && shield.active) shield.destroy(); },
     });
   } else {
-    scene.cameras.main.flash(200, 180, 50, 50);
+    // OPT-18 F2：受击反馈改良 —— 原全屏 flash(200,180,50,50) 实测显著降低弹幕可读性，
+    // 而受击瞬间恰是最需要重新定位之时。改为「短促微闪 + 边缘红晕」组合：
+    //   微闪 90ms 暗红给瞬时冲击感（短暂、不遮辨认）；边缘红晕 260ms 给持续定位提示，
+    //   中央区域完全透明 → 战场始终可见。reduced-motion 下整体跳过。
+    if (prefersReduced) return;
+    scene.cameras.main.flash(90, 130, 34, 34);
+    const W = scene.scale.width, H = scene.scale.height;
+    const g = scene.add.graphics().setDepth(74);
+    const LAYERS = 8, STEP = 14;
+    for (let i = 0; i < LAYERS; i++) {
+      const inset = i * STEP;
+      const a = 0.26 * Math.pow(1 - i / LAYERS, 1.5);
+      g.lineStyle(STEP + 2, 0xff3a3a, a);
+      g.strokeRect(inset, inset, W - inset * 2, H - inset * 2);
+    }
+    scene.tweens.add({
+      targets: g, alpha: 0, duration: 260, ease: 'Quad.easeOut',
+      onComplete: () => { if (g && g.active) g.destroy(); },
+    });
   }
 }
 
@@ -638,6 +656,30 @@ export function laserMuzzleFlash(scene, x, y) {
   p.setDepth(22);
   p.explode();
   scene.time.delayedCall(220, () => { if (p && p.active) p.destroy(); });
+}
+
+/**
+ * OPT-18 F1：普通射击枪口火光（轻量版）——机首小火花，短寿命 / 低强度 / 少量粒子。
+ * 与 laserMuzzleFlash 的区别：粒子更少（~4）、寿命更短（110ms）、速度更低，
+ * 避免高射速武器每发都爆粒子造成的视觉噪声。调用方负责节流（如 80ms）。
+ * @param {number} [tint] 火光辅色（默认枪口青）；元素机可传对应元素色。
+ */
+export function muzzleFlash(scene, x, y, tint) {
+  if (prefersReduced) return;
+  const qs = _qualityScale(scene);
+  const p = scene.add.particles(x, y, TEXTURE_KEYS.particleSpark, {
+    speed: { min: 30, max: 90 * qs },
+    lifespan: 110,
+    scale: { start: 0.8 * qs, end: 0 },
+    alpha: { start: 0.7, end: 0 },
+    quantity: Math.max(2, Math.round(4 * qs)),
+    blendMode: 'ADD',
+    tint: [VFX_COLORS.flash, tint || LOCAL_COLORS.muzzleCyan],
+    emitting: false,
+  });
+  p.setDepth(22);
+  p.explode();
+  scene.time.delayedCall(150, () => { if (p && p.active) p.destroy(); });
 }
 
 /**
