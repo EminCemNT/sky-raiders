@@ -75,12 +75,15 @@ export default class HangarScene extends Phaser.Scene {
     this.buildShipSelector(cx, 238);
 
     // 开局主武器选择（覆盖战机绑定武器；null=用战机默认）
-    this.buildStartWeaponSelector(cx, 312);
+    // OPT-18 U2：原 312 → 芯片区间 290~334 与首行卡片（原 306~390）纵向重叠 28px，
+    // 选择器被后绘制的卡片压住（形似"文字被压/水印"）。上移至 308 让出净空。
+    this.buildStartWeaponSelector(cx, 308);
 
-    // 部件行（6 项：卡片高 84 / 行距 92，开局武器行占 292，起始 348 留出空间）
+    // 部件行（6 项）：OPT-18 U2 压缩行高 84→78 + 行距 92→86（行间净距仍 8px 不变），
+    // 起始 348→376，使首行顶边 337 > 开局武器芯片底边 330，彻底消除重叠。
     this.rows = [];
-    const startY = 348;
-    const gap = 92;
+    const startY = 376;
+    const gap = 86;
     ORDER.forEach((key, i) => {
       this.rows.push(this.buildRow(key, cx, startY + i * gap));
     });
@@ -120,10 +123,10 @@ export default class HangarScene extends Phaser.Scene {
     const def = UPGRADE_TREE[key];
     const row = { key, max: def.max };
 
-    // 背景卡片 + 外发光描边（霓虹化）
-    const card = this.add.rectangle(cx, y, 480, 84, THEME.cardBg, 0.9).setStrokeStyle(2, THEME.cardStroke);
+    // 背景卡片 + 外发光描边（霓虹化）——OPT-18 U2：行高 84→78（行间净距保持 8px）
+    const card = this.add.rectangle(cx, y, 480, 78, THEME.cardBg, 0.9).setStrokeStyle(2, THEME.cardStroke);
     const cardGlow = this.add.graphics().setAlpha(0.9);
-    cardGlow.lineStyle(6, COLORS.accent, 0.16).strokeRoundedRect(cx - 240, y - 42, 480, 84, 10);
+    cardGlow.lineStyle(6, COLORS.accent, 0.16).strokeRoundedRect(cx - 240, y - 39, 480, 78, 10);
 
     // 名称（部件名，i18n key 化）
     const nameText = this.add.text(cx - 222, y - 20, t(`up_${key}`), {

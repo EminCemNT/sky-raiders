@@ -550,6 +550,15 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     VFX.playerHitFlash(this.scene, this.shield > 0);
 
     VFX.shake(this.scene, 'medium');
+
+    // OPT-18 F3：受击轻定格 + 机体闪白 —— 补齐"机体本体"受击反馈。
+    // 此前 PLAYER_HIT 仅被 AudioSystem 消费（音效），机体系除无敌闪烁外无受击表现。
+    //   定格 75ms：介于击杀 45 / 自爆 90 之间，给"被击中"一个明确的冲击停顿；
+    //              reduced-motion 由 requestHitStop 内部跳过。
+    //   白闪 150ms：与敌机 / Boss 受击闪白同一视觉语言；时长取 150ms 是为压过
+    //              F2 的全屏红闪（~90ms）——否则白闪会被整段盖住（见 _flashHit 注释）。
+    if (this.scene && typeof this.scene.requestHitStop === 'function') this.scene.requestHitStop(75);
+    this._flashHit();
     if (this.hp <= 0) {
       // 先 kill 再 emit：命数复活（GameScene._onPlayerDied）可能在事件里原地复活玩家，
       // 若 emit 在 kill 之前，事件回调先 revive、随后 kill 又把玩家打回 inactive，导致复活失败。
@@ -560,6 +569,27 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
 
   getHitCircle() {
     return { x: this.x, y: this.y, r: PLAYER.HITBOX_RADIUS };
+  }
+
+  /**
+   * OPT-18 F3：机体受击白闪，随后按"皮肤/染色"原状恢复。
+   * 时长 150ms —— 经像素时序实测（qa_probes/_f3_timeline.mjs）：受击同时 F2 会触发
+   * 约 90ms 的全屏红闪（camera.flash，渲染在所有场景对象之上，alpha 峰值≈0.93），
+   * 若白闪只给 50ms 会被整段盖住、玩家无从感知；延长到 150ms 才能在红闪退去后
+   * 仍留出约 60ms 清晰可读的白色机体。
+   * 皮肤贴图自带配色（applySkin 已 clearTint）→ 恢复为 clearTint；
+   * 纯色机体 → 恢复为 shipTint（GameScene 按所选机型设置）。
+   * 纯视觉、零判定影响；reduced-motion 下整体跳过。
+   */
+  _flashHit() {
+    if (prefersReduced || !this.active) return;
+    const hasSkin = !!(this.texture && this.texture.key && this.texture.key.indexOf('player_skin_') === 0);
+    const prevTint = (!hasSkin && this.shipTint != null) ? this.shipTint : null;
+    this.setTintFill(0xffffff);
+    this.scene.time.delayedCall(150, () => {
+      if (!this.active) return;
+      if (prevTint != null) this.setTint(prevTint); else this.clearTint();
+    });
   }
 
   /** 擦弹环（P2）：判定圈外的擦弹判定半径（r = 判定圈 + RING_EXTRA + 引擎模块擦弹环加成 + 爬塔擦弹环加成） */
