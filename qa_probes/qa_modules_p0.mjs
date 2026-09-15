@@ -102,7 +102,7 @@ push('weapon_rare 射速 ×0.88', cfg.weaponRare && cfg.weaponRare.fireIntervalM
 push('armor_rare HP +40', cfg.armorRare && cfg.armorRare.hpBonus === 40);
 push('engine_common 移速 ×1.1', cfg.engineCommon && cfg.engineCommon.speedMul === 1.1);
 push('engine_rare 擦弹环 +6', cfg.engineRare && cfg.engineRare.grazeExtra === 6);
-push('SHIPS 三机均有 passive', cfg.shipPassives.length === 3 && cfg.shipPassives.every(Boolean), cfg.shipPassives.join(','));
+push('SHIPS 四机均有 passive', cfg.shipPassives.length === 4 && cfg.shipPassives.every(Boolean), cfg.shipPassives.join(','));
 
 // ── 2) 存档默认：三槽空 / 库存空 ──
 const dflt = await page.evaluate(() => {

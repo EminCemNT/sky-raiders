@@ -5,7 +5,7 @@
 //   2) 机库顶部展示总战力 + 推荐关卡（HangarScene.powerText）
 //   3) 升级按钮弹数值对比（tryUpgrade → lastCompareText 含 "→"）
 //   4) 皮肤装饰：
-//      a. SHIP_SKINS 3 机 × 3 款（源码 + 运行期）
+//      a. SHIP_SKINS 4 机 × 3 款（源码 + 运行期）
 //      b. SaveManager 新增 skins/ownedSkins + buySkin/equipSkin/ownsSkin（只新增字段）
 //      c. TextureFactory 生成 player_skin_{shipId}_{skinId}（textures.exists）
 //      d. 机库 openSkins overlay 3 行 + 购买/切换生效
@@ -89,7 +89,7 @@ const auSrc = read('src/systems/AudioSystem.js');
 
 push('GameConfig 导出 calcPower', /export function calcPower\(/.test(gcSrc), '');
 push('GameConfig 导出 recommendLevel', /export function recommendLevel\(/.test(gcSrc), '');
-push('GameConfig 定义 SHIP_SKINS（3 机×3 款）', /export const SHIP_SKINS = \[/.test(gcSrc)
+push('GameConfig 定义 SHIP_SKINS（4 机×3 款）', /export const SHIP_SKINS = \[/.test(gcSrc)
   && (gcSrc.match(/\{ id: 0, name: '青蓝'/g) || []).length >= 1, '');
 push('SaveManager 新增 skins 字段', /skins: \{\}/.test(smSrc), '');
 push('SaveManager 新增 ownedSkins 字段', /ownedSkins: \[\]/.test(smSrc), '');
@@ -193,7 +193,7 @@ const r = await page.evaluate(async () => {
 // 慢放恢复等待已在上面内联等待 500ms（恢复定时器 300ms 已过）
 push('calcPower 运行期为函数', r.calcPowerIsFn, `val=${r.calcPowerVal}`);
 push('calcPower 计算战力 > 0 且 recommendLevel 生效', r.calcPowerVal > 0 && r.recommend >= 1, `power=${r.calcPowerVal} rec=${r.recommend}`);
-push('SHIP_SKINS 3 机 × 3 款（运行期）', r.skinCount === 3 && r.skin0count === 3, `ships=${r.skinCount} skins/ship=${r.skin0count}`);
+push('SHIP_SKINS 4 机 × 3 款（运行期）', r.skinCount === 4 && r.skin0count === 3, `ships=${r.skinCount} skins/ship=${r.skin0count}`);
 push('shipSkinKey 派生正确', r.skinKeyFn === true, '');
 push('机库顶部展示总战力 + 推荐关卡', r.powerHas === true, r.powerText);
 push('升级按钮弹数值对比（当前→升级后）', r.compareOk === true, r.compareText);

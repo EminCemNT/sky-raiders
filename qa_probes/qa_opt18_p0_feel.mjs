@@ -5,8 +5,9 @@
 //   V2 敌弹冷色描边（TextureFactory.js）：bullet_enemy 尺寸仍 18×18 + 描边环采样到亮青
 //   F1 普攻枪口火光（VFX.muzzleFlash + Player._emitBullet）：射击期间出现 particleSpark / 节流时间戳被赋值
 //   F2 受击边缘红晕（VFX.playerHitFlash）：受击后新增 Graphics 红晕层（替代全屏 flash）
-//   F5 定格分级（GameScene.requestHitStop）：45ms 事件 25ms 冷却（45ms 后可再触发）；
-//      普攻 33ms 保持 70ms 冷却（45ms 内被拦，零回归）
+//   F5 定格分级（GameScene.requestHitStop）：量冷却窗口宽度 —— 45ms 事件≈25ms 冷却；
+//      普攻 33ms≈70ms 冷却（原行为零回归）；两档同 tick 重复调用均被拦。
+//      （原实现依赖 sleep 计时，负载下会假失败；现改为确定性断言）
 //   全程零 pageerror
 // 运行：node qa_probes/qa_opt18_p0_feel.mjs（QA_URL 默认 5059）
 // 注意：走真实路径（点击开始游戏），避免 game.scene.start 直切造成的场景残留假象。
@@ -102,30 +103,35 @@ const muzzle = await page.evaluate(() => {
 push('F1 射击后出现枪口火花 / 节流时间戳被赋值', sparkSeen > 0 || muzzle.lastMuzzle > 0,
   `spark emitters=${sparkSeen} lastMuzzle=${muzzle.lastMuzzle} bullets=${muzzle.bullets}`);
 
-// ── F5 定格分级 ───────────────────────────────────────────────
-const f5 = await page.evaluate(async () => {
+// ── F5 定格分级（确定性断言：量冷却窗口宽度，不依赖 sleep 计时）────
+// 原实现靠 sleep(45) 后重调来判断是否被拦，负载下 sleep 会超时越过 70ms 冷却 → 假失败。
+// 改为直接量 _hitStopGapUntil - now 的窗口宽度（= 被测分档逻辑本身），并加同 tick 重调断言。
+const f5 = await page.evaluate(() => {
   const g = window.__SKY__.scene.getScene('GameScene');
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const resume = () => { if (g.physics.world.isPaused) g.physics.world.resume(); };
-  // 击杀级（45ms）：45ms 后应可再次触发（冷却仅 25ms）
+  // 击杀级（45ms ≥ 45）→ 冷却窗口应为 25ms
   g._hitStopGapUntil = 0; g._hitStopMs = 0; resume();
   g.requestHitStop(45);
-  const g1 = g._hitStopGapUntil;
-  await sleep(45);
-  g.requestHitStop(45);
-  const g2 = g._hitStopGapUntil;
-  // 普攻（33ms）：45ms 内仍应被 70ms 冷却拦（零回归）
+  const killWidth = g._hitStopGapUntil - performance.now();
+  const kBefore = g._hitStopGapUntil;
+  g.requestHitStop(45);                       // 同 tick 立刻重调 → 必被拦
+  const killBlocked = g._hitStopGapUntil === kBefore;
+  // 普攻（33ms < 45）→ 冷却窗口应为 70ms（原行为零回归）
   g._hitStopGapUntil = 0; g._hitStopMs = 0; resume();
   g.requestHitStop(33);
-  const n1 = g._hitStopGapUntil;
-  await sleep(45);
-  g.requestHitStop(33);
-  const n2 = g._hitStopGapUntil;
+  const basicWidth = g._hitStopGapUntil - performance.now();
+  const bBefore = g._hitStopGapUntil;
+  g.requestHitStop(33);                       // 同 tick 立刻重调 → 必被拦
+  const basicBlocked = g._hitStopGapUntil === bBefore;
   resume();
-  return { g1, g2, n1, n2 };
+  return { killWidth, basicWidth, killBlocked, basicBlocked };
 });
-push('F5 击杀级(45ms) 45ms 后可再次触发（25ms 冷却）', f5.g2 > f5.g1, `gap ${Math.round(f5.g1)}→${Math.round(f5.g2)}`);
-push('F5 普攻(33ms) 45ms 内仍被 70ms 冷却拦（零回归）', f5.n2 === f5.n1, `gap ${Math.round(f5.n1)}→${Math.round(f5.n2)}`);
+push('F5 击杀级(45ms) 冷却窗口≈25ms（分级生效）',
+  f5.killWidth > 10 && f5.killWidth <= 25, `窗口=${f5.killWidth.toFixed(1)}ms`);
+push('F5 普攻(33ms) 冷却窗口≈70ms（原行为零回归）',
+  f5.basicWidth > 55 && f5.basicWidth <= 70, `窗口=${f5.basicWidth.toFixed(1)}ms`);
+push('F5 同 tick 重复调用被冷却拦（两档均拦）',
+  f5.killBlocked === true && f5.basicBlocked === true, `kill=${f5.killBlocked} basic=${f5.basicBlocked}`);
 
 push('P0. 全程无 pageerror/console.error', errors.length === 0, errors.slice(0, 3).join(' | '));
 

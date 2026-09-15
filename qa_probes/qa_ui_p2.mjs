@@ -141,9 +141,11 @@ for (const f of THEME_FILES) {
   themeRefs += (src.match(/THEME\.\w+/g) || []).length;
 }
 const vfx = read(VFX_FILE);
-const vfxDot = (vfx.match(/particle_dot/g) || []).length;
-const vfxStreak = (vfx.match(/particle_streak/g) || []).length;
-const vfxSpark = (vfx.match(/particle_spark/g) || []).length;
+// OPT-18：VFX.js 已把贴图键重构为 TEXTURE_KEYS.particleSpark 等常量，字面量 'particle_spark' 不再出现。
+// 统计兼容两种写法（常量引用或字面量），避免后续重构再次误伤。
+const vfxDot = (vfx.match(/particleDot|particle_dot/g) || []).length;
+const vfxStreak = (vfx.match(/particleStreak|particle_streak/g) || []).length;
+const vfxSpark = (vfx.match(/particleSpark|particle_spark/g) || []).length;
 
 // ── 断言 ──
 const checks = [

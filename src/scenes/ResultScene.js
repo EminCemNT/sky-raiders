@@ -142,8 +142,12 @@ export default class ResultScene extends Phaser.Scene {
         lines.push({ label: t('resTowerFloor'), value: t('resTowerVal', { floor: r.towerFloor }), newBest: !!r.isNewTowerTop });
       }
     }
-    // P1 留存·社交排行：本局入 Top10 显示名次
-    if (r.topRank > 0) lines.push({ label: t('resLeaderboard'), value: t('resRankVal', { rank: r.topRank }), newBest: true });
+    // P1 留存·社交排行：本局入 Top10 显示名次。
+    // OPT-18 修复：原硬编码 `newBest: true` 的本意只是让该行**金色高亮**，但 newBest 同时驱动
+    // 「★新纪录」后缀 → 只要进榜就误挂「新纪录」，即便总分远低于历史最高（误导性文案；
+    // 由 qa_lives_bestscore 6b「未破纪录不得出现新纪录」捕获）。
+    // 现改用独立 highlight 标志只做高亮，「★新纪录」严格由 isNewBest 决定。
+    if (r.topRank > 0) lines.push({ label: t('resLeaderboard'), value: t('resRankVal', { rank: r.topRank }), highlight: true });
     // P2 Boss Rush 差异化：胜利结算新增「Boss Rush 奖励」行（机库等级 / 金币倍率 / 稀有掉落数）
     if (r.mode === 'bossrush' && r.victory && r.rushReward) {
       const rr = r.rushReward;
@@ -189,10 +193,13 @@ export default class ResultScene extends Phaser.Scene {
     const maxRowSpan = 919 - dataStartY - 140 - (btnRows - 1) * 80; // 3按钮 219 / 2按钮 299
     const rowGap = Math.min(40, Math.max(24, Math.floor(maxRowSpan / lines.length)));
     lines.forEach((l, i) => {
+      // OPT-18：高亮（破纪录 newBest / 入榜 highlight）与「★新纪录」后缀解耦 ——
+      // 后缀只认 newBest，highlight 仅给金色+加粗（修复「入榜即误标新纪录」）。
+      const hot = l.newBest || l.highlight;
       this.add.text(cx, dataStartY + i * rowGap, `${l.label}   ${l.value}${l.newBest ? t('resNewRecord') : ''}`, {
         fontFamily: THEME.fontFamily, fontSize: '22px',
-        color: l.newBest ? THEME.textGoldLight : THEME.textPrimary,
-        fontStyle: l.newBest ? '800' : 'normal',
+        color: hot ? THEME.textGoldLight : THEME.textPrimary,
+        fontStyle: hot ? '800' : 'normal',
       }).setOrigin(0.5);
     });
 
