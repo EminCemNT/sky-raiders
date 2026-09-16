@@ -41,7 +41,8 @@ async function newPage(save, reduced = false) {
     try { localStorage.setItem('sky_raiders_save_v1', JSON.stringify(s)); } catch (e) { /* ignore */ }
   }, save);
   await page.goto(URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 20000 });
+  // 同浏览器第 3 个 Phaser 实例（Page C）在 headless 软件渲染下启动明显更慢：预算放宽到 60s
+  await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 60000 });
   return { page, errors };
 }
 
@@ -173,7 +174,9 @@ const graze = await pageA.evaluate(() => {
   const b = gs.enemyBullets.get(p.x + 15, p.y, 'bullet_enemy');
   b.setActive(true).setVisible(true); b.body.enable = true;
   b.setPosition(p.x + 15, p.y); b.body.velocity.set(0, 200); b._grazedAt = null;
-  gs._updateGraze(gs.time.now);
+  // OPT-16 T3：_updateGraze 已内联进 _updateEnemyBullets（带 _grazeTick % GRAZE.CHECK_EVERY 节流）。
+  // 置 _grazeTick=1 使本次自增后为 2（偶数）→ 强制命中擦弹帧，等价旧 _updateGraze 的逐次判定。
+  gs._grazeTick = 1; gs._updateEnemyBullets(gs.time.now);
   const d1 = window.__GAME._dynLight.grazeSparkCount;
   const gs2 = gs.vfxPool ? gs.vfxPool.grazeSpark : null;
   return {
@@ -201,7 +204,8 @@ const cap = await pageA.evaluate(() => {
     b.setPosition(p.x + dx, p.y + dy); b.body.velocity.set(0, 200); b._grazedAt = null;
     return b;
   };
-  for (let i = 0; i < 5; i++) { mk(15, i * 3 - 6); gs._updateGraze(gs.time.now); }
+  // 同上：置 _grazeTick=1 → 本次自增为偶数 → 强制擦弹帧
+  for (let i = 0; i < 5; i++) { mk(15, i * 3 - 6); gs._grazeTick = 1; gs._updateEnemyBullets(gs.time.now); }
   return { inc: window.__GAME._dynLight.grazeSparkCount - d0 };
 });
 push('V2. 同帧 5 连擦 cap≤3（maxPerFrame=3）', cap.inc <= 3, `inc=${cap.inc}`);
@@ -353,7 +357,9 @@ const low = await pageC.evaluate(() => {
   const b = gs.enemyBullets.get(p.x + 15, p.y, 'bullet_enemy');
   b.setActive(true).setVisible(true); b.body.enable = true;
   b.setPosition(p.x + 15, p.y); b.body.velocity.set(0, 200); b._grazedAt = null;
-  gs._updateGraze(gs.time.now);
+  // OPT-16 T3：_updateGraze 已内联进 _updateEnemyBullets（带 _grazeTick % GRAZE.CHECK_EVERY 节流）。
+  // 置 _grazeTick=1 使本次自增后为 2（偶数）→ 强制命中擦弹帧，等价旧 _updateGraze 的逐次判定。
+  gs._grazeTick = 1; gs._updateEnemyBullets(gs.time.now);
   return {
     qualityScale: gs.qualityScale,
     idleAura: d.idleAuraActive,

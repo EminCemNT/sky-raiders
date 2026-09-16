@@ -104,10 +104,16 @@ await page.waitForFunction(() => window.__SKY && window.__SKY.registerKill, null
 await sleep(300);
 const killHook = await page.evaluate(() => {
   const g = window.__SKY;
-  const before = (window.__SAVE.load().dailyQuest.progress.kills) || 0;
+  const S = window.__SAVE;
+  // 确定性前提：addDailyProgress 只累计「当日抽中指标」（SaveManager: if (!dq.picked.includes(metric)) return）。
+  // 日期种子未必抽中 kills，故显式把 picked 置为 ['kills'] 并清空进度，隔离「击杀钩子」自身行为（与日期无关）。
+  const s = S.load();
+  s.dailyQuest.picked = ['kills'];
+  s.dailyQuest.progress = {};
+  const before = (S.load().dailyQuest.progress.kills) || 0;
   g.registerKill(100, 100, {});
   g.registerKill(100, 100, {});
-  const after = (window.__SAVE.load().dailyQuest.progress.kills) || 0;
+  const after = (S.load().dailyQuest.progress.kills) || 0;
   // 触发 endGame 走 SaveManager.save flush（不崩溃即可）
   try { g.endGame(false); } catch (e) { return { before, after, endErr: String(e) }; }
   return { before, after, endErr: null };

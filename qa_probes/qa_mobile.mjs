@@ -86,12 +86,18 @@ const a = toCss(270, 700);   // 起点（中部偏下）
 const b = toCss(120, 360);   // 终点（左上偏移）
 await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: a.x, y: a.y }] });
 await client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: b.x, y: b.y }] });
-// 等待若干帧让 Player.update 跟随
-await new Promise((res) => setTimeout(res, 400));
-const after = await page.evaluate(() => {
-  const gs = window.__SKY__.scene.getScene('GameScene');
-  return { x: gs.player.x, y: gs.player.y, isDown: gs.input.activePointer.isDown };
-});
+// 等待玩家跟随到位：headless（--disable-gpu 软件渲染）下游戏时间约 1/9 速，固定 400ms 不足以让跟随收敛。
+// 轮询至位置稳定（连续两次采样位移 < 0.5 逻辑像素）或超时，再做下方断言。
+let after = null, prev = null;
+for (let i = 0; i < 300; i++) {
+  after = await page.evaluate(() => {
+    const gs = window.__SKY__.scene.getScene('GameScene');
+    return { x: gs.player.x, y: gs.player.y, isDown: gs.input.activePointer.isDown };
+  });
+  if (prev && Math.hypot(after.x - prev.x, after.y - prev.y) < 0.5) break;
+  prev = after;
+  await new Promise((res) => setTimeout(res, 25));
+}
 await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 
 // 断言：玩家朝拖动终点方向移动（不要求精确命中，给足容差）

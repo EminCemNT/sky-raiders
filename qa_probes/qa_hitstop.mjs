@@ -47,9 +47,10 @@ const r = await page.evaluate(async () => {
   // 冷却内（70ms）重复调用，应被忽略（不放大时长）
   gs.requestHitStop(50);
   const ms2 = gs._hitStopMs;                        // 期望仍为 300
-  // 轮询等待直到恢复（兼容 headless 下 RAF 节流导致的慢递减；前台 60fps 下 300ms 即恢复）
+  // 轮询等待直到恢复。headless（--disable-gpu 软件渲染）实测：游戏时间仅约 110ms/真实秒（≈1/9 速），
+  // 故预算给到 25s；快环境（前台 60fps）仍在 ~300ms 内立即返回，慢环境也能等到真实恢复。
   const t0 = performance.now();
-  while (performance.now() - t0 < 3000) {
+  while (performance.now() - t0 < 25000) {
     await new Promise((res) => setTimeout(res, 50));
     if (!gs.physics.world.isPaused && gs._hitStopMs <= 0) break;
   }

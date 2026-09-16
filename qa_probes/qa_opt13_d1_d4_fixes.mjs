@@ -14,7 +14,7 @@
 // 勿动态 import SaveManager/AchievementManager（Vite HMR ?t= 会生成第二份模块实例）。
 import { chromium } from 'playwright';
 
-const URL = process.env.QA_URL || 'http://127.0.0.1:5183';
+const URL = process.env.QA_URL || process.env.QA_BASE_URL || 'http://127.0.0.1:5059';
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 
 const checks = [];

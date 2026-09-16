@@ -944,9 +944,14 @@ export default class GameScene extends Phaser.Scene {
       // 炸弹（isBomb）走 _explodeBomb 全场 AOE，不进此分支。
       if (!b.isBomb && shieldOk
         && ab1.left < ab2.right && ab1.right > ab2.left && ab1.top < ab2.bottom && ab1.bottom > ab2.top) {
+        // ★ 命中来源快照，必须在任何 killBullet 之前取值 ★（同 429 行敌机路径）
+        // killBullet 会复位 damage=0 / element=null（池复用契约），先回收后读 → 恒落 10 兜底、
+        // 元素状态恒丢：武器等级/聚焦/救济/连击倍率/僚机弹对护盾部位全部失效。
+        const sdmg = b.damage || 10;
+        const sel = b.element;
         this.killBullet(b);
         VFX.hitSpark(this, b.x, b.y);
-        this.boss.hitShieldPart(b.damage || 10, b.element);
+        this.boss.hitShieldPart(sdmg, sel);
         return;
       }
       if (ab1.left < ab3.right && ab1.right > ab3.left && ab1.top < ab3.bottom && ab1.bottom > ab3.top) {
@@ -958,6 +963,11 @@ export default class GameScene extends Phaser.Scene {
         }
         // 穿透弹同样只对 Boss 结算一次（Boss 体积大，不去重会每帧连击）
         if (b._lastHit === this.boss) return;
+        // ★ 命中来源快照，必须在任何 killBullet 之前取值 ★（同 429 行敌机路径）
+        // killBullet 复位 damage=0 / element=null（池复用契约）；此前「先回收后读」使普通弹对 Boss
+        // 恒为 10 兜底伤害、元素状态恒丢 —— 普通弹的武器等级/聚焦 +20%/救济 +10%/连击倍率全部失效。
+        const bdmg = b.damage || 10;
+        const bel = b.element;
         if ((b.pierce || 0) > 0) {
           b._lastHit = this.boss;
           b.pierce -= 1;
@@ -965,7 +975,7 @@ export default class GameScene extends Phaser.Scene {
           this.killBullet(b);
         }
         VFX.hitSpark(this, b.x, b.y);
-        this.boss.hit(b.damage || 10, b.element);
+        this.boss.hit(bdmg, bel);
       }
     });
   }

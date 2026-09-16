@@ -57,7 +57,7 @@ await page.waitForFunction(() => {
 }, null, { timeout: 20000 });
 await page.waitForTimeout(1500);
 
-const diag = await page.evaluate(() => {
+const diag = await page.evaluate(async () => {
   const g = window.__SKY__;
   const out = { scenes: {} };
   ['BootScene', 'PreloadScene', 'MenuScene', 'GameScene', 'UIScene', 'ResultScene', 'TransitionScene'].forEach((k) => {
@@ -94,11 +94,30 @@ const diag = await page.evaluate(() => {
     return found;
   }
   out.topTexts = {};
-  ['GameScene', 'UIScene', 'MenuScene'].forEach((k) => {
+  ['UIScene', 'MenuScene'].forEach((k) => {
     const sc = g.scene.getScene(k);
     if (!sc) return;
     out.topTexts[k] = collectTexts(sc, null).filter((t) => t.y >= 0 && t.y < 150 && t.text.trim().length);
   });
+  // GameScene 顶部 y<150：先「静默战斗」再采样，只把真残留计入。
+  // 背景：战斗飘字（伤害数字 "10"、传导 banner 等）是瞬态反馈，单次采样会把它们误判为幽灵文本（实测踩到）。
+  //   仅靠「多次采样取交集」也不行 —— 敌机在固定编队位被击落时，同一 (x,y) 会反复冒出 "10"，照样骗过持续判据。
+  // 做法：暂停物理 + 清空场上实体（不再产生新命中）→ 等既有飘字自然过期销毁 → 再一次性采样。
+  //   注意：tween 走游戏 delta，headless 软件渲染下约 110ms/真实秒，560ms 上飘 tween 需 ~5s 才销毁，故等待放宽到 9s。
+  {
+    const gs = g.scene.getScene('GameScene');
+    if (gs) {
+      if (gs.physics && gs.physics.world) gs.physics.world.pause();
+      const clear = (grp, fn) => { if (grp && grp.children) grp.children.each((o) => { if (o.active) fn(o); }); };
+      clear(gs.enemies, (e) => e.recycle());
+      clear(gs.enemyBullets, (b) => gs.killBullet(b));
+      clear(gs.playerBullets, (b) => gs.killBullet(b));
+      await new Promise((r) => setTimeout(r, 9000));
+    }
+    out.topTexts.GameScene = gs
+      ? collectTexts(gs, null).filter((t) => t.y >= 0 && t.y < 150 && t.text.trim().length)
+      : [];
+  }
   return out;
 });
 
@@ -107,7 +126,7 @@ push('MenuScene 已 shutdown（active=false / children=0）', diag.scenes.MenuSc
 push('GameScene 激活（active / children>0）', diag.scenes.GameScene && diag.scenes.GameScene.active && diag.scenes.GameScene.children > 0,
   `children=${diag.scenes.GameScene.children}`);
 push('tips 文案零残留（全场景扫描无持有者）', diag.tipHolders.length === 0, diag.tipHolders.length ? JSON.stringify(diag.tipHolders[0]) : '');
-push('GameScene 顶部 y<150 无来源不明文本', diag.topTexts.GameScene.length === 0, `n=${diag.topTexts.GameScene.length}`);
+push('GameScene 顶部 y<150 无持久残留文本（瞬态战斗飘字已排除）', diag.topTexts.GameScene.length === 0, `n=${diag.topTexts.GameScene.length}`);
 // UIScene 顶部允许正常 HUD（SCORE/关卡/命/火力/元素），但不允许出现 tips 类/tip_ 文案
 const uiTopText = diag.topTexts.UIScene.map((t) => t.text).join(' ');
 push('UIScene 顶部仅 HUD（无 tips 文案混入）', !/连击越高|连续击杀|磁吸|爬塔每层/.test(uiTopText), uiTopText.slice(0, 80));

@@ -215,13 +215,13 @@ const reduced = await rp.evaluate(async () => {
   return {
     gotoRet: r,
     residueNull: !gs.residuePool,
-    playerLightStatic: !!(gs && gs.playerLight && gs.playerLight.image && gs.playerLight.image.active),
+    playerLightNull: !gs.playerLight,   // P2-5/P2-6 口径：reduced 档不创建跟随光（VFX.playerLight 直接 return null）
     blackHidden: !tr._black || !tr._black.visible,
   };
 });
 assert(reduced.gotoRet === 'direct', `reduced-motion：goto 直切（返回 'direct'，实际 ${reduced.gotoRet}）`);
 assert(reduced.residueNull, 'reduced-motion：residuePool 为 null（爆炸残留降级）');
-assert(reduced.playerLightStatic, 'reduced-motion：playerLight 静态挂接不崩');
+assert(reduced.playerLightNull, 'reduced-motion：playerLight 不创建（=null，符合 P2-5 口径，挂接不崩）');
 assert(reduced.blackHidden, 'reduced-motion：黑罩不显示（无障碍底线）');
 await rp.close();
 

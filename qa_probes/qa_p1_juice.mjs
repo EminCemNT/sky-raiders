@@ -114,8 +114,14 @@ const dying = await page.evaluate(() => {
   if (e && e.active) e.hit(99999, null);
   return e ? e._dying === true : false;
 });
-await page.waitForTimeout(60);
-const sy = await page.evaluate(() => (window.__TARGET ? window.__TARGET.scaleY : 1));
+// 轮询「弹性放大」是否发生（headless 软件渲染下游戏时间约 1/9 速，固定 60ms 等待不足以让缩放动画起步：
+// 实测同机死亡演出峰值 scaleY≈1.28，但需 ~720ms 真实时间才到达）。
+let sy = 1;
+for (let i = 0; i < 300; i++) {
+  sy = await page.evaluate(() => (window.__TARGET ? window.__TARGET.scaleY : 1));
+  if (sy > 1) break;
+  await page.waitForTimeout(25);
+}
 assert(dying, '致命命中触发死亡演出（_dying=true）');
 assert(sy > 1, `死亡弹性缩放生效（scaleY=${sy.toFixed(2)} > 1，scaleX 同步放大）`);
 

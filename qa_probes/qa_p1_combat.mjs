@@ -86,8 +86,8 @@ push('FOCUS 配置 = {SPEED_MUL:0.45,FIRE_MUL:0.8,DMG_MUL:1.2}',
   JSON.stringify(cfg.focus));
 push('EVENTS.OVERCHARGE_STATE / FOCUS_TOGGLE 已登记',
   !!cfg.ocEvent && !!cfg.focusEvent, `${cfg.ocEvent} / ${cfg.focusEvent}`);
-push('LEVELS boss.shieldHp = [0,80,120,150]',
-  JSON.stringify(cfg.shieldHp) === JSON.stringify([0, 80, 120, 150]), cfg.shieldHp.join(','));
+push('LEVELS boss.shieldHp = [0,80,120,150,200]',
+  JSON.stringify(cfg.shieldHp) === JSON.stringify([0, 80, 120, 150, 200]), cfg.shieldHp.join(','));
 push('wavePlan 含新敌型 turret/kamikaze/summoner/shield',
   cfg.hasTurret && cfg.hasKamikaze && cfg.hasSummoner && cfg.hasShield,
   `turret=${cfg.hasTurret} kamikaze=${cfg.hasKamikaze} summoner=${cfg.hasSummoner} shield=${cfg.hasShield}`);

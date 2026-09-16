@@ -87,8 +87,10 @@ const r1 = await page.evaluate(async () => {
 push('VFX 池化接口导出（createVfxPool/poolExplode/poolSpark）',
   r1.api.createVfxPool === 'function' && r1.api.poolExplode === 'function' && r1.api.poolSpark === 'function',
   JSON.stringify(r1.api));
-push('GameScene.create 已建 vfxPool（explosion+hitSpark，emitting:false）',
-  r1.hasPool === true && r1.poolKeys === 'explosion,hitSpark' && r1.emitting && r1.emitting[0] === false && r1.emitting[1] === false,
+push('GameScene.create 已建 vfxPool（含 explosion+hitSpark，emitting:false）',
+  r1.hasPool === true
+  && r1.poolKeys.split(',').includes('explosion') && r1.poolKeys.split(',').includes('hitSpark')
+  && r1.emitting && r1.emitting[0] === false && r1.emitting[1] === false,
   `keys=${r1.poolKeys} emitting=${JSON.stringify(r1.emitting)}`);
 push('池化生效：连续 6 次爆炸/火花后 ParticleEmitter 数量不增长',
   r1.before === r1.after, `before=${r1.before} after=${r1.after}`);

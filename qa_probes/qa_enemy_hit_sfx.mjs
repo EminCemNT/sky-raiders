@@ -10,6 +10,10 @@ import { chromium } from 'playwright';
 const URL = process.env.QA_URL || 'http://localhost:5059';
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const errors = [];
+// enemyHit 金属层标称 1300~1800Hz（AudioSystem.js: base = 1300 + rand*500），
+// 但 _toneAt 有全局 ±7% 音高随机化 → 实际落点 = [1300×0.93, 1800×1.07] ≈ [1209, 1926]。
+// 识别带必须按此放宽，否则每次约 10% 概率漏判 → 3 次命中偶发只认出 2 次（假失败）。
+const EH_LO = 1200, EH_HI = 1930;
 
 function assert(cond, msg) {
   if (!cond) { console.error('❌ FAIL:', msg); process.exitCode = 1; }
@@ -43,6 +47,16 @@ await page.addInitScript(() => {
 });
 
 await page.goto(URL, { waitUntil: 'domcontentloaded' });
+
+// headless（--disable-gpu 软件渲染）下游戏时间仅约 110ms/真实秒（≈1/9 速）。
+// enemyHit 的 35ms 节流按「游戏内 time.now」判定，故这里按游戏时间等待，保证跨过节流窗口。
+const waitGameMs = (ms) => page.waitForFunction((need) => {
+  const gs = window.__SKY__.scene.getScene('GameScene');
+  if (!gs) return false;
+  if (window.__GW0 == null) window.__GW0 = gs.time.now;
+  if (gs.time.now - window.__GW0 >= need) { window.__GW0 = null; return true; }
+  return false;
+}, ms, { timeout: 30000 });
 await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 20000 });
 
 // 进入 GameScene（跳过教程，避免 physics 被教程 pause 干扰）
@@ -80,26 +94,28 @@ const hp0 = await page.evaluate(() => (window.__TARGET ? window.__TARGET.hp : nu
 // 清空基线频率，避免 BGM/其它音效干扰判定
 await page.evaluate(() => { window.__OSC_FREQS.length = 0; });
 
-// 非致死命中 3 次，每次间隔 60ms（> enemyHit 节流 35ms）确保每次都发声
+// 非致死命中 3 次，每次间隔经 waitGameMs 保证 > enemyHit 的 35ms 节流（_throttle 走 performance.now 墙钟）
 for (let i = 0; i < 3; i++) {
   await page.evaluate(() => { const e = window.__TARGET; if (e && e.active) e.hit(e.hp * 0.3, null); });
-  await page.waitForTimeout(60);
+  await waitGameMs(60);
 }
-const res1 = await page.evaluate(() => ({
+const res1 = await page.evaluate(([lo, hi]) => ({
   hp1: window.__TARGET ? window.__TARGET.hp : null,
-  enemyHitFreqs: (window.__OSC_FREQS || []).filter((x) => x >= 1300 && x <= 1800),
-}));
+  enemyHitFreqs: (window.__OSC_FREQS || []).filter((x) => x >= lo && x <= hi),
+}), [EH_LO, EH_HI]);
 
 // 致命一击：清空基线后致命，应不产生 enemyHit 频段（避免与爆炸重音）
 await page.evaluate(() => {
   const e = window.__TARGET;
   if (e && e.active) { window.__OSC_FREQS.length = 0; e.hit(999999, null); }
 });
-await page.waitForTimeout(80);
-const res2 = await page.evaluate(() => ({
-  enemyHitOnDeath: (window.__OSC_FREQS || []).filter((x) => x >= 1300 && x <= 1800).length,
+// 轮询至死亡/回收完成（headless 软件渲染下死亡演出+回收实测约 720ms 真实时间，固定 80ms 不够）
+await page.waitForFunction(() => window.__TARGET && window.__TARGET.active === false, null, { timeout: 20000 })
+  .catch(() => { /* 超时则下方断言给出失败 */ });
+const res2 = await page.evaluate(([lo, hi]) => ({
+  enemyHitOnDeath: (window.__OSC_FREQS || []).filter((x) => x >= lo && x <= hi).length,
   targetActive: window.__TARGET ? window.__TARGET.active : false,
-}));
+}), [EH_LO, EH_HI]);
 
 assert(hp0 !== null && res1.hp1 !== null && res1.hp1 < hp0,
   `非致死命中扣血逻辑跑通 (hp ${hp0 != null ? Math.round(hp0) : '?'} → ${res1.hp1 != null ? Math.round(res1.hp1) : '?'})`);
