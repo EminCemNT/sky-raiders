@@ -33,8 +33,8 @@ await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
 await page.waitForFunction(() => window.__SKY__ && window.__SKY__.scene.getScene('MenuScene') && window.__SKY__.scene.getScene('MenuScene').scene.isActive(), null, { timeout: 20000 });
 await page.waitForTimeout(900);
 
-// 真实路径进 L4
-await page.mouse.click(150, 478);
+// 真实路径进 L4（OPT-18 P2 / U1：主按钮行上移，开始游戏 y 480→360）
+await page.mouse.click(150, 360);
 await page.waitForFunction(() => { const g = window.__SKY__.scene.getScene('GameScene'); return g && g.scene.isActive(); }, null, { timeout: 20000 });
 await page.waitForTimeout(1500);
 

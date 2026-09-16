@@ -1,13 +1,15 @@
 // qa_p2_vfx_spot.mjs —— 回归抽查：确认 3 条之前 FAIL 用例为真通过（非假通过）
 // 重点：⑦-1 过渡时长是否依赖 600ms 强制兜底（看 __TDIAG 是否出现 force-finish）；
 //       ⑥-1 击杀残留计数来源真实（ember/scorch 构成）；⑥-3 切场景归零是门控还是 destroy。
+// ⚠️ 端口修正（OPT-18 P2 施工期）：原 5059 与 run-all 运行器自起的 vite 服同端口冲突
+//    （靠 SO_REUSEADDR 侥幸共存 → 随机 EADDRINUSE 崩退），改用独立端口 5064。
 import { chromium } from 'playwright';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 
 const DIST = path.resolve('dist');
-const PORT = 5059;
+const PORT = 5064;
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.wasm': 'application/wasm' };
 const server = http.createServer((req, res) => {

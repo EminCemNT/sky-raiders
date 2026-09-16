@@ -4,6 +4,8 @@
 // 主菜单霓虹亮色按钮文字透过 0.55~0.82 alpha 半透明遮罩与面板内容视觉竞争。
 // 修复：12 处 dim rect alpha 统一 0.90。
 // 探针：真实点击路径打开各面板 → 量 dim fillAlpha → 断言 ≥0.85（防未来回退到 0.7x 透出霓虹）。
+// OPT-18 P2 / U1：主菜单改为「战斗/养成/社交」三分组页签，入口坐标全变且部分入口不在默认页签，
+//                故点击路径升级为「先点页签 → 再点组内槽位」（见 clickMenuEntry / SLOT 表）。
 // 运行：node qa_probes/qa_opt17_overlay_dim.mjs（QA_URL 默认 5059，run-all 托管）
 import { chromium } from 'playwright';
 
@@ -88,28 +90,48 @@ async function measureDim(page, panelGetter) {
 
 const A = await newPage();
 
-// 第 1 关：每日任务（cx-116, y=928）
-const dq = await measureDim(A.page, async (p) => {
-  await p.mouse.click(270 - 116, 928); // 「每日任务」按钮
-});
+// OPT-18 P2 / U1：主菜单改为「战斗 / 养成 / 社交」三分组页签后，入口坐标全部改变，
+// 且部分入口已不在默认页签。故改为**真实玩家路径**：先点页签，再点组内槽位。
+// 页签栏 y=432、三个页签 x=110/270/430；分组槽位 y = 512 + i*82（i 为组内序号）。
+const TAB_X = { battle: 110, growth: 270, social: 430 };
+const TAB_Y = 432, SLOT_Y0 = 512, SLOT_GAP = 82;
+// 组内槽位表（与 MenuScene._buildMenuTabs 的分组顺序一一对应）
+const SLOT = {
+  levelSelect: { tab: 'battle', i: 0 },
+  bossRush: { tab: 'battle', i: 1 },
+  weeklyEvent: { tab: 'battle', i: 2 },
+  tutorial: { tab: 'battle', i: 3 },
+  hangar: { tab: 'growth', i: 0 },
+  codex: { tab: 'growth', i: 1 },
+  achievements: { tab: 'growth', i: 2 },
+  newbiePlan: { tab: 'growth', i: 3 },
+  checkin: { tab: 'growth', i: 4 },
+  leaderboard: { tab: 'social', i: 0 },
+  dailyQuest: { tab: 'social', i: 1 },
+};
+/** 真实玩家路径：先点页签，再点组内槽位 */
+async function clickMenuEntry(page, key) {
+  const s = SLOT[key];
+  await page.mouse.click(TAB_X[s.tab], TAB_Y);
+  await page.waitForTimeout(180);
+  await page.mouse.click(270, SLOT_Y0 + s.i * SLOT_GAP);
+  await page.waitForTimeout(120);
+}
+
+// 第 1 关：每日任务（社交页签 · 第 2 槽）
+const dq = await measureDim(A.page, (p) => clickMenuEntry(p, 'dailyQuest'));
 push('每日任务面板 dim alpha ≥0.85', dq.panelExists && dq.dimAlpha >= 0.85, `alpha=${dq.dimAlpha} panel=${dq.panelExists}`);
 
-// 第 2 关：关卡选择（cx, y=800）
-const ls = await measureDim(A.page, async (p) => {
-  await p.mouse.click(270, 800); // 「选择关卡」按钮
-});
+// 第 2 关：关卡选择（战斗页签 · 第 1 槽）
+const ls = await measureDim(A.page, (p) => clickMenuEntry(p, 'levelSelect'));
 push('关卡选择面板 dim alpha ≥0.85', ls.panelExists && ls.dimAlpha >= 0.85, `alpha=${ls.dimAlpha} panel=${ls.panelExists}`);
 
-// 第 3 关：成就（cx, y=616）
-const ach = await measureDim(A.page, async (p) => {
-  await p.mouse.click(270, 616); // 「成就」按钮
-});
+// 第 3 关：成就（养成页签 · 第 3 槽）
+const ach = await measureDim(A.page, (p) => clickMenuEntry(p, 'achievements'));
 push('成就面板 dim alpha ≥0.85', ach.panelExists && ach.dimAlpha >= 0.85, `alpha=${ach.dimAlpha} panel=${ach.panelExists}`);
 
-// 第 4 关：签到（cx-116, y=864）
-const ci = await measureDim(A.page, async (p) => {
-  await p.mouse.click(270 - 116, 864); // 「每日签到」按钮
-});
+// 第 4 关：每日签到（养成页签 · 第 5 槽）
+const ci = await measureDim(A.page, (p) => clickMenuEntry(p, 'checkin'));
 push('每日签到面板 dim alpha ≥0.85', ci.panelExists && ci.dimAlpha >= 0.85, `alpha=${ci.dimAlpha} panel=${ci.panelExists}`);
 
 // 截图留档
@@ -118,7 +140,7 @@ await A.page.evaluate(() => {
   ['closeCheckIn','closeLevelSelect','closeAchievements','closeDailyQuest'].forEach((fn) => { try { ms[fn] && ms[fn](); } catch (e) {} });
 });
 await A.page.waitForTimeout(200);
-await A.page.mouse.click(270 - 116, 928); // 开每日任务面板
+await clickMenuEntry(A.page, 'dailyQuest'); // 开每日任务面板（社交页签 · 第 2 槽）
 await A.page.waitForTimeout(400);
 await A.page.screenshot({ path: 'shots/b_diag_p2_after.png' });
 

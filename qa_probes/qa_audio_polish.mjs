@@ -261,7 +261,23 @@ push('bossHit 运行时出声（square 700-1400 金属层 + bandpass2500 Q≈1.5
   hasOsc(bossHitSnap, 'square', 650, 1500) && hasFilter(bossHitSnap, 'bandpass', 2500, 1.2, 2.0) && bossHitSnap.delay >= 1,
   JSON.stringify({ osc: bossHitSnap.osc.map((o) => ({ t: o.type, f: Math.round(o.freqs[0] || 0) })), bandpass: bossHitSnap.filter.filter((f) => f.type === 'bandpass').length, delay: bossHitSnap.delay }));
 
+// ── 6e~6g 射击音「确定性触发」前置（OPT-18 P2 施工期加固，消除抖动）──────────────
+// 根因：audio.sfx('shootPulse') 内部走 _throttle('shoot', 55)（55ms **墙钟**），
+//       而**玩家自动开火**也在反复消耗同一个 'shoot' 节流 key。
+//       若本探针的手动 fire() 恰好落在自动开火后 55ms 内 → 该次音效被节流吞掉
+//       → 采样到空振荡器 → 假失败（历史表现为「偶发 FAIL」，full5 通过、full6 失败）。
+// 修法：先压制自动开火（_lastFire=1e12），再等满最大节流窗（140ms > shootLaser 的 80ms），
+//       最后 RESET 采样并手动触发 —— 确定性消除竞态，与负载/帧率无关。
+async function quiesceShoot() {
+  await page.evaluate(() => {
+    const gs = window.__SKY__.scene.getScene('GameScene');
+    if (gs && gs.player) gs.player._lastFire = 1e12;
+  });
+  await page.waitForTimeout(140);
+}
+
 // 6e) shootPulse：主炮 fire() → square ~880（音高循环 784-988）
+await quiesceShoot();
 const pulseSnap = await page.evaluate(() => {
   window.__AUDIO_RESET();
   const gs = window.__SKY__.scene.getScene('GameScene');
@@ -277,6 +293,7 @@ push('shootPulse 运行时出声（square 880 系，音高循环）',
   JSON.stringify(pulseSnap.osc.map((o) => ({ t: o.type, f: Math.round(o.freqs[0] || 0) }))));
 
 // 6f) shootLaser：laser 分支 fire() → sawtooth 240
+await quiesceShoot();
 const laserSnap = await page.evaluate(() => {
   window.__AUDIO_RESET();
   const gs = window.__SKY__.scene.getScene('GameScene');
@@ -292,6 +309,7 @@ push('shootLaser 运行时出声（sawtooth 240 扫掠）',
   JSON.stringify(laserSnap.osc.map((o) => ({ t: o.type, f: Math.round(o.freqs[0] || 0) }))));
 
 // 6g) shootWingman：僚机 _fire() → triangle ~620
+await quiesceShoot();
 const wmSnap = await page.evaluate(() => {
   window.__AUDIO_RESET();
   const gs = window.__SKY__.scene.getScene('GameScene');

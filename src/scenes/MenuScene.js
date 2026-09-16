@@ -49,17 +49,18 @@ export default class MenuScene extends Phaser.Scene {
     }
 
     // 标题（霓虹辉光层 + 本体 + 呼吸脉动）
-    this.titleGlow = this.add.text(cx, 218, t('title'), {
+    // OPT-18 P2 / U1：标题整体上移 218→196、能量环同步收小，为下方「三分组页签」留出纵向空间。
+    this.titleGlow = this.add.text(cx, 196, t('title'), {
       fontFamily: THEME.fontFamily, fontSize: '62px', fontStyle: '800', color: THEME.titleColor,
     }).setOrigin(0.5).setShadow(0, 0, THEME.titleColor, 38, true, true).setAlpha(0.32).setDepth(1);
-    this.title = this.add.text(cx, 218, t('title'), {
+    this.title = this.add.text(cx, 196, t('title'), {
       fontFamily: THEME.fontFamily, fontSize: '58px', fontStyle: '800', color: THEME.titleBright,
     }).setOrigin(0.5).setShadow(0, 0, THEME.titleShadow, 24, true, true).setDepth(2);
     this.tweens.add({ targets: [this.title, this.titleGlow], scale: { from: 1, to: 1.035 }, duration: 1700, yoyo: true, repeat: -1, ease: EASE.breathe });
     this.tweens.add({ targets: this.titleGlow, alpha: { from: 0.26, to: 0.5 }, duration: 1700, yoyo: true, repeat: -1, ease: EASE.breathe });
 
     // 英文名（宽字距 + 副色呼吸）
-    this.subTitle = this.add.text(cx, 284, t('subtitle'), {
+    this.subTitle = this.add.text(cx, 252, t('subtitle'), {
       fontFamily: THEME.fontFamily, fontSize: '17px', color: THEME.subBright, fontStyle: '700',
     }).setOrigin(0.5).setAlpha(0.75).setDepth(2).setLetterSpacing(8);
     this.tweens.add({ targets: this.subTitle, alpha: { from: 0.5, to: 0.95 }, duration: 2200, yoyo: true, repeat: -1, ease: EASE.breathe });
@@ -78,30 +79,30 @@ export default class MenuScene extends Phaser.Scene {
     this._renderTip();
 
     // 标题能量环装饰（缓慢旋转 + 脉动）
-    this.energyRing = this.add.graphics().setPosition(cx, 218).setDepth(0);
-    this.energyRing.lineStyle(3, COLORS.accent, 0.5).strokeCircle(0, 0, 132);
-    this.energyRing.lineStyle(1, 0xffffff, 0.25).strokeCircle(0, 0, 120);
-    this.energyRing.lineStyle(2, 0x66ccff, 0.3).strokeCircle(0, 0, 144);
+    this.energyRing = this.add.graphics().setPosition(cx, 196).setDepth(0);
+    this.energyRing.lineStyle(3, COLORS.accent, 0.5).strokeCircle(0, 0, 118);
+    this.energyRing.lineStyle(1, 0xffffff, 0.25).strokeCircle(0, 0, 106);
+    this.energyRing.lineStyle(2, 0x66ccff, 0.3).strokeCircle(0, 0, 130);
     this.tweens.add({ targets: this.energyRing, angle: 360, duration: 28000, repeat: -1 });
     this.tweens.add({ targets: this.energyRing, scale: { from: 0.97, to: 1.05 }, duration: 3200, yoyo: true, repeat: -1, ease: EASE.breathe });
 
-    // OPT-13 批B B13 图鉴收藏入口（收集型玩家长期目标；面板内可购买装饰金币出口）
-    new NeonButton(this, cx, 330, t('btnCodex'), { stroke: 0x9a6fd6, glow: true, onDown: () => {
-      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen || this.returnGiftOpen || this.codexOpen) return;
-      audio.sfx('ui'); this.openCodex();
+    // ── OPT-18 P2 / U1：主菜单密度重构 ──────────────────────────────────────
+    // 原布局把 14 个按钮从 y=330 一路平铺到 y=928，底部一行（每日任务/排行榜，矩形底 957）
+    // 与底部存档信息（y=916）·操作提示（y=940）的文本带直接重叠，观感「贴边 + 压字」。
+    // 新布局：常驻（开始游戏 / 无尽模式 / 设置）+「战斗 / 养成 / 社交」三分组页签。
+    // 所有分组按钮**一次性创建**，切页签只改 visible 与交互（对象常驻场景树），
+    // 因此依赖「文案存在」的探针（如 qa_retention_p0 递归收集全场景 Text）不受影响。
+    // 纵向预算：主按钮行 360 → 页签栏 432 → 分组槽位自 512 起、行距 82、最多 5 项（末项底 868）
+    //           → 与存档信息 916 / 操作提示 940 之间留 ≥48px 安全间隙。
+    // 设置改为左上角常驻小按钮（任意页签均可进入设置），与右上角版本号对称。
+    new NeonButton(this, 56, 30, t('btnSettings'), { w: 104, h: 34, fontSize: 16, glow: true, depth: 12, onDown: () => {
+      if (this._menuBlocked()) return;
+      this.openSettings();
     } });
 
-    // 教程按钮（重看新手引导，进入第 1 关并强制显示教程）
-    new NeonButton(this, cx, 400, t('btnTutorial'), {
-      stroke: COLORS.accent, fontSize: 22, glow: true, onDown: () => {
-        if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen || this.returnGiftOpen) return;
-        audio.resume(); audio.startBgm(); audio.sfx('ui');
-        transition.goto(this, SCENES.GAME, { levelId: 1, mode: 'normal', forceTutorial: true });
-      },
-    });
-
     // 主入口：开始游戏（主线进度） + 无尽模式（Score Attack），并排两个主按钮
-    new NeonButton(this, cx - 116, 480, t('btnStart'), {
+    // OPT-18 P2 / U1：整体上移 480→360，让出下方页签区。
+    new NeonButton(this, cx - 116, 360, t('btnStart'), {
       w: 220, fontSize: 24, glow: true,
       onDown: () => {
         if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen || this.returnGiftOpen) return;
@@ -109,10 +110,10 @@ export default class MenuScene extends Phaser.Scene {
       },
     });
 
-    // OPT-17 P4：leagueText 不再独立浮动到 y=520（与机库按钮顶 519 重叠 9px 视觉压字），
-    // 改为嵌入无尽按钮 container 内底部副文本（fontSize 10、y=20 容器内偏移 → 绝对 y=500 全程在按钮内 451~509 内），
-    // 红线 zero diff 守：只新增变量引用 + 子 add，方法体未改。
-    const endlessBtn = new NeonButton(this, cx + 116, 480, t('btnEndless'), {
+    // OPT-17 P4：leagueText 嵌入无尽按钮 container 内底部副文本（fontSize 10、y=20 容器内偏移，
+    // 全程落在按钮矩形内），根除浮动文本与相邻按钮的几何重叠。
+    // OPT-18 P2 / U1：随主按钮行整体上移 480→360。
+    const endlessBtn = new NeonButton(this, cx + 116, 360, t('btnEndless'), {
       w: 220, fontSize: 24, stroke: 0xff8a3d, glow: true,
       onDown: () => {
         if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen || this.returnGiftOpen) return;
@@ -130,79 +131,9 @@ export default class MenuScene extends Phaser.Scene {
       this.flashToast(t('leagueSettled', { rank: snap.settledRank, coins: snap.reward }));
     }
 
-    // 机库按钮
-    new NeonButton(this, cx, 548, t('btnHangar'), {
-      glow: true,
-      onDown: () => {
-        if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen || this.returnGiftOpen) return;
-        transition.goto(this, 'HangarScene');
-      },
-    });
-
-    // 成就按钮
-    new NeonButton(this, cx, 616, t('btnAchievements'), { stroke: COLORS.coin, glow: true, onDown: () => {
-      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen || this.returnGiftOpen) return;
-      audio.sfx('ui'); this.openAchievements();
-    } });
-
-    // 设置按钮
-    new NeonButton(this, cx, 680, t('btnSettings'), { glow: true, onDown: () => {
-      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen || this.returnGiftOpen) return;
-      this.openSettings();
-    } });
-
-    // Boss Rush 按钮（同 OPT-17 P4 行距修复：h=50 与设置按钮底 709 留 2px、与关卡选择顶 771 留 10px）
-    new NeonButton(this, cx - 116, 736, 'BOSS RUSH', { h: 50, stroke: 0xff5566, glow: true, onDown: () => {
-      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen || this.returnGiftOpen) return;
-      audio.sfx('ui'); transition.goto(this, SCENES.GAME, { mode: 'bossrush' });
-    } });
-
-    // P0 留存-活动轮换：本周活动入口（显示当前活动名 + 剩余天数，点开进入对应模式）
-    {
-      const ev = getCurrentEvent();
-      // OPT-17 P4：eventLeft 不再独立浮动到 y=772（与关卡选择按钮顶 771 重叠 8px 视觉压字），
-      // 改为嵌入活动按钮 container 内底部副文本（fontSize 10、y=20 容器内偏移 → 绝对 y=756 全程在按钮内 707~765 内）。
-      // 同时该按钮 h 从默认 58 改 50：原设置 y=680 + h=58 (底 709) 与本行 y=736 + h=58 (顶 707) 重叠 2px，
-      // 改 h=50 后本行顶 711，与设置底 709 留 2px 安全间隙；同时与下方关卡选择按钮顶 771 留 10px 间隙。
-      const eventBtn = new NeonButton(this, cx + 116, 736, t('weeklyEvent', { short: t(`eventName_${ev.id || 'coin_rush'}`) }), { w: 220, h: 50, fontSize: 18, stroke: 0xffd54a, glow: true, onDown: () => {
-        if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen || this.returnGiftOpen) return;
-        audio.sfx('ui'); this.openEvent();
-      } });
-      this.eventLeftText = this.add.text(0, 20, t('eventLeft', { days: ev.daysLeft, double: t(ev.double ? 'eventDoubleToday' : 'eventDoubleWeekend') }), {
-        fontFamily: THEME.fontFamily, fontSize: '10px', color: ev.double ? THEME.textGold : THEME.textDim,
-      }).setOrigin(0.5).setAlpha(0.9);
-      eventBtn.container.add(this.eventLeftText);   // 嵌入按钮 container，跟随按钮渲染层
-    }
-
-    // 选择关卡按钮
-    new NeonButton(this, cx, 800, t('btnLevelSelect'), { glow: true, onDown: () => {
-      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen || this.returnGiftOpen) return;
-      audio.sfx('ui'); this.openLevelSelect();
-    } });
-
-    // 每日签到按钮（主动点击才弹，避免自动弹窗挡住"开始游戏"）
-    new NeonButton(this, cx - 116, 864, t('btnCheckin'), { stroke: COLORS.coin, glow: true, onDown: () => {
-      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen || this.returnGiftOpen) return;
-      audio.sfx('ui'); this.openCheckIn();
-    } });
-
-    // P0 留存-新手计划按钮（挂到签到旁）
-    new NeonButton(this, cx + 116, 864, t('btnNewbiePlan'), { stroke: 0x7cffa0, glow: true, onDown: () => {
-      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen || this.returnGiftOpen) return;
-      audio.sfx('ui'); this.openNewbiePlan();
-    } });
-
-    // 每日任务按钮（留存系统：击杀/金币/炸弹等每日目标，完成领金币 + 活跃宝箱）
-    new NeonButton(this, cx - 116, 928, t('btnDailyQuest'), { stroke: COLORS.accent, glow: true, onDown: () => {
-      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.dailyQuestOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen || this.returnGiftOpen) return;
-      audio.sfx('ui'); this.openDailyQuest();
-    } });
-
-    // P1 留存·社交排行：排行榜入口（本地历史 Top10 列表）
-    new NeonButton(this, cx + 116, 928, t('btnLeaderboard'), { stroke: COLORS.coin, glow: true, onDown: () => {
-      if (this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen || this.dailyQuestOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen || this.returnGiftOpen) return;
-      audio.sfx('ui'); this.openLeaderboard();
-    } });
+    // 三分组页签（战斗 / 养成 / 社交）+ 组内按钮——全部一次创建，切页签只切可见性。
+    // 构建细节见 _buildMenuTabs（含本周活动按钮内嵌 eventLeftText）。
+    this._buildMenuTabs(cx);
 
     // 存档信息（含全局最高分）
     this.saveInfoText = this.add.text(cx, GAME_HEIGHT - 44,
@@ -233,6 +164,120 @@ export default class MenuScene extends Phaser.Scene {
 
   update(_, dt) {
     if (this.starfield) this.starfield.update(dt);
+  }
+
+  /** 任一子面板（含浮层）打开时拦截主菜单按钮 —— 等价于原逐按钮 guard 的并集 */
+  _menuBlocked() {
+    return !!(this.settingsOpen || this.levelSelectOpen || this.achievementsOpen || this.checkinOpen
+      || this.dailyQuestOpen || this.eventOpen || this.newbiePlanOpen || this.leaderboardOpen
+      || this.returnGiftOpen || this.codexOpen);
+  }
+
+  /**
+   * OPT-18 P2 / U1：构建「战斗 / 养成 / 社交」三分组页签。
+   * 分组按钮**一次性创建**（常驻场景树），切换页签只改 visible / interactive，
+   * 因此依赖「文案存在」的探针（递归收集全场景 Text）不受影响。
+   *
+   * 纵向预算（GAME_HEIGHT=960）：主按钮行 360 → 页签栏 432 →
+   * 分组槽位自 512 起、行距 82、最多 5 项（末项矩形底 840+28=868）
+   * → 与存档信息 y=916 / 操作提示 y=940 之间保留 ≥48px 安全间隙（根除原「贴边压字」）。
+   *
+   * @param {number} cx 画布水平中心
+   */
+  _buildMenuTabs(cx) {
+    const FIRST_Y = 512, GAP = 82;
+    const items = { battle: [], growth: [], social: [] };
+
+    const mk = (group, i, label, opts = {}) => {
+      const btn = new NeonButton(this, cx, FIRST_Y + i * GAP, label, {
+        w: 300, h: 56, fontSize: opts.fontSize ?? 20, glow: true,
+        stroke: opts.stroke ?? THEME.btnStroke, depth: opts.depth ?? 10,
+        onDown: () => {
+          if (this._menuBlocked()) return;
+          audio.sfx('ui');
+          opts.act();
+        },
+      });
+      if (opts.after) opts.after(btn);
+      items[group].push(btn);
+      return btn;
+    };
+
+    // ── 战斗：主线推进 / 高强度模式 / 周期活动 / 教学 ──
+    mk('battle', 0, t('btnLevelSelect'), { act: () => this.openLevelSelect() });
+    mk('battle', 1, t('btnBossRush'), {
+      stroke: 0xff5566, act: () => transition.goto(this, SCENES.GAME, { mode: 'bossrush' }),
+    });
+    {
+      const ev = getCurrentEvent();
+      mk('battle', 2, t('weeklyEvent', { short: t(`eventName_${ev.id || 'coin_rush'}`) }), {
+        fontSize: 18, stroke: 0xffd54a, act: () => this.openEvent(),
+        after: (btn) => {
+          // P0 留存-活动轮换：剩余天数 / 双倍奖励作为按钮内底部副文本（不再独立浮动 → 零压字）
+          this.eventLeftText = this.add.text(0, 20, t('eventLeft', { days: ev.daysLeft, double: t(ev.double ? 'eventDoubleToday' : 'eventDoubleWeekend') }), {
+            fontFamily: THEME.fontFamily, fontSize: '10px', color: ev.double ? THEME.textGold : THEME.textDim,
+          }).setOrigin(0.5).setAlpha(0.9);
+          btn.container.add(this.eventLeftText);   // 嵌入按钮 container，跟随按钮渲染层
+        },
+      });
+    }
+    mk('battle', 3, t('btnTutorial'), {
+      stroke: COLORS.accent,
+      act: () => { audio.resume(); audio.startBgm(); transition.goto(this, SCENES.GAME, { levelId: 1, mode: 'normal', forceTutorial: true }); },
+    });
+
+    // ── 养成：机库 / 图鉴收集 / 成就 / 新手目标 / 每日签到 ──
+    mk('growth', 0, t('btnHangar'), { act: () => transition.goto(this, 'HangarScene') });
+    mk('growth', 1, t('btnCodex'), { stroke: 0x9a6fd6, act: () => this.openCodex() });
+    mk('growth', 2, t('btnAchievements'), { stroke: COLORS.coin, act: () => this.openAchievements() });
+    mk('growth', 3, t('btnNewbiePlan'), { stroke: 0x7cffa0, act: () => this.openNewbiePlan() });
+    mk('growth', 4, t('btnCheckin'), { stroke: COLORS.coin, act: () => this.openCheckIn() });
+
+    // ── 社交：本地排行榜 / 每日任务 ──
+    mk('social', 0, t('btnLeaderboard'), { stroke: COLORS.coin, act: () => this.openLeaderboard() });
+    mk('social', 1, t('btnDailyQuest'), { stroke: COLORS.accent, act: () => this.openDailyQuest() });
+
+    this._menuTabItems = items;
+
+    // 页签栏（选中态用 NeonButton.setSelected 高亮）
+    this._menuTabButtons = {};
+    [
+      { key: 'battle', x: cx - 160, label: t('menuTabBattle') },
+      { key: 'growth', x: cx, label: t('menuTabGrowth') },
+      { key: 'social', x: cx + 160, label: t('menuTabSocial') },
+    ].forEach((tb) => {
+      this._menuTabButtons[tb.key] = new NeonButton(this, tb.x, 432, tb.label, {
+        w: 150, h: 44, fontSize: 18, glow: false, depth: 12,
+        // 与其它主菜单入口一致：任一子面板打开时页签不响应（避免遮罩后面板被切页签）
+        onDown: () => { if (this._menuBlocked()) return; audio.sfx('ui'); this._setMenuTab(tb.key); },
+      });
+    });
+
+    this._setMenuTab('battle');
+  }
+
+  /**
+   * 切换分组页签：只切 visible 与 interactive（不销毁对象，文案类探针不受影响）。
+   * 隐藏组显式 disableInteractive，避免不可见按钮仍可被命中。
+   * @param {'battle'|'growth'|'social'} key
+   */
+  _setMenuTab(key) {
+    if (!this._menuTabItems || !this._menuTabItems[key]) return;
+    this.menuTab = key;
+    Object.entries(this._menuTabItems).forEach(([k, list]) => {
+      const on = k === key;
+      list.forEach((btn) => {
+        btn.container.setVisible(on);
+        if (on) {
+          if (btn._hitConfig) btn.container.setInteractive(btn._hitConfig);
+        } else {
+          btn.container.disableInteractive();
+        }
+      });
+    });
+    if (this._menuTabButtons) {
+      Object.entries(this._menuTabButtons).forEach(([k, btn]) => btn.setSelected(k === key));
+    }
   }
 
   startGame() {

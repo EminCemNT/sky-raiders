@@ -1,5 +1,10 @@
 // qa_p2_vfx_qa.mjs —— 严过关独立 QA 探针（P2 视觉四件套④⑤⑥⑦）
-// 端口 5059（避开 5060/5061）。在 coder 自测（qa_p2_vfx_four.mjs）基础上独立补边界：
+// 端口 5063（自带静态服伺服 dist/）。
+// ⚠️ 端口修正（OPT-18 P2 施工期）：原为 5059，但 run-all 运行器**必定**在 5059 起
+//    自己的 vite 服（复用或自起），本探针又在同端口 listen 自己的 dist 静态服 →
+//    依赖 Windows SO_REUSEADDR 才能侥幸共存，属随机失效（曾导致整轮 EADDRINUSE 崩退）。
+//    故改用独立端口 5063（避开 Chrome 不安全端口 5060/5061）。
+// 在 coder 自测（qa_p2_vfx_four.mjs）基础上独立补边界：
 //   - ④ 行为断言：high 档 starCount 全量 / low 档层数+数量缩放
 //   - ⑤ 行为断言：playerLight 跟随偏差 ≤30px（不依赖缺失的 _dynLight）/ localIllum 一次衰减销毁 /
 //                  连续 10 次爆炸亮斑并发数（无 cap 时应 >3 → FAIL）/ low 档动态光是否整体关闭
@@ -13,7 +18,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const DIST = path.resolve('dist');
-const PORT = 5059;
+const PORT = 5063;
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 
 const MIME = {

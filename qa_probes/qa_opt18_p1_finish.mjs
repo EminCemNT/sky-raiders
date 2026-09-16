@@ -36,7 +36,10 @@ await page.waitForFunction(() => window.__SKY__ && window.__SKY__.scene.getScene
 await page.waitForTimeout(900);
 
 // ── U2：真实点击「机库」→ 布局净空断言 ─────────────────────────
-await page.mouse.click(270, 548);
+// OPT-18 P2 / U1：机库入口现位于「养成」页签第 1 槽 → 先点页签(270,432)，再点槽位(270,512)
+await page.mouse.click(270, 432);
+await page.waitForTimeout(220);
+await page.mouse.click(270, 512);
 await page.waitForTimeout(1200);
 const u2 = await page.evaluate(() => {
   const hs = window.__SKY__.scene.getScene('HangarScene');
@@ -80,7 +83,7 @@ await page.screenshot({ path: 'shots/opt17_walk/opt18_p1_hangar.png' });
 await page.mouse.click(270, 890);            // 返回菜单
 await page.waitForFunction(() => window.__SKY__.scene.getScene('MenuScene') && window.__SKY__.scene.getScene('MenuScene').scene.isActive(), null, { timeout: 15000 });
 await page.waitForTimeout(800);
-await page.mouse.click(150, 478);            // 进 L4
+await page.mouse.click(150, 360);            // 进 L4（OPT-18 P2 / U1：开始游戏 y 480→360）
 await page.waitForFunction(() => { const g = window.__SKY__.scene.getScene('GameScene'); return g && g.scene.isActive(); }, null, { timeout: 20000 });
 await page.waitForTimeout(1200);
 

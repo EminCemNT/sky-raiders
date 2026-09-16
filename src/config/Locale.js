@@ -52,6 +52,10 @@ const zh = {
   btnDailyQuest: '每日任务',
   btnLeaderboard: '排行榜',
   btnBossRush: 'BOSS RUSH',
+  // OPT-18 P2 / U1：主菜单三分组页签（战斗 / 养成 / 社交）
+  menuTabBattle: '战  斗',
+  menuTabGrowth: '养  成',
+  menuTabSocial: '社  交',
   weeklyEvent: '本周活动·{short}',
   saveInfo: '金币 {coins}   ·   最高分 {best}   ·   勋章 {medals}   ·   已解锁第 {level} 关',
   controlsHint: '移动：拖动 / 方向键     开火：自动     炸弹：空格 / 屏幕按钮',
@@ -714,6 +718,10 @@ const en = {
   btnDailyQuest: 'Daily Quest',
   btnLeaderboard: 'Rankings',
   btnBossRush: 'BOSS RUSH',
+  // OPT-18 P2 / U1：main-menu tabs (Battle / Growth / Social)
+  menuTabBattle: 'BATTLE',
+  menuTabGrowth: 'GROWTH',
+  menuTabSocial: 'SOCIAL',
   weeklyEvent: 'Event · {short}',
   saveInfo: 'Coins {coins}   ·   Best {best}   ·   Medals {medals}   ·   Unlocked Lv{level}',
   controlsHint: 'Move: Drag / Arrows     Fire: Auto     Bomb: Space / Button',
