@@ -19,6 +19,11 @@ import { SaveManager } from '../utils/SaveManager.js';
  *   - 偶发流星（meteors）：随机间隔斜向飞过屏幕，带拖尾淡入淡出，自回收。
  *   - 星云脉动（nebula pulse）：已有星云图做 alpha 呼吸，强化"活"的氛围。
  * reduced-motion 环境下全部禁用，仅保留原有静态滚动星/云，守住无障碍底线。
+ *
+ * OPT-18 V3 景深层（override 开关 opts.haze）：
+ *   depth −85 全屏静态渐变（贴图 depth_fog），只压暗其下全部远景层，不触碰游乐层
+ *   （敌机 15 / 玩家 20 / 弹幕 16~19），用于拉开景深、提升前景对比。
+ *   强度 = TIER.hazeAlpha 按画质档缩放；reduced-motion 不关闭（纯静态无动画）。
  */
 const SCROLL_BASE = 70; // px/s 战斗基准滚速（星体速度 = SCROLL_BASE × factor × (0.85 + scale*0.3) × tier.speedMul）
 const PARALLAX = [
@@ -33,12 +38,16 @@ const PARALLAX = [
  *   layerCount 生效视差层数 / countMul 每层星数倍率 / speedMul 背景滚动速度倍率
  *   streams 流光条数 / meteors 是否生成流星 / silCount 剪影数量
  *   breathing 星云呼吸 + 云层 sway / glowbandMul 底部光带 alpha 倍率
+ *   hazeAlpha OPT-18 V3 远景雾化层强度（归一化渐变贴图 × 此值；low 档亦保留——成本≈1 张静态图）
  */
 const TIER = {
-  high: { layerCount: 4, countMul: 1.0,  speedMul: 1.0,  streams: 4, meteors: true,  silCount: 5, breathing: true,  glowbandMul: 1.0  },
-  mid:  { layerCount: 4, countMul: 0.7,  speedMul: 0.85, streams: 2, meteors: true,  silCount: 4, breathing: true,  glowbandMul: 0.9  },
-  low:  { layerCount: 3, countMul: 0.45, speedMul: 0.7,  streams: 0, meteors: false, silCount: 3, breathing: false, glowbandMul: 0.75 },
+  high: { layerCount: 4, countMul: 1.0,  speedMul: 1.0,  streams: 4, meteors: true,  silCount: 5, breathing: true,  glowbandMul: 1.0,  hazeAlpha: 0.26 },
+  mid:  { layerCount: 4, countMul: 0.7,  speedMul: 0.85, streams: 2, meteors: true,  silCount: 4, breathing: true,  glowbandMul: 0.9,  hazeAlpha: 0.24 },
+  low:  { layerCount: 3, countMul: 0.45, speedMul: 0.7,  streams: 0, meteors: false, silCount: 3, breathing: false, glowbandMul: 0.75, hazeAlpha: 0.20 },
 };
+
+/** OPT-18 V3：远景雾化层深度（−87~+3 为现役深度空档：远景最高 −88、游乐层最低 +4） */
+const HAZE_DEPTH = -85;
 
 /**
  * UI P2 背景主题（菜单 / 机库，纯视觉装饰参数化）。
@@ -67,7 +76,7 @@ function mulTint(base, tint) {
   return ((br * tr / 255) << 16) | ((bg * tg / 255) << 8) | (bb * tb / 255);
 }
 
-export function createStarfield(scene, { layers = 4, starTints = null, theme = null, quality = null } = {}) {
+export function createStarfield(scene, { layers = 4, starTints = null, theme = null, quality = null, haze = false } = {}) {
   const reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   // 性能档解析自包含：opts.quality || 存档 quality || 默认 high（调用方无需传档）
   // P3-10：SaveManager.load() 只调一次（原两次调用，防存档对象不一致/重复反序列化开销）
@@ -184,6 +193,23 @@ export function createStarfield(scene, { layers = 4, starTints = null, theme = n
     band._speed = 18 * tier.speedMul;
     band._layer = 'glowband';
     bg.push(band);
+  }
+
+  // ── OPT-18 V3：远景雾化层（全屏静态渐变，depth −85）──
+  // 位置依据：现役深度 −87~+3 为空档（远景最高 −88 流星 / 游乐层最低 +4 环境叙事），
+  // → 取 −85 作"大气厚度"平面，只压暗其下全部远景，完全不影响敌机(15)/玩家(20)/弹幕(16~19)。
+  // 强度：贴图承载归一化 alpha，实际 = TIER.hazeAlpha（按画质档缩放；low 档保留，成本≈1 张静态图）。
+  // _speed=0 必须显式写：update() 的 bg 循环按 _speed 推进，若为 undefined 会得到 NaN 并毁掉坐标。
+  // 不设 _baseTint → 机库 setTint 不会给雾层染色。
+  let hazeImg = null;
+  if (haze && tier.hazeAlpha > 0 && scene.textures.exists('depth_fog')) {
+    hazeImg = scene.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, 'depth_fog')
+      .setDepth(HAZE_DEPTH)
+      .setAlpha(tier.hazeAlpha)
+      .setBlendMode(Phaser.BlendModes.NORMAL);
+    hazeImg._speed = 0;
+    hazeImg._layer = 'haze';
+    bg.push(hazeImg);
   }
 
   // ── 动态酷炫层（Phase D）：能量流光带 + 流星（reduced-motion 下不创建；数量按 TIER.streams）──
@@ -333,6 +359,10 @@ export function createStarfield(scene, { layers = 4, starTints = null, theme = n
       meteorCount: () => meteors.length,
       // P2-7：四层（或生效层）代表滚动速度数组，QA/PM 探针验收视差系数化
       speeds: () => layerSpeeds.slice(),
+      // OPT-18 V3：远景雾化层状态（未启用 haze 时为 false / 0）
+      haze: !!hazeImg,
+      hazeAlpha: hazeImg ? hazeImg.alpha : 0,
+      hazeDepth: hazeImg ? hazeImg.depth : null,
     },
   };
 }

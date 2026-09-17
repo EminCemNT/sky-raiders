@@ -40,6 +40,15 @@ async function launchPage(saveObj, lang) {
       const s = save == null ? null : (typeof save === 'string' ? save : JSON.stringify(save));
       if (s != null) localStorage.setItem(key, s);
       if (lg) localStorage.setItem('__qa_lang', lg);
+      // 确定性重写检测：注入完成后给 localStorage.setItem 打桩，记录应用侧对存档 key 的**全部**写入。
+      // 比"事后读回字符串逐字节比较"更严格且无竞态——后者依赖"读取时刻早于任何写入"，
+      // 在机器负载高时读取可能落在写入之后，产生与本探针意图无关的假失败（2026-09-17 实测命中一次）。
+      window.__SAVE_WRITES = [];
+      const orig = localStorage.setItem.bind(localStorage);
+      localStorage.setItem = function (k, v) {
+        if (k === key) window.__SAVE_WRITES.push(String(v));
+        return orig(k, v);
+      };
     } catch (e) { /* ignore */ }
   }, { key: SAVE_KEY, save: saveObj, lg: lang });
   await page.goto(URL, { waitUntil: 'domcontentloaded' });
@@ -142,16 +151,42 @@ else {
         elementKills: SM.get('achievementStats') ? (SM.get('achievementStats').elementKills || null) : null,
         moduleInvLen: (SM.get('moduleInv') || []).length,
         rawAfter,
+        // 应用侧对存档 key 的写入计数（0 = 全程未重写，确定性判据）
+        saveWrites: (window.__SAVE_WRITES || []).slice(),
       };
     });
   } catch (e) { B = { evalError: String(e) }; }
 
   const inj = JSON.parse(repairedRaw);
   const rawUnchanged = !!(B && B.rawAfter === repairedRaw);
+  const noWrite = !!(B && Array.isArray(B.saveWrites) && B.saveWrites.length === 0);
   push('合法存档 R 二次注入 → sanitize 返回 false（零改动）',
     !!(B && B.sanitized === false), B ? 'issues=' + JSON.stringify(B.issues) : 'no data');
-  push('合法存档 R 二次注入 → localStorage 字符串零重写（逐字节等价）',
-    rawUnchanged, B && B.rawAfter ? 'len=' + B.rawAfter.length : 'no data');
+  // 判据升级（2026-09-17）：原「事后读回字符串逐字节比较」依赖"读取时刻早于任何写入"，
+  // 高负载下读取可能落到写入之后 → 与探针意图无关的假失败。改为对 setItem 打桩计数：
+  // 「应用侧对存档 key 的写入次数 === 0」是确定性判据，且语义严格更强（连"写回同样内容"也算重写）。
+  push('合法存档 R 二次注入 → 零重写（应用侧 setItem 写入计数=0）',
+    noWrite, B && Array.isArray(B.saveWrites)
+      ? '写入次数=' + B.saveWrites.length + ' · 逐字节等价=' + rawUnchanged + ' · len=' + (B.rawAfter ? B.rawAfter.length : 'n/a')
+        + (noWrite ? '' : ' ｜ 诊断=' + (() => {
+          try {
+            if (!B.rawAfter) return 'rawAfter 为空';
+            const got = JSON.parse(B.rawAfter);
+            const ks = [...new Set([...Object.keys(inj), ...Object.keys(got)])];
+            const d = [];
+            let firstIdx = -1;
+            for (let i = 0; i < Math.min(repairedRaw.length, B.rawAfter.length); i++) {
+              if (repairedRaw[i] !== B.rawAfter[i]) { firstIdx = i; break; }
+            }
+            for (const k of ks) {
+              const a = JSON.stringify(inj[k]); const b = JSON.stringify(got[k]);
+              if (a !== b) d.push(k + ': ' + a + ' → ' + b);
+            }
+            const orderChanged = JSON.stringify(Object.keys(inj)) !== JSON.stringify(Object.keys(got));
+            return '首异字符@' + firstIdx + ' 键序变化=' + orderChanged + ' 字段差异=' + (d.length ? d.join(' ; ') : '无');
+          } catch (e) { return '诊断解析失败:' + e.message; }
+        })())
+      : 'no data');
   // 逐字段等价：coins/upgrades 与注入值一致
   const coinsEq = !!(B && B.coins === inj.coins);
   push('coins 逐字段零改动（' + inj.coins + '）', coinsEq, B ? 'got=' + B.coins : 'no data');

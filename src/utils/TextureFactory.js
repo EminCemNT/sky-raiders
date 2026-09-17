@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { COLORS, SHIPS } from '../config/GameConfig.js';
+import { COLORS, SHIPS, GAME_WIDTH, GAME_HEIGHT } from '../config/GameConfig.js';
 
 /**
  * TextureFactory —— 程序化生成全部游戏纹理（科幻扁平霓虹风格）。
@@ -108,6 +108,8 @@ export function generateAll(scene) {
   drawBgGlowband(g); g.generateTexture('bg_glowband', 512, 96); // P3 背景底部地平线光带
   // 画质精修三件·B：胶片颗粒噪点（128×128 随机灰点，UIScene 全屏 Image 叠加；纯视觉零业务）
   makeGrainTexture(scene);
+  // OPT-18 V3：远景雾化渐变层（540×960 纵向渐变，Starfield 以 depth −85 铺作"大气厚度"）
+  makeDepthFogTexture(scene);
   // P2 视觉四件套·⑥：爆炸焦痕（48×48 不规则烧灼斑，深色基底可 tint 复用）
   drawFxScorch(g); g.generateTexture('fx_scorch', 48, 48);
   // P2 视觉四件套·⑦：转场扫描光带（64×256 竖向柔光条，白色基底便于 tint，TransitionScene wipe 用）
@@ -1160,6 +1162,32 @@ function makeGrainTexture(scene) {
     img.data[i + 3] = 8 + Math.floor(Math.random() * 24); // alpha 8~32
   }
   ctx.putImageData(img, 0, 0);
+  ct.refresh();
+}
+
+// ─── OPT-18 V3：远景雾化渐变（540×960 纵向线性渐变，全屏静态叠层）────
+// 用途：由 Starfield 以 depth −85 铺在「全部远景之上、游乐层之下」，
+// 只压暗星云/云层/星空/流光带/地平线光带/流星，不触碰敌机/玩家/弹幕 → 拉开景深层次、
+// 提升前景对比（解决"光效叠加偏糊"）。渲染顺序由 depth 决定，与创建顺序无关。
+// 要点：
+//   1. 贴图承载**归一化** alpha（顶部 1.0 → 底部 0），实际强度由 Starfield 的
+//      TIER.hazeAlpha 相乘控制 → 调强度只改一个数，且可按画质档整体缩放。
+//   2. 用「深蓝黑 #060a18」而非纯黑：读作"大气厚度"，避免观感变成"屏幕偏暗"。
+//   3. 纵向渐变语义：顶部=远方地平线（雾最厚）→ 底部=玩家所在近景（完全透明），
+//      符合大气透视（aerial perspective）。
+//   4. 直接写 canvas（同 grain_tex 手法）：一次 fillRect 完成，无 graphics 逐行开销。
+function makeDepthFogTexture(scene) {
+  if (!scene || !scene.textures || scene.textures.exists('depth_fog')) return;
+  const W = GAME_WIDTH, H = GAME_HEIGHT;
+  const ct = scene.textures.createCanvas('depth_fog', W, H);
+  const ctx = ct.getContext();
+  const gd = ctx.createLinearGradient(0, 0, 0, H);
+  gd.addColorStop(0.00, 'rgba(6,10,24,1.00)');
+  gd.addColorStop(0.40, 'rgba(6,10,24,0.46)');
+  gd.addColorStop(0.72, 'rgba(6,10,24,0.14)');
+  gd.addColorStop(1.00, 'rgba(6,10,24,0.00)');
+  ctx.fillStyle = gd;
+  ctx.fillRect(0, 0, W, H);
   ct.refresh();
 }
 

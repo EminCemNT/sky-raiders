@@ -150,7 +150,8 @@ export default class GameScene extends Phaser.Scene {
     bg.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
     // 星空（按关卡色调染色）
-    this.starfield = createStarfield(this, { layers: 4, starTints: theme.starTints, theme });
+    // OPT-18 V3：战斗场景开启远景雾化层（depth −85，只压暗背景、不影响游乐层）→ 拉开景深
+    this.starfield = createStarfield(this, { layers: 4, starTints: theme.starTints, theme, haze: true });
 
     // 顶部主光（P3 光效纪律：发光白名单=机/弹/爆/拾取，背景仅此一层顶光）
     VFX.addKeyLight(this);
