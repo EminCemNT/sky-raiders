@@ -174,6 +174,8 @@ export const FOCUS = { SPEED_MUL: 0.45, FIRE_MUL: 0.8, DMG_MUL: 1.2 };
 //   difficulty 难度系数（作用到敌人 HP/速度、Boss 弹速）
 //   theme      地图色调（背景渐变 skyTop/skyBottom + 星空 4 层染色 starTints + 强调色 accent）
 //   boss       该关 Boss 配置 { maxHp, pattern(弹幕形态), name, color }
+//              OPT-19 A：主线 Boss 实际血量 = maxHp × 难度档 bossHpMul（见 DIFFICULTIES；标准档 ×1.0）
+//              Boss Rush / 爬塔在各自入口传入显式 maxHp → 不走该系数，血量由各自缩放决定
 //   wavePlan   数据表驱动波次：数组，每项是 { count: 本波敌人数, comp: [[type, mode, weight], ...] }
 //              WaveSystem 按权重抽取敌人组合；缺失时退回程序化兜底。
 export const LEVELS = [
@@ -359,7 +361,10 @@ export const LEVELS = [
       cloudTint: 0xd66a7a,
       silhouette: { kind: 'building', color: 0x0a0408, density: 1, speed: 44 },
     },
-    boss: { maxHp: 5600, pattern: 'nova', name: '湮灭者 Annihilator', color: 0xff6a3d, shieldHp: 150 },
+    // OPT-19 B：5600 → 10000（×1.786）。满配 fp8 实测 TTK 3.9s 偏短（3 阶段演出被跳过），
+    // 上调后 ~7.0s；L1~L3 不动 → 低配/新手路径零影响。
+    // 注：BOSS_RUSH 是独立数组，爬塔由其派生 → 本改动对 Boss Rush / 爬塔零影响。
+    boss: { maxHp: 10000, pattern: 'nova', name: '湮灭者 Annihilator', color: 0xff6a3d, shieldHp: 150 },
     challenges: [
       { id: 'c1', type: 'killRate', target: 0.75, name: '歼灭75%' },
       { id: 'c2', type: 'timeLimit', target: 120, name: '120秒速通' },
@@ -430,7 +435,9 @@ export const LEVELS = [
       cloudTint: 0xd6b14a,
       silhouette: { kind: 'building', color: 0x120a02, density: 1, speed: 48 },
     },
-    boss: { maxHp: 6400, pattern: 'nova', name: '湮灭回响 Echo-X', color: 0xffe14a, shieldHp: 200 },
+    // OPT-19 B：6400 → 12000（×1.875）。满配 fp8 实测 TTK 4.5s → ~8.4s，可完整看完 3 阶段。
+    // 进入需 6 勋章，天然门槛保护；recommendLevel 最高指向 L4，不存在「低配被硬塞进 L5」。
+    boss: { maxHp: 12000, pattern: 'nova', name: '湮灭回响 Echo-X', color: 0xffe14a, shieldHp: 200 },
     challenges: [
       { id: 'c1', type: 'killRate', target: 0.7, name: '歼灭70%' },
       { id: 'c2', type: 'timeLimit', target: 140, name: '140秒速通' },
@@ -551,13 +558,22 @@ export function recommendLevel(power) {
 //   bossBulletMul Boss 弹速倍率（乘到 Boss.difficulty 上）
 //   scoreMul    结算得分倍率
 //   coinMul     结算金币倍率
-// 消费方：Enemy.spawn(hpMul/speedMul) / GameScene.spawnBoss(bossBulletMul) / GameScene.endGame(scoreMul/coinMul)
+//   bossHpMul   Boss 本体 HP 倍率（OPT-19 A 新增，append-only 字段）
+// 消费方：Enemy.spawn(hpMul/speedMul) / GameScene.spawnBoss(bossBulletMul/bossHpMul)
+//        / GameScene.endGame(scoreMul/coinMul)
 // ───────────────────────────────────────────────────────────────
+// OPT-19 A：此前 Boss 血量不吃任何难度系数，而敌机吃三重（型号×关卡×难度档），
+// 导致「地狱档杂兵 ×2.0 而 Boss ×1.0」—— 难度越高 Boss 越像过场（对称性缺陷）。
+// bossHpMul 取软系数 hpMul^0.8，而非直接复用 hpMul，理由有二：
+//   · Boss HP 线性放大于 TTK（玩家伤害不随难度变化），直接 ×2.0 会让地狱档 Boss
+//     的 3 阶段演出被拉长到失衡；^0.8 保留难度梯度同时压制长尾。
+//   · 标准档 1.0^0.8 = 1.0，与历史行为逐字节等价 → 零回归仍成立。
+// 实际取值（保留两位）：休闲 0.7^0.8=0.75 / 标准 1.0 / 困难 1.4^0.8=1.31 / 地狱 2.0^0.8=1.74
 export const DIFFICULTIES = [
-  { id: 'casual',   name: '休闲', hpMul: 0.7,  speedMul: 0.85, bossBulletMul: 0.85, scoreMul: 0.8, coinMul: 0.9 },
-  { id: 'standard', name: '标准', hpMul: 1.0,  speedMul: 1.0,  bossBulletMul: 1.0,  scoreMul: 1.0, coinMul: 1.0 },
-  { id: 'hard',     name: '困难', hpMul: 1.4,  speedMul: 1.15, bossBulletMul: 1.2,  scoreMul: 1.3, coinMul: 1.2 },
-  { id: 'hell',     name: '地狱', hpMul: 2.0,  speedMul: 1.3,  bossBulletMul: 1.5,  scoreMul: 1.8, coinMul: 1.5 },
+  { id: 'casual',   name: '休闲', hpMul: 0.7,  speedMul: 0.85, bossBulletMul: 0.85, scoreMul: 0.8, coinMul: 0.9, bossHpMul: 0.75 },
+  { id: 'standard', name: '标准', hpMul: 1.0,  speedMul: 1.0,  bossBulletMul: 1.0,  scoreMul: 1.0, coinMul: 1.0, bossHpMul: 1.0 },
+  { id: 'hard',     name: '困难', hpMul: 1.4,  speedMul: 1.15, bossBulletMul: 1.2,  scoreMul: 1.3, coinMul: 1.2, bossHpMul: 1.31 },
+  { id: 'hell',     name: '地狱', hpMul: 2.0,  speedMul: 1.3,  bossBulletMul: 1.5,  scoreMul: 1.8, coinMul: 1.5, bossHpMul: 1.74 },
 ];
 
 /** 按 id 取难度档；未知 id 回退 standard（默认档）。 */

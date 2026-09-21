@@ -1077,12 +1077,26 @@ export default class GameScene extends Phaser.Scene {
     // A9 救济局选项 A：Boss 弹速同样按休闲档（session 覆盖）
     const bossBulletMul = (this._reliefCombatMul && this._reliefCombatMul.bossBulletMul)
       || (this.difficultyCfg && this.difficultyCfg.bossBulletMul) || 1;
+    // OPT-19 A：难度档 HP 系数作用于 Boss 本体 —— 修「敌机吃三重系数、Boss 一个都不吃」
+    // 的对称性缺陷（此前地狱档杂兵 ×2.0 而 Boss ×1.0，难度越高 Boss 越像过场）。
+    // 取口与 spawnEnemy 一致：救济局 session 覆盖（休闲档）优先于存档难度档。
+    // 边界：Boss Rush / 爬塔在各自入口传入显式 maxHp（自带 hangar/层数血量缩放），
+    //       此类调用方跳过本系数，避免与既有缩放重复叠加（既有模式平衡零变化）。
+    const hpMulCfg = this._reliefCombatMul || this.difficultyCfg;
+    const bossHpMul = (overrides && overrides.maxHp != null)
+      ? 1
+      : ((hpMulCfg && hpMulCfg.bossHpMul) || 1);
+    // 仅在系数偏离 1 且配置血量有效时覆写 → 标准档路径与历史逐字节等价（零回归）
+    const hpOverride = (bossHpMul !== 1 && Number.isFinite(cfg.maxHp))
+      ? { maxHp: Math.max(1, Math.round(cfg.maxHp * bossHpMul)) }
+      : {};
     const baseDifficulty = (overrides && overrides.difficulty) || (this.level && this.level.difficulty) || 1;
     // OPT-16 C10 高难终局（方案A）：仅 hell 档传 hardPhase=true → Boss phase3 追加高难 pattern（C10.1）
     const hardPhase = !!(this.difficultyCfg && BOSS_HARD && BOSS_HARD.difficulty
       && this.difficultyCfg.id === BOSS_HARD.difficulty);
     this.boss = new Boss(this, bossKey, {
       ...cfg,
+      ...hpOverride,
       difficulty: baseDifficulty * bossBulletMul,
       hardPhase,
     });

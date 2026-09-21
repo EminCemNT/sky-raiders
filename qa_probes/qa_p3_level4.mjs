@@ -1,6 +1,6 @@
 // qa_p3_level4.mjs —— 苍穹战机 P3 内容扩展真测
 // 验证：① dist 静态服 + canvas 渲染  ② 第4关「终焉星核」配置接入（levelId=4 / waves=9 / bossKey / nova pattern）
-//       ③ 直接 spawnBoss('boss_annihilator') 用 nova 配置（pattern=nova / maxHp=5600）并正常发射子弹
+//       ③ 直接 spawnBoss('boss_annihilator') 用 nova 配置（pattern=nova / maxHp=10000）并正常发射子弹
 //       ④ nova 阶段2/3 分支（反向旋转臂）安全：降血触发 phase 切换后继续 fire 无报错
 //       ⑤ 流程衔接代理：levelId=4 可进入即证明 ResultScene 动态判定 (levelId<LEVELS.length) 生效
 //       ⑥ 零 pageerror / console error / 资源失败
@@ -97,8 +97,9 @@ const levelInfo = await page.evaluate(() => {
 console.log('levelInfo:', JSON.stringify(levelInfo));
 assert(levelInfo.levelId === 4, 'GameScene 进入 levelId=4');
 assert(levelInfo.id === 4 && levelInfo.waves === 9, `第4关配置接入(id=4, waves=9) → 实际 id=${levelInfo.id} waves=${levelInfo.waves}`);
-assert(levelInfo.bossKey === 'boss_annihilator' && levelInfo.bossPattern === 'nova' && levelInfo.bossMaxHp === 5600,
-  `第4关 Boss 配置(nova/5600) → key=${levelInfo.bossKey} pattern=${levelInfo.bossPattern} hp=${levelInfo.bossMaxHp}`);
+// OPT-19 B：L4 boss.maxHp 由 5600 上调至 10000（满配 TTK 3.9s 过短）。本断言同步更新。
+assert(levelInfo.bossKey === 'boss_annihilator' && levelInfo.bossPattern === 'nova' && levelInfo.bossMaxHp === 10000,
+  `第4关 Boss 配置(nova/10000) → key=${levelInfo.bossKey} pattern=${levelInfo.bossPattern} hp=${levelInfo.bossMaxHp}`);
 
 // 断言 4：直接 spawnBoss 用 nova 配置并正常发射
 await page.evaluate(() => {
@@ -128,7 +129,8 @@ assert(bossInfo.enemyBullets > 0, `nova 弹幕正常发射（活跃敌弹 ${boss
 // 断言 5：nova 阶段2/3 分支（反向旋转臂）安全 —— 降血触发 phase 切换后继续 fire
 await page.evaluate(() => {
   const gs = window.__SKY__.scene.getScene('GameScene');
-  if (gs.boss && !gs.boss._entering) gs.boss.hit(4000); // 5600→1600，ratio<0.33 → phase 3
+  // OPT-19：改为比例制扣血（留 28% → ratio<0.33 → phase 3），免随 Boss 血量调参失效
+  if (gs.boss && !gs.boss._entering) gs.boss.hit(Math.round(gs.boss.maxHp * 0.72));
 });
 await sleep(2000); // 让 phase3 nova（含反向旋转臂）跑若干周期
 const phaseInfo = await page.evaluate(() => {

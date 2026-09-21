@@ -41,4 +41,7 @@ qa_probes/*_diff_*.txt
 /_*.log
 /_*.js
 /_*.html
+/_*.sh
+/_*.json
+/_*.bin
 qa_probes/_*.mjs
