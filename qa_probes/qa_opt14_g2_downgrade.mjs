@@ -6,6 +6,8 @@
 //
 // 断言（复刻 QA 独立审计 G2-0..G2-7）：
 //   G2-0  前置：默认配置下采样生效（width=270 zoom=0.5）
+//   G2-pre / G2-pre2  测试钩子 window.__CFG 可用 + 降级开关确实落在 app 实例
+//                      （防 Vite `?t=` 双实例导致的假失败，见文末说明）
 //   G2-1  enabled:false → bloom 仍开启（enabled=true）
 //   G2-2  enabled:false → 全分辨率 RT（width=540 height=960）
 //   G2-3  enabled:false → zoom=1 / scaleX=1（无下采样缩放）
@@ -14,6 +16,9 @@
 //   G2-6  对照 enabled:true 下采样恢复（width=270）
 //   G2-7  对照脏标记路径 draws/ticks ≈0.2（enabled:true staticMode）
 //   I-D   Page D 零 pageerror / console.error
+// ⚠️ 改配置必须走 window.__CFG（main.js 暴露的 app 自身 GameConfig 实例），不可裸路径 re-import：
+//    Vite dev 在 src 被改动后会给 app 侧 import 加 `?t=<ms>` 时间戳，页面内
+//    import('/src/config/GameConfig.js') 会解析到「第二个模块实例」，改它对 app 无效 → 假失败。
 // 运行：node qa_probes/qa_opt14_g2_downgrade.mjs（QA_URL 默认 http://127.0.0.1:5059）
 import { chromium } from 'playwright';
 
@@ -58,11 +63,25 @@ const base = await page.evaluate(() => {
 });
 push('G2-0. 前置：默认配置下采样生效（width=270 zoom=0.5）', base.width === 270 && base.zoom === 0.5, `w=${base.width} z=${base.zoom}`);
 
+// ── G2-pre：测试钩子可用性（app 自身 GameConfig 实例）──
+// 为什么不能裸路径 re-import：Vite dev 在源码被改动后会给 app 侧 import 追加 `?t=<ms>`
+// 时间戳（如 "/src/config/GameConfig.js?t=1790084207453"）。页面内裸路径
+// import('/src/config/GameConfig.js') 会解析到「另一个模块实例」，改它的
+// BLOOM.downscale.enabled 不影响 BloomFX → 降级路径不生效（本探针曾因此假失败）。
+const setDownscale = (enabled) => page.evaluate((v) => {
+  const cfg = window.__CFG;
+  if (!cfg || !cfg.BLOOM || !cfg.BLOOM.downscale) return { ok: false, now: null };
+  cfg.BLOOM.downscale.enabled = v;
+  return { ok: true, now: cfg.BLOOM.downscale.enabled };
+}, enabled);
+const preHook = await page.evaluate(() => !!(window.__CFG && window.__CFG.BLOOM && window.__CFG.BLOOM.downscale));
+push('G2-pre. window.__CFG 可用（app 自身 GameConfig 实例，改配置必经此处）', preHook === true);
+
 // ── 注入降级：BLOOM.downscale.enabled=false + restart MenuScene（create 重读配置）──
-await page.evaluate(async () => {
+const dsSet = await setDownscale(false);
+push('G2-pre2. 降级开关已置 false 且落在 app 实例上', dsSet.ok === true && dsSet.now === false, `ok=${dsSet.ok} now=${dsSet.now}`);
+await page.evaluate(() => {
   const game = window.__SKY__;
-  const cfg = await import('/src/config/GameConfig.js');
-  cfg.BLOOM.downscale.enabled = false;
   game.scene.stop('MenuScene');
   game.scene.start('MenuScene');
 });
@@ -147,10 +166,9 @@ push('G2-5. enabled:false 降级后 A1 仍生效（depth80 排除 / depth20 保�
   `in80=${g25.in80} in20=${g25.in20} max=${g25.maxDepth}`);
 
 // ── G2-6 / G2-7 对照：改回 enabled=true → 下采样恢复 + 主路径脏标记不回归 ──
-await page.evaluate(async () => {
+await setDownscale(true);
+await page.evaluate(() => {
   const game = window.__SKY__;
-  const cfg = await import('/src/config/GameConfig.js');
-  cfg.BLOOM.downscale.enabled = true;
   game.scene.stop('MenuScene');
   game.scene.start('MenuScene');
 });

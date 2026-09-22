@@ -1,5 +1,7 @@
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT, COLORS } from './config/GameConfig.js';
+// OPT-19 QA 加固：测试钩子需持「app 自身」的 GameConfig 实例（见下方 window.__CFG 说明）。
+import * as GameConfigNS from './config/GameConfig.js';
 import BootScene from './scenes/BootScene.js';
 import PreloadScene from './scenes/PreloadScene.js';
 import MenuScene from './scenes/MenuScene.js';
@@ -57,6 +59,17 @@ const game = new Phaser.Game(config);
 // 暴露给控制台方便调试（生产可移除）
 window.__SKY__ = game;
 window.__SAVE = SaveManager;
+
+// OPT-19 QA 加固：暴露 app 自身 GameConfig 实例（与 __SAVE / __ADS / __SKY 同性质，不影响玩法）。
+// 为什么必须提供：Vite dev 在源码被改动后会给 app 侧 import 追加 `?t=<ms>` 时间戳
+// （如 "/src/config/GameConfig.js?t=1790084207453"）。探针在页面内裸路径
+// import('/src/config/GameConfig.js') 会被解析为「另一个模块实例」，
+// 对其改配置（如 BLOOM.downscale.enabled）不会影响 app → 探针假失败。
+// 探针改配置一律走 window.__CFG，保证与 BloomFX / 各 Scene 用的是同一实例。
+// 仅 dev 暴露：生产构建下本分支被 DCE 消除，命名空间引用一并消失 → 打包体积零增量
+// （实测无条件暴露会让 index chunk +3.20 kB raw / +1.66 kB gzip）。探针只在 dev server 上
+// 运行（依赖 /src 模块路径），故 dev-only 不影响任何现有/未来探针。
+if (import.meta.env.DEV) window.__CFG = GameConfigNS;
 
 // OPT-16 T9 测试钩子规范化：window.__PROBE 只读契约（append-only，只读观测监听计数）。
 // 探针读监听数不增长用：eventBus = EventBus 全量监听数；sceneUpdate = GameScene 'update' 监听数。

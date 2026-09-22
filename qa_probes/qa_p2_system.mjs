@@ -16,9 +16,13 @@
 //  13) 零 pageerror / console error
 //
 // 写法对齐既有 qa_probes：chromium + 系统 Chrome + args ['--no-sandbox'] + 端口 5059
+// ⚠️ Ads 打桩必须覆盖「双实例」：Vite dev 在 src 改动后会给 app 侧 import 加 `?t=<ms>` 时间戳，
+//    页面内裸路径 import('/src/systems/Ads.js') 与 window.__ADS 可能是两个模块实例；只打一处会
+//    对 app 无效（真实 Ads 有 3s 假延时）→ 假失败。统一走 stubRewardAd()。等待金币翻倍亦用
+//    轮询 waitForFunction（非固定 sleep），确保打桩未命中时仍能通过。
 import { chromium } from 'playwright';
 
-const URL = process.env.QA_URL || 'http://127.0.0.1:5059';
+const URL = process.env.QA_URL || process.env.QA_BASE_URL || 'http://127.0.0.1:5059';
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 
 const checks = [];
@@ -26,6 +30,31 @@ const push = (name, ok, detail = '') => {
   checks.push({ name, ok });
   console.log((ok ? '✅ ' : '❌ ') + name + (detail ? '  — ' + detail : ''));
 };
+
+/**
+ * 打桩 Ads.showRewardAd → 立即回调 success=true（跳过占位 3s 假延时）。
+ * 必须同时覆盖 window.__ADS 与页面内 re-import 的模块实例：Vite dev 在 src 改动后会给
+ * app 侧 import 加 `?t=<ms>` 时间戳，二者可能是「两个模块实例」，只打一处会对 app 无效
+ * （真实实现有 3s 假延时 → 短 sleep 后读到未翻倍的金币）→ 假失败。
+ * 注意：裸路径 import 会重新求值 Ads.js 并改写 window.__ADS，故先捕获原指针、打完桩再还原。
+ */
+async function stubRewardAd(page) {
+  return page.evaluate(async () => {
+    const orig = window.__ADS;
+    const targets = new Set();
+    if (orig) targets.add(orig);
+    try {
+      const m = await import('/src/systems/Ads.js');
+      if (m && m.Ads) targets.add(m.Ads);
+    } catch (e) { /* ignore */ }
+    let n = 0;
+    targets.forEach((A) => {
+      if (A && typeof A.showRewardAd === 'function') { A.showRewardAd = (cb) => cb(true); n++; }
+    });
+    window.__ADS = orig; // 还原全局指针，避免污染后续断言
+    return n;
+  });
+}
 
 /** 进入指定模式的一局（复用同一 page，重启场景） */
 async function startGame(page, mode = 'normal') {
@@ -183,9 +212,9 @@ push('周赛文案含名次与周结倒计时', lgUi.text.includes('当前第') 
 
 // ── 7) 无尽失败「看广告复活继续」──
 await startGame(page, 'endless');
+await stubRewardAd(page); // 跳过 3s 假延时：立即成功（覆盖 __ADS 与 re-import 双实例）
 const rev = await page.evaluate(() => {
   const gs = window.__SKY__.scene.getScene('GameScene');
-  window.__ADS.showRewardAd = (cb) => cb(true); // 跳过 3s 假延时：立即成功
   gs._adReviveUsed = false;
   gs.lives = 1;
   gs.player.invulnUntil = 0;
@@ -239,9 +268,9 @@ push('无尽 endGame 写入本周 week', lgRec.league.week === curWeek, `week=${
 await page.evaluate(() => window.__SAVE.set('noAds', false));
 
 // ── 9) 签到「看广告双倍」：Ads 成功后金币 ×2 ──
+await page.evaluate(() => window.__SAVE.reset());
+await stubRewardAd(page); // 同样覆盖双实例（见函数说明）
 await page.evaluate(() => {
-  window.__SAVE.reset();
-  window.__ADS.showRewardAd = (cb) => cb(true);
   const g = window.__SKY__;
   ['UIScene', 'GameScene', 'ResultScene'].forEach((k) => {
     const s = g.scene.getScene(k);
@@ -273,14 +302,19 @@ const chk = await page.evaluate(() => {
 });
 push('签到领取 +50 金币', chk.coinsBefore === 0 && chk.coinsAfterClaim === 50, `${chk.coinsBefore}→${chk.coinsAfterClaim}`);
 push('签到后出现「看广告双倍」按钮', chk.hasDouble === true);
-await page.waitForTimeout(60);
-const chk2 = await page.evaluate(() => {
+// 触发「看广告双倍」按钮，然后轮询等待金币翻倍。
+// 不用「固定 sleep + 单次读取」：若打桩未命中（走了真实 Ads 的 3s 假延时），
+// 固定短 sleep 会读到未翻倍的金币 → 假失败。
+const dblBtn = await page.evaluate(() => {
   const ms = window.__SKY__.scene.getScene('MenuScene');
-  const b = ms._checkinDoubleBtn;
+  const b = ms && ms._checkinDoubleBtn;
   if (b) b.emit('pointerdown');
-  return { coins: window.__SAVE.load().coins };
+  return !!b;
 });
-push('看广告双倍：金币 ×2（50→100）', chk2.coins === 100, `coins=${chk2.coins}`);
+const doubled = await page.waitForFunction(() => window.__SAVE.load().coins === 100, null, { timeout: 6000 })
+  .then(() => true).catch(() => false);
+const coinsAfterDouble = await page.evaluate(() => window.__SAVE.load().coins);
+push('看广告双倍：金币 ×2（50→100）', dblBtn && doubled, `btn=${dblBtn} coins=${coinsAfterDouble}`);
 await page.evaluate(() => window.__SKY__.scene.getScene('MenuScene').closeCheckIn());
 
 // ── 10) 设置面板「去广告」开关 ──

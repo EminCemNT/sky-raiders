@@ -1,6 +1,12 @@
 // 统一 QA 运行器：自动拉起 5059 vite 服 + 串行跑全部 qa_*.mjs 探针 + 汇总。
 // 用法：node qa_probes/run-all.mjs   （无需手动起服）
 // 环境坑：NODE_OPTIONS=--use-system-ca 与 node22 冲突，子进程一律清空。
+//
+// ⚠️ 关于「复用已运行的 5059 服务器」：若那台 server 长期运行、期间 src/ 被编辑过，
+//    Vite 会给 app 侧 import 追加 `?t=<ms>` 时间戳；此时「页面内裸路径 re-import」会拿到
+//    「第二个模块实例」，改它的配置/存档对 app 无效 → 探针假失败（qa_opt13_b12_title /
+//    qa_opt14_g2_downgrade / qa_p2_system 曾因此各挂一项）。硬性规避：
+//    (1) 跑全量前重启 dev server（最稳）；(2) 探针改 app 状态一律走 window.__CFG / __SAVE / __ADS。
 import { spawn, spawnSync } from 'child_process';
 import { readdirSync, existsSync } from 'fs';
 import net from 'net';

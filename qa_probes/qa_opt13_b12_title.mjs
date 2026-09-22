@@ -12,6 +12,11 @@
 //   9) 零新增成就 id：TITLES 引用的 achievement 均为既有 26 个成就 id 之一
 //  10) i18n：title_rookie…title_skyOverlord + titleNone 在 zh/en 两表均有值
 //  11) 零 pageerror / console error
+//
+// ⚠️ 存档注入必须走 window.__SAVE（app 自身 SaveManager 实例），不可裸路径 re-import：
+//    Vite dev 在 src 改动后会给 app 侧 import 加 `?t=<ms>` 时间戳，页面内
+//    import('/src/utils/SaveManager.js') 会得到「第二个模块实例」，改它的存档对
+//    ResultScene 无效（结算页渲染 titleNone）→ 假失败。同理结算页断言改「有界轮询等待」。
 import { chromium } from 'playwright';
 
 const URL = process.env.QA_URL || process.env.QA_BASE_URL || 'http://127.0.0.1:5059';
@@ -141,12 +146,16 @@ push('i18n zh/en 均有 title_* + titleNone', core.i18nOk);
 // 直接构造结果场景：切到 ResultScene 并注入 result，读取称号文本节点。
 const ui = await page.evaluate(async () => {
   const g = window.__SKY__;
-  const sm = await import('/src/utils/SaveManager.js');
+  // 走 app 自身 SaveManager 句柄（window.__SAVE）。不可裸路径 re-import：
+  // Vite dev 在 src 改动后会给 app 侧 import 加 `?t=<ms>` 时间戳，页面内
+  // import('/src/utils/SaveManager.js') 会得到「第二个模块实例」，改它的存档
+  // 对 ResultScene 无效（结算页会渲染 titleNone）→ 假失败。
+  const S = window.__SAVE;
   // 用"有星级 + 有击杀"的存档态，确保 rookie 解锁、结算页出现称号行
-  sm.SaveManager.load().levelStars = { 1: 1 };
-  sm.SaveManager.load().totalKills = 50;
+  S.load().levelStars = { 1: 1 };
+  S.load().totalKills = 50;
   const before = await import('/src/systems/TitleSystem.js');
-  const cur = before.TitleSystem.getCurrentTitle(sm.SaveManager.load());
+  const cur = before.TitleSystem.getCurrentTitle(S.load());
   ['MenuScene', 'UIScene', 'GameScene', 'ResultScene'].forEach((k) => {
     const s = g.scene.getScene(k);
     if (s && s.scene.isActive()) g.scene.stop(k);
@@ -158,15 +167,13 @@ await page.waitForFunction(() => {
   const rs = window.__SKY__.scene.getScene('ResultScene');
   return rs && rs.scene.isActive();
 }, { timeout: 20000 });
-const shown = await page.evaluate(async () => {
-  const g = window.__SKY__;
-  const rs = g.scene.getScene('ResultScene');
-  const txts = rs.children.list
-    .filter((c) => c && c.type === 'Text')
-    .map((c) => c.text || '');
-  return { txts };
-});
-const titleVisible = shown.txts.some((s) => String(s).includes(ui.curName));
+// 轮询等待称号行落位，替代「激活即单次读取」：场景 RUNNING 与文本入列之间仍有帧间隙，
+// 单次即时读取在机器负载高时会偶发假阴性（本探针曾因此失败）。
+const titleVisible = await page.waitForFunction((expected) => {
+  const rs = window.__SKY__.scene.getScene('ResultScene');
+  if (!rs || !rs.children) return false;
+  return rs.children.list.some((c) => c && c.type === 'Text' && String(c.text || '').includes(expected));
+}, ui.curName, { timeout: 8000 }).then(() => true).catch(() => false);
 push('结算页展示当前称号行（rookie）', ui.curId === 'rookie' && titleVisible,
   `title=${ui.curName} found=${titleVisible}`);
 
