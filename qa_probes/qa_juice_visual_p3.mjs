@@ -12,13 +12,22 @@
 //   9) 零 pageerror / console.error
 //  10) reduced-motion 下无 pageerror，且动态特效降级（enemyTrail 为 null）
 //
+// ⚠️ 五层爆炸由 scene.time.delayedCall(0/30/50/90/130) 排程，走**游戏时钟**；headless 软件渲染下
+//    游戏时间远慢于墙钟（见 src/systems/VFX.js 234 行注释：160ms 游戏时间 ≈1.5s 墙钟）。
+//    采样必须「有界轮询 + 取窗口内最大值」，不可固定短 sleep 后单次采样，否则残骸/烟尘两层漏计
+//    （newEmitters 只数到 1）→ 假失败（曾于全量套件稳定挂，与 p4 轮同值）。
+//    且采样必须**位置绑定 + 深度白名单**：GameScene 仍在实时运行，敌机被击落会走同一套
+//    explosionLayered，而**玩家开火**的枪口/弹道 emitter（depth=22）恰好就在爆炸锚点 ±150px 内，
+//    全量计数必被污染 → 断言恒真（负对照实证：注掉被测那次的 debris/smoke 后 newEmitters 仍是 2
+//    → PASS 假通过）。修法：只认爆炸专属层 depth（Arc 58/54，Emitter 46/44）。
+//
 // 写法对齐既有 qa_probes：chromium + 系统 Chrome + args ['--no-sandbox'] + 端口 5059。
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const URL = process.env.QA_URL || 'http://127.0.0.1:5059';
+const URL = process.env.QA_URL || process.env.QA_BASE_URL || 'http://127.0.0.1:5059';
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -72,36 +81,57 @@ const r1 = await page.evaluate(async () => {
     },
   };
   // 采样对象计数（Arc=circle 层，ParticleEmitter=粒子层）
-  const count = () => {
-    let arcs = 0, emitters = 0;
-    gs.children.list.forEach((c) => {
-      if (c.type === 'Arc') arcs++;
-      if (c.type === 'ParticleEmitter') emitters++;
-    });
-    return { arcs, emitters };
-  };
+  // ⚠️ 必须位置绑定 + 深度白名单 + 引用差集，三层缺一不可：
+  //   (1) 位置绑定：GameScene 此刻仍在实时运行，敌机被击落会走**同一套** explosionLayered，
+  //       全场景计数会被「别处的爆炸」污染。
+  //   (2) 深度白名单：实测发现**玩家开火**的枪口/弹道 emitter（depth=22、texture=particle_spark）
+  //       就落座在玩家上方 ~36px（爆炸锚点 ±150px 内），是「newEmitters 恒 ≥2」的真实来源
+  //       —— 负对照实证：注掉被测那次的 debris/smoke 后，newEmitters 仍为 2 → 断言恒真 → PASS 假通过。
+  //       爆炸五层各有专属 depth（VFX 内唯一）：Arc 58=flashCore / 54=shockwaveRing；
+  //       Emitter 46=debrisBurst / 44=smokePuff（池化 explosion 为 50 且不新增 emitter）。
+  //   (3) 引用差集：vfxPool.explosion / residuePool 是常驻池化 emitter（emitParticleAt 只发射粒子、
+  //       不移动本体），差集天然排除；只有 debrisBurst/smokePuff 是新建 emitter。
+  //   累积集合取峰值（两层生命周期不重叠也漏不掉）。
+  const ex = gs.player.x, ey = gs.player.y - 60;
+  const ARC_DEPTHS = [58, 54];
+  const EM_DEPTHS = [46, 44];
+  const near = (c) => c && typeof c.x === 'number'
+    && Math.abs(c.x - ex) <= 150 && Math.abs(c.y - ey) <= 150;
+  const pickArc = () => gs.children.list.filter((c) => c.type === 'Arc' && ARC_DEPTHS.indexOf(c.depth) >= 0 && near(c));
+  const pickEm = () => gs.children.list.filter((c) => c.type === 'ParticleEmitter' && EM_DEPTHS.indexOf(c.depth) >= 0 && near(c));
   // P0 粒子池化：爆炸粒子层复用 vfxPool.explosion（不新增 emitter），
   // 故除 Arc/新增 emitter 外，还要验证池化爆炸 emitter 被实际复用（poolUseCount 增加）。
   const use0 = gs.vfxPool && gs.vfxPool.explosion ? (gs.vfxPool.explosion.poolUseCount || 0) : 0;
-  const t0 = count();
-  VFX.explosionLayered(gs, gs.player.x, gs.player.y - 60, 0xff5a6e, { tier: 'small' });
-  await new Promise((res) => setTimeout(res, 100));
-  const t1 = count();
-  await new Promise((res) => setTimeout(res, 70));
-  const t2 = count();
-  const use1 = gs.vfxPool && gs.vfxPool.explosion ? (gs.vfxPool.explosion.poolUseCount || 0) : 0;
-  out.maxArcs = Math.max(t1.arcs - t0.arcs, t2.arcs - t0.arcs);
-  out.newEmitters = Math.max(t1.emitters - t0.emitters, t2.emitters - t0.emitters);
-  out.poolExplodeUsed = use1 > use0;
+  const bArcs = new Set(pickArc());
+  const bEms = new Set(pickEm());
+  VFX.explosionLayered(gs, ex, ey, 0xff5a6e, { tier: 'small' });
+  // 轮询采样（替代固定 100/170ms 单次采样）：五层由 scene.time.delayedCall(0/30/50/90/130) 排程，
+  // 走**游戏时钟**；headless 软件渲染下游戏时间远慢于墙钟（本文件 234 行注释实测 160ms 游戏时间
+  // ≈1.5s 墙钟），固定短采样会漏掉残骸/烟尘两层 → newEmitters 只数到 1（本探针曾在全量套件稳定挂）。
+  // 改为最长 4s、20ms 间隔高频采样，记录「被测爆炸点附近新增对象」的累积集合大小；三层条件都满足即提前收工。
+  const poolUseNow = () => (gs.vfxPool && gs.vfxPool.explosion ? (gs.vfxPool.explosion.poolUseCount || 0) : 0);
+  let poolUsed = false;
+  const seenArcs = new Set(), seenEms = new Set();
+  const tStart = performance.now();
+  while (performance.now() - tStart < 4000) {
+    pickArc().forEach((c) => { if (!bArcs.has(c)) seenArcs.add(c); });
+    pickEm().forEach((c) => { if (!bEms.has(c)) seenEms.add(c); });
+    if (poolUseNow() > use0) poolUsed = true;
+    if (seenArcs.size >= 2 && seenEms.size >= 2 && poolUsed) break;
+    await new Promise((res) => setTimeout(res, 20));
+  }
+  out.maxArcs = seenArcs.size;
+  out.newEmitters = seenEms.size;
+  out.poolExplodeUsed = poolUsed;
   return out;
 });
 push('VFX 五层接口导出（explosionLayered/flashCore/shockwaveRing/debrisBurst/smokePuff）',
   !!r1.api.explosionLayered && !!r1.api.flashCore && !!r1.api.shockwaveRing
   && !!r1.api.debrisBurst && !!r1.api.smokePuff,
   JSON.stringify(r1.api));
-push('explosionLayered 五层触发（闪光圆+冲击波环 ≥2 Arc，粒子层走池化复用，残骸+烟尘 ≥2 Emitter）',
+push('explosionLayered 五层触发（白闪圆 58+冲击波环 54 ≥2 Arc；残骸 46+烟尘 44 ≥2 Emitter；粒子层走池化复用）',
   r1.maxArcs >= 2 && r1.newEmitters >= 2 && r1.poolExplodeUsed === true,
-  `maxArcs=${r1.maxArcs} newEmitters=${r1.newEmitters} poolExplodeUsed=${r1.poolExplodeUsed}`);
+  `maxArcs=${r1.maxArcs} newEmitters=${r1.newEmitters} poolExplodeUsed=${r1.poolExplodeUsed}（爆炸点 ±150px 内、按专属 depth 白名单计新增对象）`);
 
 // ── 2) Boss.die 弹性缩放 tween（源码级）──
 const bossSrc = fs.readFileSync(path.join(ROOT, 'src/entities/Boss.js'), 'utf8');

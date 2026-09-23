@@ -8,13 +8,18 @@
 //    正常）；到达演出（冲击波环/顶光聚光 depth=56）；reduced-motion 直现目标位。
 // 零 pageerror / console.error。
 //
+// ⚠️ 到达演出（冲击波环 320ms / 顶光 ~300ms）是**瞬时**特效：采样必须用「有界轮询 + 取窗口内最大值」，
+//    不可固定 sleep 后单次采样，否则采样点落在窗口外 → ring=0 glow=0 假失败（曾于全量套件挂）。
+//    且必须**位置绑定**（锚定 Boss 到达点 ±60px）+ **AND**（环与光都要有）：depth=56 并非到达演出独占
+//    （VFX.localIllum 爆炸亮斑同为 depth 56 glow_soft），只扫 depth 会让断言恒真。
+//    注意 URL 也要读取 QA_BASE_URL（统一运行器只注入后者）。
 // 写法对齐既有 qa_probes：chromium + 系统 Chrome + args ['--no-sandbox'] + 端口 5059。
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const URL = process.env.QA_URL || 'http://127.0.0.1:5059';
+const URL = process.env.QA_URL || process.env.QA_BASE_URL || 'http://127.0.0.1:5059';
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SHOTS = path.join(ROOT, 'shots');
@@ -164,26 +169,63 @@ push('Boss 入场开始：_entering=true 且 y 在屏外上方(<目标位)',
 await page.waitForTimeout(260);
 await page.screenshot({ path: path.join(SHOTS, 'polish2_boss_entering.png') });
 
-// 到 ~660ms：越过 500ms 到达点，检查恢复正常 + 到达演出
-await page.waitForTimeout(400);
-const bossT1 = await page.evaluate(() => {
+// 轮询观测「到达瞬间」（替代固定 400ms 后单次采样）：
+// 到达演出是瞬时特效——shockwaveRing 320ms、顶光 glow_soft 约 300ms（tween 120+hold60+120），
+// 而固定 sleep 会叠加截图/求值开销，采样点很容易落到 320ms 窗口之外 → ring=0 glow=0 假失败
+// （本探针曾在全量套件中挂）。改为页面内 20ms 高频采样、最长 6s，记录窗口内最大值，
+// 并捕获「首个 _entering=false 帧」的 y 作为到达位。
+//
+// ⚠️ 位置绑定（必须）：仅统计 depth=56 是**不够**的 —— VFX.localIllum（任何一次爆炸的
+//    瞬间局部照亮）同样创建 depth=56 的 glow_soft（见 src/systems/VFX.js 的 _softGlow(..., 56)），
+//    因此「全场景扫 depth=56」会让任意一次敌机爆炸点亮 glow 计数 → 断言恒真。
+//    实证：负对照把到达演出的 depth 改成 57（应无环无光），结果仍是 ring=0 glow=1 → PASS（假通过）。
+//    修法：环与顶光都锚定在 Boss 到达点 (b.x, b.y)，只统计该点 ±60px 内的对象；
+//    并改 OR 为 AND（演出本就同时产出环与光），任一缺失即 FAIL。
+const bossT1 = await page.evaluate(async () => {
   const gs = window.__SKY__.scene.getScene('GameScene');
-  const b = gs.boss;
-  let ringCount = 0, glowCount = 0;
-  gs.children.list.forEach((c) => {
-    if (c && c.active) {
-      if (c.type === 'Arc' && c.depth === 56) ringCount++;
-      if (c.type === 'Image' && c.texture && c.texture.key === 'glow_soft' && c.depth === 56) glowCount++;
+  let anchor = null; // 首个 _entering=false 帧的 Boss 位置 = 环/顶光的创建锚点
+  const near = (c) => !!(anchor && typeof c.x === 'number'
+    && Math.abs(c.x - anchor.x) <= 60 && Math.abs(c.y - anchor.y) <= 60);
+  const sampleFx = () => {
+    let ring = 0, glow = 0;
+    gs.children.list.forEach((c) => {
+      if (c && c.active && near(c)) {
+        if (c.type === 'Arc' && c.depth === 56) ring++;
+        if (c.type === 'Image' && c.texture && c.texture.key === 'glow_soft' && c.depth === 56) glow++;
+      }
+    });
+    return { ring, glow };
+  };
+  let maxRing = 0, maxGlow = 0, yAtArrive = null;
+  const tStart = performance.now();
+  while (performance.now() - tStart < 6000) {
+    const b = gs.boss;
+    if (b && b.active && b._entering === false && yAtArrive === null) {
+      yAtArrive = b.y;
+      anchor = { x: b.x, y: b.y };
     }
-  });
-  return { entering: b._entering, y: b.y, ringCount, glowCount, hp: b.hp };
+    const fx = sampleFx();
+    if (fx.ring > maxRing) maxRing = fx.ring;
+    if (fx.glow > maxGlow) maxGlow = fx.glow;
+    if (yAtArrive !== null && maxRing >= 1 && maxGlow >= 1) break;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  const b = gs.boss;
+  return {
+    entering: b ? b._entering : null,
+    y: yAtArrive !== null ? yAtArrive : (b ? b.y : null),
+    ringCount: maxRing,
+    glowCount: maxGlow,
+    anchor,
+    hp: b ? b.hp : null,
+  };
 });
 push('Boss 到达目标位：_entering=false 且 y=150（恢复正常）',
   bossT1.entering === false && Math.abs(bossT1.y - 150) < 1 && bossT1.hp > 0 && bossT1.hp <= 1000,
   JSON.stringify(bossT1));
-push('Boss 到达演出：冲击波环 / 顶光聚光出现（depth=56）',
-  bossT1.ringCount >= 1 || bossT1.glowCount >= 1,
-  `ring=${bossT1.ringCount} glow=${bossT1.glowCount}`);
+push('Boss 到达演出：冲击波环 + 顶光聚光同时出现（depth=56，锚定到达点 ±60px）',
+  bossT1.ringCount >= 1 && bossT1.glowCount >= 1,
+  `ring=${bossT1.ringCount} glow=${bossT1.glowCount} anchor=${bossT1.anchor ? bossT1.anchor.x + ',' + bossT1.anchor.y : 'null'}`);
 // 到达瞬间截图（冲击波环/聚光）
 await page.waitForTimeout(60);
 await page.screenshot({ path: path.join(SHOTS, 'polish2_boss_arrive.png') });
