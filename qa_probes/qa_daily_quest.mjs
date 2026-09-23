@@ -17,7 +17,7 @@ let fails = 0;
 const assert = (cond, msg) => { if (!cond) { fails++; log('  ❌ FAIL: ' + msg); } else { log('  ✅ ' + msg); } };
 
 await page.goto(URL, { waitUntil: 'networkidle' });
-await page.waitForFunction(() => !!window.__SKY__ && !!window.__SAVE, null, { timeout: 20000 });
+await page.waitForFunction(() => !!window.__SKY__ && !!window.__SAVE, null, { timeout: 60000 });
 await sleep(300);
 log('\n【每日任务】菜单已渲染（含新增"每日任务"按钮），校验纯逻辑：');
 

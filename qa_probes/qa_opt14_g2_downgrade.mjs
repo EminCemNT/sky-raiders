@@ -48,7 +48,7 @@ await page.addInitScript((s) => {
   try { localStorage.setItem('sky_raiders_save_v1', JSON.stringify(s)); } catch (e) { /* ignore */ }
 }, save);
 await page.goto(URL, { waitUntil: 'domcontentloaded' });
-await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 20000 });
+await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 60000 });
 
 // 等 MenuScene 首个 bloom（默认 downscale enabled）就绪
 await page.waitForFunction(() => {

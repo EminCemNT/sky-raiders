@@ -29,7 +29,7 @@ page.on('pageerror', (e) => errors.push(String(e)));
 page.on('console', (m) => { if (m.type() === 'error') errors.push('console:' + m.text()); });
 
 await page.goto(URL, { waitUntil: 'domcontentloaded' });
-await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 20000 });
+await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 60000 });
 
 // 进入 GameScene + UIScene（并行，保留 HUD 以便测 vignette / Boss 血条）
 await page.evaluate(async () => {

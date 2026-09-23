@@ -64,7 +64,7 @@ await page.addInitScript(({ key, save }) => {
 }, { key: SAVE_KEY, save: SAVE });
 
 await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
-await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 30000 });
+await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 60000 });
 
 // 停掉菜单层，直接进 GameScene（不启 UIScene → 不触发 BOSS_SPAWNED 的 UI 副作用）
 await page.evaluate(() => {

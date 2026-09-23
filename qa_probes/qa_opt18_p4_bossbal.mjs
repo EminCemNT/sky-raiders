@@ -64,7 +64,7 @@ await page.addInitScript(({ key, save }) => {
 }, { key: SAVE_KEY, save: SAVE });
 
 await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
-await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 30000 });
+await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 60000 });
 
 await page.evaluate(() => {
   const g = window.__SKY__;

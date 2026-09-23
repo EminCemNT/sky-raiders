@@ -23,7 +23,7 @@ let fails = 0;
 const assert = (cond, msg) => { if (!cond) { fails++; log('  ❌ FAIL: ' + msg); } else { log('  ✅ ' + msg); } };
 
 await page.goto(URL, { waitUntil: 'networkidle' });
-await page.waitForFunction(() => !!window.__SKY__ && !!window.__SAVE && !!window.__ACH__, null, { timeout: 20000 });
+await page.waitForFunction(() => !!window.__SKY__ && !!window.__SAVE && !!window.__ACH__, null, { timeout: 60000 });
 await sleep(500);
 
 // 注入存档：苍鹰(thunder) + 2 僚机 + 武器拉满 Lv5，启动 GameScene

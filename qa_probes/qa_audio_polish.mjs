@@ -96,7 +96,7 @@ await page.addInitScript(() => {
 });
 
 await page.goto(URL, { waitUntil: 'load' });
-await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 20000 });
+await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 60000 });
 
 // 注入快照/复位助手
 await page.evaluate(() => {

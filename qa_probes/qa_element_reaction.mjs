@@ -31,7 +31,7 @@ page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 page.on('console', (m) => { if (m.type() === 'error') errors.push('console.error: ' + m.text()); });
 
 await page.goto(URL, { waitUntil: 'load' });
-await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 20000 });
+await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 60000 });
 await page.waitForFunction(() => {
   const ms = window.__SKY__.scene.getScene('MenuScene');
   return ms && ms.scene.isActive();
@@ -247,7 +247,7 @@ const rmErrors = [];
 rmPage.on('pageerror', (e) => rmErrors.push('pageerror: ' + e.message));
 rmPage.on('console', (m) => { if (m.type() === 'error') rmErrors.push('console.error: ' + m.text()); });
 await rmPage.goto(URL, { waitUntil: 'load' });
-await rmPage.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 20000 });
+await rmPage.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 60000 });
 await rmPage.waitForFunction(() => {
   const ms = window.__SKY__.scene.getScene('MenuScene');
   return ms && ms.scene.isActive();

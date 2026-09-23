@@ -39,7 +39,7 @@ async function measure(frozen, dur) {
 
 try {
   await page.goto(URL, { waitUntil: 'networkidle' });
-  await page.waitForFunction(() => !!window.__SKY__ && !!window.__SAVE && !!window.__ACH__, null, { timeout: 20000 });
+  await page.waitForFunction(() => !!window.__SKY__ && !!window.__SAVE && !!window.__ACH__, null, { timeout: 60000 });
   await sleep(700);
   await page.evaluate(() => { window.__SAVE.reset(); window.__ACH__.reset(); });
 

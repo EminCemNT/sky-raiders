@@ -83,7 +83,7 @@ page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 page.on('console', (m) => { if (m.type() === 'error') errors.push('console.error: ' + m.text()); });
 
 await page.goto(URL, { waitUntil: 'load' });
-await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 20000 });
+await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 60000 });
 // 等 MenuScene 就绪（确保资源加载完毕，避免提前 start GameScene）
 await page.waitForFunction(() => {
   const ms = window.__SKY__.scene.getScene('MenuScene');

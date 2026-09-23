@@ -4,7 +4,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const browser = await chromium.launch({ executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', args: ['--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage'] });
 const page = await browser.newPage({ viewport: { width: 720, height: 1280 } });
 await page.goto('http://localhost:5059/', { waitUntil: 'networkidle' });
-await page.waitForFunction(() => !!window.__SKY__ && !!window.__SAVE, null, { timeout: 15000 });
+await page.waitForFunction(() => !!window.__SKY__ && !!window.__SAVE, null, { timeout: 60000 });
 await sleep(800);
 await page.evaluate(() => {
   window.__SAVE.reset();

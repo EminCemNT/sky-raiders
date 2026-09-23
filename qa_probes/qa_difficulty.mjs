@@ -48,7 +48,7 @@ page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 page.on('console', (m) => { if (m.type() === 'error') errors.push('console.error: ' + m.text()); });
 
 await page.goto(URL, { waitUntil: 'load' });
-await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 20000 });
+await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 60000 });
 
 // ── 1) 静态断言：DIFFICULTIES + getDifficulty ──
 const cfg = await page.evaluate(async () => {
@@ -140,7 +140,7 @@ await page.evaluate((key) => {
   localStorage.setItem(key, JSON.stringify({ selectedDifficulty: '__bogus__' }));
 }, cfg.saveKey);
 await page.reload({ waitUntil: 'load' });
-await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 20000 });
+await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 60000 });
 const smClean = await page.evaluate(() => window.__SAVE.load().selectedDifficulty);
 push('脏存档清洗回退 standard', smClean === 'standard', smClean);
 

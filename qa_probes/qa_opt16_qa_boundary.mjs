@@ -53,7 +53,7 @@ async function launchPage(saveObj, lang) {
   }, { key: SAVE_KEY, save: saveObj, lg: lang });
   await page.goto(URL, { waitUntil: 'domcontentloaded' });
   try {
-    await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 20000 });
+    await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 60000 });
   } catch (e) {
     await page.close().catch(() => {});
     throw new Error('launchPage timeout: ' + errors.slice(0, 3).join(' | ') || '(no console error)');

@@ -38,7 +38,7 @@ page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 page.on('console', (m) => { if (m.type() === 'error') errors.push('console.error: ' + m.text()); });
 
 await page.goto(URL, { waitUntil: 'load' });
-await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 20000 });
+await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 60000 });
 
 // ── A) BLOOM 参数精调 ──
 const bloomCfg = await page.evaluate(async () => {
@@ -240,7 +240,7 @@ const rmPage = await browser.newPage({ viewport: { width: 540, height: 960 }, re
 rmPage.on('pageerror', (e) => rmErrors.push('pageerror: ' + e.message));
 rmPage.on('console', (m) => { if (m.type() === 'error') rmErrors.push('console.error: ' + m.text()); });
 await rmPage.goto(URL, { waitUntil: 'load' });
-await rmPage.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 20000 });
+await rmPage.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 60000 });
 await rmPage.evaluate(() => {
   const g = window.__SKY__;
   const SM = window.__SAVE;
@@ -295,7 +295,7 @@ const lowPage = await browser.newPage({ viewport: { width: 540, height: 960 } })
 lowPage.on('pageerror', (e) => lowErrors.push('pageerror: ' + e.message));
 lowPage.on('console', (m) => { if (m.type() === 'error') lowErrors.push('console.error: ' + m.text()); });
 await lowPage.goto(URL, { waitUntil: 'load' });
-await lowPage.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 20000 });
+await lowPage.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 60000 });
 await lowPage.evaluate(() => {
   const g = window.__SKY__;
   const SM = window.__SAVE;

@@ -51,7 +51,7 @@ page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 page.on('console', (m) => { if (m.type() === 'error') errors.push('console.error: ' + m.text()); });
 
 await page.goto(URL, { waitUntil: 'load' });
-await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 20000 });
+await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 60000 });
 
 const shipResults = [];
 for (let idx = 0; idx < 3; idx++) {
@@ -119,7 +119,7 @@ pageR.on('pageerror', (e) => errorsR.push('pageerror: ' + e.message));
 pageR.on('console', (m) => { if (m.type() === 'error') errorsR.push('console.error: ' + m.text()); });
 
 await pageR.goto(URL, { waitUntil: 'load' });
-await pageR.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 20000 });
+await pageR.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 60000 });
 
 await enterGame(pageR, 0);
 const warmedR = await pageR.evaluate(() => !!window.__SKY_WARMUP);

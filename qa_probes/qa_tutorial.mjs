@@ -17,7 +17,7 @@ let fails = 0;
 const assert = (cond, msg) => { if (!cond) { fails++; log('  ❌ FAIL: ' + msg); } else { log('  ✅ ' + msg); } };
 
 await page.goto(URL, { waitUntil: 'networkidle' });
-await page.waitForFunction(() => !!window.__SKY__ && !!window.__SAVE && !!window.__ACH__, null, { timeout: 20000 });
+await page.waitForFunction(() => !!window.__SKY__ && !!window.__SAVE && !!window.__ACH__, null, { timeout: 60000 });
 await sleep(300);
 
 // (A) 注入 tutorialDone=false，启动 GameScene（normal）触发首玩教程

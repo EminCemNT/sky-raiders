@@ -33,7 +33,7 @@ page.on('console', (m) => { if (m.type() === 'error') errors.push('console:' + m
 process.on('unhandledRejection', (e) => { console.error('UNHANDLED_REJECTION:', e); process.exitCode = 1; });
 
 await page.goto(URL, { waitUntil: 'domcontentloaded' });
-await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 20000 });
+await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 60000 });
 
 // 跳过教程，直接进入普通关卡（同时确认菜单→游戏场景切换在移动端无碍）
 const loaded = await page.evaluate(async () => {

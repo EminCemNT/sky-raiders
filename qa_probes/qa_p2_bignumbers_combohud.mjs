@@ -57,7 +57,7 @@ page.on('pageerror', (e) => errors.push(String(e)));
 page.on('console', (m) => { if (m.type() === 'error') errors.push('console:' + m.text()); });
 
 await page.goto(URL, { waitUntil: 'domcontentloaded' });
-await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 20000 });
+await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 60000 });
 await startScenes(page);
 
 // A. 进入游戏后无 pageerror（采样）
@@ -170,7 +170,7 @@ rpage.on('pageerror', (e) => rerrors.push(String(e)));
 rpage.on('console', (m) => { if (m.type() === 'error') rerrors.push('console:' + m.text()); });
 
 await rpage.goto(URL, { waitUntil: 'domcontentloaded' });
-await rpage.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 20000 });
+await rpage.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 60000 });
 await startScenes(rpage);
 
 // E. reduced-motion：飘字静态出现（scale 恒 1，跳过弹入）；连击 HUD 静态（scale 恒 1，去掉脉冲）

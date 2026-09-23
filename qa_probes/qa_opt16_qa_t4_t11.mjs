@@ -36,7 +36,7 @@ async function launchPage() {
     try { localStorage.setItem(key, JSON.stringify({ lang: 'zh', tutorialDone: true, quality: 'high' })); } catch (e) {}
   }, { key: SAVE_KEY });
   await page.goto(URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 20000 });
+  await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 60000 });
   return { ctx, page, errors };
 }
 

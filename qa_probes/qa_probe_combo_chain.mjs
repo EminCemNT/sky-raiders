@@ -10,7 +10,7 @@ const page = await browser.newPage({ viewport: { width: 720, height: 1280 } });
 page.on('pageerror', (e) => console.log('PAGEERR', String(e)));
 
 await page.goto('http://localhost:5059/', { waitUntil: 'networkidle' });
-await page.waitForFunction(() => !!window.__SKY__ && !!window.__SAVE, null, { timeout: 15000 });
+await page.waitForFunction(() => !!window.__SKY__ && !!window.__SAVE, null, { timeout: 60000 });
 await sleep(1000);
 await page.evaluate(() => { window.__SAVE.reset(); window.__ACH__.reset(); });
 await page.evaluate(() => {

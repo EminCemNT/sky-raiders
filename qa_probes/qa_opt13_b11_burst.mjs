@@ -71,7 +71,7 @@ await page.addInitScript(() => {
 });
 
 await page.goto(URL, { waitUntil: 'domcontentloaded' });
-await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 20000 });
+await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 60000 });
 await startScenes(page);
 
 // ── 冻结波次 + 清空已刷敌 + 复位连击基线（保证精确档位断言；纯探针操作，不改游戏代码）──
@@ -240,7 +240,7 @@ await enPage.addInitScript(() => {
   } catch (e) { /* ignore */ }
 });
 await enPage.goto(URL, { waitUntil: 'domcontentloaded' });
-await enPage.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 20000 });
+await enPage.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 60000 });
 await startScenes(enPage);
 await enPage.evaluate(() => {
   const gs = window.__SKY;

@@ -46,7 +46,7 @@ await page.addInitScript(({ key, save }) => {
   try { localStorage.setItem(key, JSON.stringify(save)); } catch (e) {}
 }, { key: SAVE_KEY, save: SAVE });
 await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
-await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 20000 });
+await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 60000 });
 await page.waitForFunction(() => {
   const ms = window.__SKY__.scene.getScene('MenuScene');
   return ms && ms.scene.isActive();

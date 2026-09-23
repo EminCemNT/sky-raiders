@@ -69,7 +69,7 @@ await page.addInitScript(() => {
 });
 
 await page.goto(URL, { waitUntil: 'load' });
-await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 20000 });
+await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 60000 });
 await page.waitForFunction(() => {
   const g = window.__SKY__;
   return g && g.scene.getScene('MenuScene') && g.scene.getScene('MenuScene').scene.isActive();

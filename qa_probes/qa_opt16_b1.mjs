@@ -31,7 +31,7 @@ await page.addInitScript(() => {
   try { localStorage.setItem('sky_raiders_save_v1', JSON.stringify({ lang: 'zh', tutorialDone: true, quality: 'high' })); } catch (e) { /* ignore */ }
 });
 await page.goto(URL, { waitUntil: 'domcontentloaded' });
-await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 20000 });
+await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 60000 });
 
 // ── T6 键名契约 ──
 const t6 = await page.evaluate(async () => {

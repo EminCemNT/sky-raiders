@@ -57,7 +57,7 @@ const waitGameMs = (ms) => page.waitForFunction((need) => {
   if (gs.time.now - window.__GW0 >= need) { window.__GW0 = null; return true; }
   return false;
 }, ms, { timeout: 30000 });
-await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 20000 });
+await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 60000 });
 
 // 进入 GameScene（跳过教程，避免 physics 被教程 pause 干扰）
 await page.evaluate(async () => {

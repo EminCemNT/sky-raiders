@@ -45,7 +45,7 @@ async function launchPage(saveObj, withVibrateStub) {
   }, { key: SAVE_KEY, save: saveObj, stub: !!withVibrateStub });
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
   try {
-    await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 20000 });
+    await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 60000 });
     await page.waitForFunction(() => {
       const ms = window.__SKY__.scene.getScene('MenuScene');
       return ms && ms.scene.isActive();

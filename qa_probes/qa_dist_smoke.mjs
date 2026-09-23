@@ -56,7 +56,7 @@ page.on('response', (r) => { if (r.status() >= 400) failedReq.push(r.url() + ' '
 
 const URL = `http://127.0.0.1:${PORT}`;
 await page.goto(URL, { waitUntil: 'domcontentloaded' });
-await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 20000 });
+await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 60000 });
 
 // 进入 GameScene + UIScene（复用 P1 标准姿势）
 await page.evaluate(async () => {

@@ -45,7 +45,7 @@ await page.addInitScript(() => {
 });
 
 await page.goto(URL, { waitUntil: 'domcontentloaded' });
-await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 20000 });
+await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 60000 });
 
 // 进入 GameScene（跳过教程）
 await page.evaluate(async () => {

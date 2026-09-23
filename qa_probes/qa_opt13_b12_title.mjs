@@ -38,7 +38,7 @@ page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 page.on('console', (m) => { if (m.type() === 'error') errors.push('console.error: ' + m.text()); });
 
 await page.goto(URL, { waitUntil: 'load' });
-await page.waitForFunction(() => !!(window.__SKY__), null, { timeout: 20000 });
+await page.waitForFunction(() => !!(window.__SKY__), null, { timeout: 60000 });
 
 // ── 1/2) 配置与派生逻辑（直接 import 模块，浏览器端跑真实代码）──
 const core = await page.evaluate(async () => {

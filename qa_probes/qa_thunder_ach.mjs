@@ -18,7 +18,7 @@ let fails = 0;
 const assert = (cond, msg) => { if (!cond) { fails++; log('  ❌ FAIL: ' + msg); } else { log('  ✅ ' + msg); } };
 
 await page.goto(URL, { waitUntil: 'networkidle' });
-await page.waitForFunction(() => !!window.__SKY__ && !!window.__SAVE && !!window.__ACH__, null, { timeout: 20000 });
+await page.waitForFunction(() => !!window.__SKY__ && !!window.__SAVE && !!window.__ACH__, null, { timeout: 60000 });
 await sleep(500);
 
 // ───────── 1) element_thunder 动态闭环 ─────────

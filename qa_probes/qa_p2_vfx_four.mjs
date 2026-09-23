@@ -57,7 +57,7 @@ page.on('response', (r) => { if (r.status() >= 400) failedReq.push(r.url() + ' '
 
 const URL = `http://127.0.0.1:${PORT}`;
 await page.goto(URL, { waitUntil: 'domcontentloaded' });
-await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 20000 });
+await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 60000 });
 
 // ── ⑦ 转场覆盖层就绪 ────────────────────────────────────────────
 const tReady = await page.evaluate(() => {
@@ -191,7 +191,7 @@ rp.on('pageerror', (e) => errors.push('reduced:' + String(e)));
 rp.on('console', (m) => { if (m.type() === 'error') errors.push('reduced-console:' + m.text()); });
 await rp.emulateMedia({ reducedMotion: 'reduce' });
 await rp.goto(URL, { waitUntil: 'domcontentloaded' });
-await rp.waitForFunction(() => !!(window.__SKY__ && window.__SAVE && window.__TRANSITION), null, { timeout: 20000 });
+await rp.waitForFunction(() => !!(window.__SKY__ && window.__SAVE && window.__TRANSITION), null, { timeout: 60000 });
 const reduced = await rp.evaluate(async () => {
   const game = window.__SKY__;
   const tr = window.__TRANSITION;

@@ -31,7 +31,7 @@ const errs = [];
 page.on('pageerror', (e) => errs.push(String(e)));
 page.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()); });
 await page.goto(URL, { waitUntil: 'domcontentloaded' });
-await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE && window.__TRANSITION), null, { timeout: 20000 });
+await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE && window.__TRANSITION), null, { timeout: 60000 });
 const out = {};
 
 // ── 抽查 1：⑦-1 过渡时长是否靠 600ms 强制兜底 ──

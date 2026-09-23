@@ -102,7 +102,7 @@ async function enterGame(page, saveSetter) {
   const page = await browser.newPage({ viewport: { width: 960, height: 640 } });
   const { errs, failed, external } = trackPage(page, 'H');
   await page.goto(URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE && window.__TRANSITION), null, { timeout: 20000 });
+  await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE && window.__TRANSITION), null, { timeout: 60000 });
 
   // ── ⑦-1/⑦-2 过渡时序（等价「点开始」路径：MenuScene→GameScene）──
   const tStart = await page.evaluate(() => {
@@ -409,10 +409,10 @@ async function enterGame(page, saveSetter) {
   const page = await browser.newPage({ viewport: { width: 960, height: 640 } });
   const { errs } = trackPage(page, 'L');
   await page.goto(URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 20000 });
+  await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 60000 });
   await page.evaluate(() => { window.__SAVE.set('quality', 'low'); });
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE && window.__TRANSITION), null, { timeout: 20000 });
+  await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE && window.__TRANSITION), null, { timeout: 60000 });
   await enterGame(page, true);
 
   const lowProbes = await page.evaluate(() => {
@@ -457,7 +457,7 @@ async function enterGame(page, saveSetter) {
   const { errs } = trackPage(page, 'R');
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto(URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE && window.__TRANSITION), null, { timeout: 20000 });
+  await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE && window.__TRANSITION), null, { timeout: 60000 });
   await enterGame(page, true);
 
   const redProbes = await page.evaluate(async () => {

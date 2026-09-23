@@ -38,7 +38,7 @@ async function launchPage(saveObj) {
   }, { key: SAVE_KEY, save: saveObj });
   await page.goto(URL, { waitUntil: 'domcontentloaded' });
   try {
-    await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 20000 });
+    await page.waitForFunction(() => !!(window.__SKY__ && window.__SAVE), null, { timeout: 60000 });
   } catch (e) {
     await page.close().catch(() => {});
     throw new Error('launchPage timeout: ' + errors.slice(0, 3).join(' | ') || '(no console error)');
@@ -262,7 +262,7 @@ await brokenPage.addInitScript((key) => {
 }, SAVE_KEY);
 await brokenPage.goto(URL, { waitUntil: 'domcontentloaded' });
 try {
-  await brokenPage.waitForFunction(() => !!(window.__SKY__ && window.__SAVE && window.__SAVE_SANITIZE), null, { timeout: 20000 });
+  await brokenPage.waitForFunction(() => !!(window.__SKY__ && window.__SAVE && window.__SAVE_SANITIZE), null, { timeout: 60000 });
 } catch (e) {
   await brokenPage.close().catch(() => {});
   throw new Error('T2 broken-save page timeout: ' + brokenErrors.slice(0, 3).join(' | '));

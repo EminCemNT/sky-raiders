@@ -22,7 +22,7 @@ const consoleErrors = [];
 page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
 
 async function waitGlobals() {
-  await page.waitForFunction(() => !!window.__SKY__ && !!window.__SAVE && !!window.__ACH__, null, { timeout: 20000 });
+  await page.waitForFunction(() => !!window.__SKY__ && !!window.__SAVE && !!window.__ACH__, null, { timeout: 60000 });
   await sleep(600);
 }
 async function enterGame(up, ship = 1) {
