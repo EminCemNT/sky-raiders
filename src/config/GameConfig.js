@@ -436,7 +436,8 @@ export const LEVELS = [
       silhouette: { kind: 'building', color: 0x120a02, density: 1, speed: 48 },
     },
     // OPT-19 B：6400 → 12000（×1.875）。满配 fp8 实测 TTK 4.5s → ~8.4s，可完整看完 3 阶段。
-    // 进入需 6 勋章，天然门槛保护；recommendLevel 最高指向 L4，不存在「低配被硬塞进 L5」。
+    // 进入需 6 勋章，天然门槛保护；recommendLevel 亦按累计勋章钳制（OPT-19 遗留立项·方案 B），
+    // 因此「战力够但勋章不足」或「勋章够但战力偏低」都不会被推荐进 L5。
     boss: { maxHp: 12000, pattern: 'nova', name: '湮灭回响 Echo-X', color: 0xffe14a, shieldHp: 200 },
     challenges: [
       { id: 'c1', type: 'killRate', target: 0.7, name: '歼灭70%' },
@@ -541,13 +542,23 @@ export function calcPower(upgrades, modules, ship) {
   return Math.round(shipBase + upgradePower + modulePower);
 }
 
-/** 按总战力映射推荐关卡（LEVELS 难度区间：<200 → 1 / <350 → 2 / <550 → 3 / 其余 4） */
-export function recommendLevel(power) {
+/**
+ * 按总战力映射推荐关卡。
+ * OPT-19 遗留立项（关卡门槛，方案 B）：
+ *   · **值域延展**：calcPower 上限约 626，旧阈值（≥550 即 4）使满配玩家永远看不到 L5 指引。
+ *     新阈值：<200→1 / <350→2 / <500→3 / <580→4 / 其余→5。
+ *   · **勋章钳制**：用累计勋章把结果收窄到「当前可解锁的最高关」，与 MenuScene「开始游戏」
+ *     同一规则（复用 levelMedalRequirement），避免把未达 6 勋章门禁的玩家推荐到 L5。
+ *   · **退化保护**：未传 medals（老调用 / 异常输入）→ 维持历史行为（最高 4），零回归。
+ * 纯展示：只影响机库顶部推荐文案，不参与任何准入校验（不做硬门槛）。
+ */
+export function recommendLevel(power, medals) {
   const p = Number(power) || 0;
-  if (p < 200) return 1;
-  if (p < 350) return 2;
-  if (p < 550) return 3;
-  return 4;
+  let lvl = p < 200 ? 1 : p < 350 ? 2 : p < 500 ? 3 : p < 580 ? 4 : 5;
+  if (medals == null) return Math.min(lvl, 4); // 旧行为零回归（medals 缺省）
+  const m = Number(medals) || 0;
+  while (lvl > 1 && m < levelMedalRequirement(lvl)) lvl -= 1;
+  return lvl;
 }
 
 // ───────────────────────────────────────────────────────────────

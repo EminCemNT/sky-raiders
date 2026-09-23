@@ -287,7 +287,8 @@ export default class HangarScene extends Phaser.Scene {
       const shipIdx = (save.selectedShip != null) ? save.selectedShip : 0;
       const ship = (SHIPS && SHIPS[shipIdx]) ? SHIPS[shipIdx] : (SHIPS ? SHIPS[0] : null);
       const power = calcPower(up, save.modules, ship);
-      const rec = recommendLevel(power);
+      // OPT-19 遗留立项（方案 B）：额外传累计勋章 → 满配可指向 L5，且推荐不会超出当前可解锁的最高关
+      const rec = recommendLevel(power, SaveManager.countMedals());
       const lvlName = t(`levelName_${rec}`);
       this.powerText.setText(t('hangarPower', { power, level: lvlName }));
     }
